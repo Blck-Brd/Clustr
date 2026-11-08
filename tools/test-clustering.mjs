@@ -22,7 +22,8 @@ const sandbox = {
     localStorage: { getItem: () => null, setItem: () => {} },
     Image: function Image() {},
     document: { createElement: () => ({ getContext: () => ({}) }) },
-    fetch: async () => ({ ok: false, json: async () => ({}) })
+    fetch: async () => ({ ok: false, json: async () => ({}) }),
+    exifr: { parse: async () => ({}) }
 };
 vm.createContext(sandbox);
 
@@ -31,8 +32,10 @@ const helperNames = [
     'findTimelineMatch', 'resolveTimelineEntry', 'normalizeLocationName',
     'clusterPhotosByDensity', 'computeAutoClusterSettings', 'buildClusterSettings', 'applyDominantClusterLocation',
     'interpolateMissingLocations', 'findLocationInheritanceTargets',
-    'buildPlaceholderEventName', 'mergePhotoTags', 'buildAutoTags', 'isLikelyScreenshot',
-    'roundedCoordKey', 'distanceKm'
+    'buildPlaceholderEventName', 'buildPlaceholderStopName', 'mergePhotoTags', 'buildAutoTags', 'isLikelyScreenshot',
+    'roundedCoordKey', 'distanceKm', 'extractPhotoMetadata',
+    'buildTripSettings', 'computeAutoTripSettings', 'inferHomeReference', 'isHomePhoto',
+    'clusterPhotosIntoTrips', 'buildHierarchicalEvents'
 ];
 
 vm.runInContext(
@@ -230,5 +233,130 @@ assert.ok(!tags.includes('Neznámé místo'));
 
 assert.equal(h.isLikelyScreenshot({ name: 'Screenshot_2025.png', aiData: {} }), true);
 assert.equal(h.isLikelyScreenshot({ name: 'DSC_0001.jpg', aiData: {} }), false);
+
+
+// Locations are derived from Timeline, not EXIF GPS.
+const timelineOnlyEntry = {
+    kind: 'visit',
+    name: 'Praha',
+    coords: { lat: 50.08, lon: 14.43 },
+    start: t0,
+    end: t0 + 3600000,
+    semanticType: 'UNKNOWN'
+};
+const timelineOnlyMeta = await h.extractPhotoMetadata(
+    { id: 'timeline-only', name: 'no-gps.jpg', date: new Date(t0 + 1800000), hardData: {}, aiData: {}, file: {} },
+    [timelineOnlyEntry],
+    ''
+);
+assert.equal(timelineOnlyMeta.location, 'Praha');
+assert.equal(timelineOnlyMeta.coords.lat, 50.08);
+assert.equal(timelineOnlyMeta.locationSource, 'timeline');
+assert.ok(timelineOnlyMeta.locationKey);
+
+// One vacation with 1289 photos should become ONE trip (with stop subfolders).
+const vacationStart = new Date('2026-06-01T09:00:00').getTime();
+const vacationPlaces = [
+    { name: 'Praha', lat: 50.08, lon: 14.43 },
+    { name: 'Kutná Hora', lat: 49.95, lon: 15.27 },
+    { name: 'Český Krumlov', lat: 48.81, lon: 14.32 }
+];
+const oneWeekPhotos = [];
+for (let day = 0; day < 7; day += 1) {
+    const place = vacationPlaces[day % vacationPlaces.length];
+    const dayStart = vacationStart + day * 86400000;
+    for (let i = 0; i < 184; i += 1) {
+        oneWeekPhotos.push(withCoords(
+            dayStart + (i / 184) * 8 * 3600000,
+            place.name,
+            'key-' + place.name,
+            { lat: place.lat + (i % 5) * 0.0004, lon: place.lon + (i % 7) * 0.0004 }
+        ));
+    }
+}
+oneWeekPhotos.push(withCoords(vacationStart + 7 * 86400000, 'Praha', 'key-Praha', { lat: 50.08, lon: 14.43 }));
+assert.equal(oneWeekPhotos.length, 1289);
+
+const oneWeekHierarchy = h.buildHierarchicalEvents(oneWeekPhotos, '', h.buildTripSettings());
+assert.equal(oneWeekHierarchy.tripCount, 1);
+assert.equal(oneWeekHierarchy.homeSessionCount, 0);
+assert.ok(oneWeekHierarchy.stopCount >= 3);
+assert.ok(Array.from(oneWeekHierarchy.groups, (group) => group.eventName).every((name) => name.startsWith('Trip 1/')));
+
+// Six months: two one-week vacations, three weekend trips and home sessions.
+const sixStart = new Date('2026-01-01T08:00:00').getTime();
+const homeCoords = { lat: 50.08, lon: 14.43 };
+const homeDayList = [
+    0, 2, 4, 6, 8, 10, 12, 14, 16, 18,
+    28, 30, 32, 34, 36, 38, 40, 42, 44, 46,
+    70, 72, 74, 76, 78, 80, 82, 84, 86, 88,
+    110, 112, 114, 116, 118, 120, 122, 124, 126, 128
+];
+const homePhotos = [];
+homeDayList.forEach((day) => {
+    for (let i = 0; i < 10; i += 1) {
+        homePhotos.push(withCoords(
+            sixStart + day * 86400000 + 18 * 3600000 + i * 5 * 60000,
+            'Doma',
+            'home',
+            { lat: homeCoords.lat + (i % 3) * 0.0003, lon: homeCoords.lon + (i % 2) * 0.0003 }
+        ));
+    }
+});
+
+const tripPhotos = [];
+const addVacation = (startDay, lat, lon, label) => {
+    for (let day = 0; day < 7; day += 1) {
+        for (let i = 0; i < 50; i += 1) {
+            tripPhotos.push(withCoords(
+                sixStart + (startDay + day) * 86400000 + 9 * 3600000 + i * 10 * 60000,
+                label,
+                'key-' + label,
+                { lat: lat + (i % 5) * 0.0004, lon: lon + (i % 7) * 0.0004 }
+            ));
+        }
+    }
+};
+const addWeekend = (startDay, lat, lon, label) => {
+    for (let day = 0; day < 2; day += 1) {
+        for (let i = 0; i < 30; i += 1) {
+            tripPhotos.push(withCoords(
+                sixStart + (startDay + day) * 86400000 + 10 * 3600000 + i * 10 * 60000,
+                label,
+                'key-' + label,
+                { lat: lat + (i % 4) * 0.0004, lon: lon + (i % 6) * 0.0004 }
+            ));
+        }
+    }
+};
+addVacation(20, 48.5, 12.5, 'Dovolená A');
+addVacation(100, 49.0, 16.0, 'Dovolená B');
+addWeekend(50, 49.7, 13.3, 'Víkend A');
+addWeekend(60, 50.6, 15.6, 'Víkend B');
+addWeekend(130, 48.9, 14.1, 'Víkend C');
+
+const sixMonths = h.buildHierarchicalEvents([...homePhotos, ...tripPhotos], '', h.buildTripSettings());
+assert.equal(sixMonths.tripCount, 5);
+assert.equal(sixMonths.homeSessionCount, homeDayList.length);
+assert.ok(sixMonths.stopCount >= sixMonths.tripCount);
+assert.equal(sixMonths.extraCount, 0);
+
+const homeIds = new Set(homePhotos.map((photo) => photo.id));
+const tripIds = new Set(tripPhotos.map((photo) => photo.id));
+const homeGroupPhotos = sixMonths.groups.filter((group) => group.eventName.startsWith('Home ')).flatMap((group) => group.photos);
+const tripGroupPhotos = sixMonths.groups.filter((group) => group.eventName.startsWith('Trip ')).flatMap((group) => group.photos);
+assert.equal(homeGroupPhotos.length, homePhotos.length);
+assert.equal(tripGroupPhotos.length, tripPhotos.length);
+assert.ok(homeGroupPhotos.every((photo) => homeIds.has(photo.id)));
+assert.ok(tripGroupPhotos.every((photo) => tripIds.has(photo.id)));
+
+// Photos with Timeline coordinates but no resolved place name still take part in trips/stops.
+const coordsOnlyPhotos = [0, 10, 20].map((minute) => {
+    const item = withCoords(t0 + minute * 60000, 'Neznámé místo', '', { lat: 50.08, lon: 14.43 });
+    return item;
+});
+const coordsOnlyHierarchy = h.buildHierarchicalEvents(coordsOnlyPhotos, '', h.buildTripSettings());
+assert.equal(coordsOnlyHierarchy.tripCount, 1);
+assert.ok(Array.from(coordsOnlyHierarchy.groups, (group) => group.eventName).every((name) => name.startsWith('Trip 1/')));
 
 console.log('All clustering/Timeline helper tests passed.');

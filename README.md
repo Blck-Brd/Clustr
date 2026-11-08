@@ -8,14 +8,15 @@ It is a single-file React app with no build step and no backend. It can be deplo
 
 1. **Upload Folder** - select a photo directory.
 2. **Timeline JSON (optional)** - import Google Timeline so locations can be assigned by photo time.
-3. **Phase 2 - Grouping** - reads EXIF date/time, assigns a location from Timeline (falling back to GPS), interpolates missing locations, groups photos by density in time and space, applies automatic tags, and sets temporary names such as `Event 1 - Kutná Hora`. Sensitivity is Auto by default; manual time/space/min-photo values are available.
+3. **Phase 2 - Grouping** - reads EXIF date/time, assigns a location from Timeline (falling back to GPS), interpolates missing locations, and builds the event tree. The default profile creates **one folder per trip** (`Trip 1`) with **stop subfolders** (`Trip 1/Stop 1 - Kutná Hora`), plus separate home sessions and weekend trips. The `Places` profile creates flat dense location events instead. Sensitivity is Auto by default; manual values are available.
 4. **Phase 3 - AI Names** - sends each event summary (date, time, location, tags) to Ollama or Gemini and replaces the temporary names. Manually named events are left untouched.
 5. **Phase 4 - Visual Tags** - optional batch or single-image tagging with Moondream / Llama Vision through Ollama.
 6. **Review and Export** - use Tinder mode, edit folders/tags, then export photos and XMP sidecars.
 
 ### Cluster-level edits
 
-- Selecting a photo and changing its **location** or **event name** in the bulk editor applies the change to every photo in the same event.
+- Phase 2 creates `Trip N` folders with `Stop N - location` subfolders, plus `Home N` sessions. Rename `Trip N` to “Vacation”.
+- Selecting a photo and changing its **location** or **event name** in the bulk editor applies the change to every photo in the same stop/event.
 - Renaming a folder in the tree also marks the affected event as manually named, so phase 3 will not overwrite it.
 - Wrapping events in a parent folder keeps AI naming available for the leaf events.
 - Phase 2 preserves manually named events when it is run again.
@@ -25,8 +26,9 @@ It is a single-file React app with no build step and no backend. It can be deplo
 - **EXIF extraction** - capture date, camera, GPS, and automatic season / time-of-day tags.
 - **Timeline matching** - imports visits, activities and timeline paths, then binary-searches by EXIF time with GPS reverse-geocoding fallback.
 - **Local persistence** - photo metadata and Timeline data are saved to IndexedDB and relinked after a refresh by file name, size and modified time.
-- **Density-based clustering** - spatiotemporal DBSCAN (1.5 h / 4 km, minimum 3 photos). Dense photo bursts become events; sparse driving photos attach to the nearest event; same-place bursts separated by short breaks merge.
-- **Auto + manual sensitivity** - Auto derives the time/space window from the dataset density; manual mode exposes time window, place radius and minimum photo count.
+- **Trips + home hierarchy (default)** - away periods become one trip folder each; dense stops inside a trip become subfolders. Home photo shoots and weekend trips stay separate.
+- **Places/density profile** - spatiotemporal DBSCAN (1.5 h / 4 km, minimum 3 photos) for flat place events if you do not want trip folders.
+- **Auto + manual sensitivity** - Auto derives the trip/home or place window from the dataset; manual mode exposes trip gap, home radius and home-session gap (or place time/space/min photos).
 - **Manual cluster edits** - Split selected photos into a new event, or merge events by renaming them together.
 - **Location inheritance** - a manually added location propagates through the event and to nearby photos that have no location of their own (12 h window).
 - **RAW + HEIC previews** - embedded thumbnails via exifr, HEIC conversion via heic2any, TIFF/RAW decoding via UTIF.
@@ -62,7 +64,7 @@ npm run dev
 app/                  PWA source and assets
 legacy/html-versions/ Previous single-file HTML versions
 tools/                Checks, tests and icon generation
-docs/                 Architecture, deployment and Timeline format
+docs/                 Architecture, deployment, Timeline format and DEVLOG
 ```
 
 For Ollama from a local file or local server:
@@ -123,4 +125,8 @@ Small vision models such as Moondream do not follow keyword instructions reliabl
 
 - The app loads React, Babel, Tailwind, exifr, heic2any, and UTIF from CDNs, so the first load needs an internet connection.
 - Babel transforms JSX in the browser; this is convenient for a single-file tool but slower than a pre-built bundle.
-- Phase 2 resets non-manual event names to temporary `Event N - location` names. Manually renamed events (via the tree or bulk editor) are preserved.
+- Phase 2 resets non-manual names to temporary `Trip N/Stop M - location`, `Home N` or `Event N` names. Manually renamed events (via the tree or bulk editor) are preserved.
+
+## Continue here
+
+See `docs/DEVLOG.md` for the current checkpoint, test results and next tasks.

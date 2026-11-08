@@ -19,17 +19,21 @@ docs/                Architecture, deployment and data-format notes
 1. **Folder selection** - browser `File` objects, `file.lastModified` used until EXIF is read.
 2. **Phase 1 (optional)** - EXIF only. Time, camera, GPS and auto tags.
 3. **Phase 2 - grouping**
-   - Read EXIF `DateTimeOriginal` / `CreateDate`.
+   - Read EXIF `DateTimeOriginal` / `CreateDate`. Photos usually have **no GPS**; location is derived from Timeline by photo time.
    - Match Timeline segments by time using a sorted index (`visit`, `activity`, `timelinePath`).
-   - Fall back to GPS + Nominatim reverse geocoding.
-   - Interpolate missing locations from the nearest known location within 12 hours.
-   - Group with spatiotemporal DBSCAN. **Auto** derives the time/space window from the 60th percentile of consecutive gaps (time clamped 0.75-3 h, space 2-10 km, min 3 photos); **Manual** exposes time, space and minimum photos. Long chains are split, same-place bursts within the merge gap/distance are merged, and sparse driving photos are attached to the nearest event or grouped by time gaps.
-   - Assign `clusterId`, `clusterNumber`, temporary `Event N - location` names and auto tags.
-   - Fill unknown locations inside a cluster from its dominant location.
+   - Fall back to GPS + Nominatim reverse geocoding, then interpolate missing locations from the nearest known location within 12 hours.
+   - **Default profile: Trips + home.**
+     - Infer home from Timeline HOME, the explicit home setting, or the location with the most distinct days (only for datasets longer than 30 days).
+     - Home photos become home sessions (`Home N`), split by the home-session gap.
+     - Away photos become trips, split when the away gap exceeds the trip gap (default 72 h) or the trip exceeds the max duration.
+     - Inside each trip, run density DBSCAN to create stop subfolders: `Trip N/Stop M - location`.
+   - **Places profile:** flat spatiotemporal DBSCAN events (`Event N - location`) using Auto or manual time/space/min-photo values.
+   - Assign `clusterId`, `tripId`, `tripNumber`, `stopNumber`, `eventKind`, temporary names and auto tags.
+   - Fill unknown locations inside a group from its dominant location.
 4. **Phase 3 - AI names**
-   - Group by `clusterId`, build one summary per event (date, time, location, tags).
+   - Group by `clusterId` (stop, home session or flat place event), build one summary per group (date, time, location, tags).
    - Ask Ollama/Gemini for JSON names in batches, normalize response shapes, retry missing names.
-   - Preserve manual names (`eventNameSource === 'manual'`).
+   - Replace the leaf name, preserving the parent trip folder; manual names are preserved (`eventNameSource === 'manual'`).
 5. **Phase 4 - visual tags** - optional vision-model pass.
 6. **Export** - folder hierarchy + XMP sidecars.
 
@@ -42,7 +46,8 @@ docs/                Architecture, deployment and data-format notes
     dateStr, timeStr, location, locationKey, locationSource, coords, camera
   },
   aiData: {
-    tags, event_name, eventNameSource, clusterId, clusterNumber, category
+    tags, event_name, eventNameSource, clusterId, clusterNumber,
+    eventKind, tripId, tripNumber, stopNumber, category
   }
 }
 ```

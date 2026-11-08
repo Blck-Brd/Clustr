@@ -424,6 +424,12 @@
 
         const clampNumber = (value, min, max) => Math.min(max, Math.max(min, value));
 
+        const percentileValue = (values, ratio) => {
+            if (!values || values.length === 0) return null;
+            const sorted = [...values].sort((a, b) => a - b);
+            return sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * ratio))];
+        };
+
         const buildClusterSettings = (overrides = {}) => {
             const epsTimeHours = clampNumber(Number(overrides.epsTimeHours) || DEFAULT_CLUSTER_SETTINGS.epsTimeHours, 0.5, 12);
             const epsSpaceKm = clampNumber(Number(overrides.epsSpaceKm) || DEFAULT_CLUSTER_SETTINGS.epsSpaceKm, 0.5, 50);
@@ -481,7 +487,7 @@
             'Neznámé místo', '#Neznámé místo', 'Bez EXIFu', 'Screenshot', 'Snímky obrazovky'
         ]);
 
-        const isPlaceholderEventName = (name) => /^Event\s+\d+\b/i.test(String(name || '').trim());
+        const isPlaceholderEventName = (name) => /^(Event|Trip|Stop|Home)\s+\d+\b/i.test(String(name || '').trim());
 
         const normalizeLocationName = (name) => String(name || '')
             .toLowerCase()
@@ -1170,6 +1176,309 @@
             aiData: photo.aiData || null
         }));
 
+        // --- TRIPS + HOME (hierarchical grouping) ---
+        const DEFAULT_TRIP_SETTINGS = {
+            tripGapHours: 72,
+            maxTripDays: 30,
+            homeRadiusKm: 15,
+            homeSessionGapHours: 4,
+            maxHomeSessionHours: 12,
+            noiseAttachWindowMs: 12 * 3600000,
+            noiseGroupGapMs: 4 * 3600000
+        };
+
+        const buildTripSettings = (overrides = {}) => ({
+            tripGapHours: clampNumber(Number(overrides.tripGapHours) || DEFAULT_TRIP_SETTINGS.tripGapHours, 12, 24 * 14),
+            maxTripDays: clampNumber(Number(overrides.maxTripDays) || DEFAULT_TRIP_SETTINGS.maxTripDays, 1, 365),
+            homeRadiusKm: clampNumber(Number(overrides.homeRadiusKm) || DEFAULT_TRIP_SETTINGS.homeRadiusKm, 1, 100),
+            homeSessionGapHours: clampNumber(Number(overrides.homeSessionGapHours) || DEFAULT_TRIP_SETTINGS.homeSessionGapHours, 0.5, 24),
+            maxHomeSessionHours: clampNumber(Number(overrides.maxHomeSessionHours) || DEFAULT_TRIP_SETTINGS.maxHomeSessionHours, 1, 72),
+            noiseAttachWindowMs: DEFAULT_TRIP_SETTINGS.noiseAttachWindowMs,
+            noiseGroupGapMs: DEFAULT_TRIP_SETTINGS.noiseGroupGapMs
+        });
+
+        const meanCoords = (coordsList) => {
+            const valid = (coordsList || []).filter((coords) => coords && Number.isFinite(coords.lat) && Number.isFinite(coords.lon));
+            if (valid.length === 0) return null;
+            return {
+                lat: valid.reduce((sum, coords) => sum + coords.lat, 0) / valid.length,
+                lon: valid.reduce((sum, coords) => sum + coords.lon, 0) / valid.length
+            };
+        };
+
+        // Home is taken from Timeline HOME segments, the explicit setting, or inferred
+        // from the location that appears on the most distinct days (only for datasets > 30 days).
+        const inferHomeReference = (photos, homeLocation) => {
+            const homeSource = photos.filter((photo) => photo.hardData?.locationSource === 'home' && photo.hardData?.coords);
+            if (homeSource.length > 0) {
+                return {
+                    coords: meanCoords(homeSource.map((photo) => photo.hardData.coords)),
+                    key: 'home',
+                    name: homeLocation || 'Doma',
+                    source: 'timeline'
+                };
+            }
+
+            const target = normalizeLocationName(homeLocation);
+            if (target) {
+                const matches = photos.filter((photo) =>
+                    normalizeLocationName(photo.hardData?.location) === target
+                    || normalizeLocationName(photo.hardData?.locationKey) === target
+                );
+                if (matches.length > 0) {
+                    return {
+                        coords: meanCoords(matches.map((photo) => photo.hardData?.coords).filter(Boolean)),
+                        key: matches[0].hardData?.locationKey || target,
+                        name: matches[0].hardData?.location || homeLocation,
+                        source: 'setting'
+                    };
+                }
+            }
+
+            let minTime = Infinity;
+            let maxTime = -Infinity;
+            photos.forEach((photo) => {
+                const time = photo.date?.getTime?.();
+                if (Number.isFinite(time)) {
+                    minTime = Math.min(minTime, time);
+                    maxTime = Math.max(maxTime, time);
+                }
+            });
+
+            if (!Number.isFinite(minTime) || !Number.isFinite(maxTime)) {
+                return target ? { coords: null, key: target, name: homeLocation, source: 'setting' } : null;
+            }
+
+            const spanDays = (maxTime - minTime) / 86400000;
+            if (spanDays <= 30) {
+                return target ? { coords: null, key: target, name: homeLocation, source: 'setting' } : null;
+            }
+
+            const stats = new Map();
+            photos.forEach((photo) => {
+                const location = photo.hardData?.location;
+                if (!location || location === 'Neznámé místo') return;
+                const key = photo.hardData?.locationKey || normalizeLocationName(location);
+                const day = photo.date.toDateString();
+                const entry = stats.get(key) || { key, name: location, days: new Set(), coords: [] };
+                entry.days.add(day);
+                if (photo.hardData?.coords) entry.coords.push(photo.hardData.coords);
+                stats.set(key, entry);
+            });
+
+            const best = [...stats.values()].sort((a, b) => b.days.size - a.days.size)[0];
+            if (!best) return target ? { coords: null, key: target, name: homeLocation, source: 'setting' } : null;
+
+            const minDays = Math.max(4, Math.floor(spanDays * 0.1));
+            if (best.days.size < minDays) {
+                return target ? { coords: null, key: target, name: homeLocation, source: 'setting' } : null;
+            }
+
+            return { coords: meanCoords(best.coords), key: best.key, name: best.name, source: 'inferred' };
+        };
+
+        const isHomePhoto = (photo, homeRef, radiusKm) => {
+            if (!homeRef) return false;
+            if (photo.hardData?.locationSource === 'home') return true;
+
+            if (homeRef.coords && photo.hardData?.coords) {
+                const distance = distanceKm(homeRef.coords, photo.hardData.coords);
+                if (distance !== null) return distance <= radiusKm;
+            }
+
+            const name = normalizeLocationName(photo.hardData?.location);
+            const key = normalizeLocationName(photo.hardData?.locationKey);
+            return Boolean(
+                (homeRef.name && name === normalizeLocationName(homeRef.name))
+                || (homeRef.key && key === normalizeLocationName(homeRef.key))
+            );
+        };
+
+        const splitLongEpisode = (group, maxHours, gapMs) => {
+            const sorted = [...group].sort((a, b) => a.date - b.date);
+            if (sorted.length === 0) return [];
+
+            const parts = [];
+            let current = [sorted[0]];
+
+            for (let i = 1; i < sorted.length; i += 1) {
+                const previous = sorted[i - 1];
+                const photo = sorted[i];
+                const gap = photo.date.getTime() - previous.date.getTime();
+                const spanHours = (photo.date.getTime() - current[0].date.getTime()) / 3600000;
+
+                if (spanHours > maxHours && gap > gapMs) {
+                    parts.push(current);
+                    current = [photo];
+                } else {
+                    current.push(photo);
+                }
+            }
+
+            parts.push(current);
+            return parts;
+        };
+
+        // Away photos become trips; home photos become home sessions. Unknown-location
+        // photos are attached by time or grouped separately.
+        const clusterPhotosIntoTrips = (photos, homeLocation, settings = DEFAULT_TRIP_SETTINGS) => {
+            const homeRef = inferHomeReference(photos, homeLocation);
+            const homePhotos = [];
+            const awayPhotos = [];
+            const unknown = [];
+
+            photos.forEach((photo) => {
+                const hasCoords = Boolean(photo.hardData?.coords);
+                const hasNamedLocation = Boolean(photo.hardData?.locationKey && photo.hardData.location && photo.hardData.location !== 'Neznámé místo');
+                if (!hasCoords && !hasNamedLocation) {
+                    unknown.push(photo);
+                    return;
+                }
+                if (homeRef && isHomePhoto(photo, homeRef, settings.homeRadiusKm)) homePhotos.push(photo);
+                else awayPhotos.push(photo);
+            });
+
+            const trips = [];
+            groupPhotosByTimeGaps(awayPhotos, settings.tripGapHours * 3600000).forEach((group) => {
+                splitLongEpisode(group, settings.maxTripDays * 24, 6 * 3600000).forEach((part) => trips.push(part));
+            });
+
+            const homeSessions = [];
+            groupPhotosByTimeGaps(homePhotos, settings.homeSessionGapHours * 3600000).forEach((group) => {
+                splitLongEpisode(group, settings.maxHomeSessionHours, 3600000).forEach((part) => homeSessions.push(part));
+            });
+
+            const episodes = [
+                ...trips.map((episodePhotos) => ({ kind: 'trip', photos: episodePhotos })),
+                ...homeSessions.map((episodePhotos) => ({ kind: 'home', photos: episodePhotos }))
+            ];
+            const remaining = [];
+
+            unknown.forEach((photo) => {
+                const time = photo.date.getTime();
+                let best = null;
+
+                episodes.forEach((episode) => {
+                    const times = episode.photos.map((item) => item.date.getTime());
+                    const start = Math.min(...times);
+                    const end = Math.max(...times);
+                    const distance = time < start ? start - time : time > end ? time - end : 0;
+                    if (distance <= settings.noiseAttachWindowMs && (!best || distance < best.distance)) {
+                        best = { episode, distance };
+                    }
+                });
+
+                if (best) best.episode.photos.push(photo);
+                else remaining.push(photo);
+            });
+
+            groupPhotosByTimeGaps(remaining, settings.noiseGroupGapMs).forEach((group) => {
+                episodes.push({ kind: 'misc', photos: group });
+            });
+
+            const sortByStart = (items) => items.sort((a, b) => a[0].date - b[0].date);
+            return {
+                homeRef,
+                trips: sortByStart(episodes.filter((episode) => episode.kind === 'trip').map((episode) => episode.photos)),
+                homeSessions: sortByStart(episodes.filter((episode) => episode.kind === 'home').map((episode) => episode.photos)),
+                extras: sortByStart(episodes.filter((episode) => episode.kind === 'misc').map((episode) => episode.photos))
+            };
+        };
+
+        const computeAutoTripSettings = (photos, homeLocation) => {
+            const homeRef = inferHomeReference(photos, homeLocation);
+            let homeRadiusKm = DEFAULT_TRIP_SETTINGS.homeRadiusKm;
+
+            if (homeRef?.coords) {
+                const distances = photos
+                    .filter((photo) => photo.hardData?.locationSource === 'home'
+                        || (homeRef.name && normalizeLocationName(photo.hardData?.location) === normalizeLocationName(homeRef.name)))
+                    .map((photo) => (photo.hardData?.coords ? distanceKm(homeRef.coords, photo.hardData.coords) : null))
+                    .filter((distance) => distance !== null);
+
+                const p90 = percentileValue(distances, 0.9);
+                if (p90 !== null) homeRadiusKm = clampNumber(p90 * 1.5, 5, 30);
+            }
+
+            return buildTripSettings({ homeRadiusKm });
+        };
+
+        const buildPlaceholderStopName = (index, location) => {
+            const suffix = location && location !== 'Neznámé místo' ? ` - ${location}` : '';
+            return `Stop ${index + 1}${suffix}`;
+        };
+
+        // Produces the flat list of event groups used by Phase 2:
+        // one group per home session, one group per stop inside each trip.
+        const buildHierarchicalEvents = (photos, homeLocation, settings = DEFAULT_TRIP_SETTINGS) => {
+            const episodes = clusterPhotosIntoTrips(photos, homeLocation, settings);
+            const groups = [];
+            let stopCount = 0;
+
+            episodes.trips.forEach((tripPhotos, tripIndex) => {
+                const tripName = `Trip ${tripIndex + 1}`;
+                const tripId = `evt-trip-${tripPhotos[0].date.getTime()}-${tripIndex}`;
+                const stopSettings = computeAutoClusterSettings(tripPhotos);
+                const stops = clusterPhotosByDensity(tripPhotos, stopSettings);
+
+                stops.forEach((stopPhotos, stopIndex) => {
+                    const dominant = applyDominantClusterLocation(stopPhotos);
+                    const location = dominant?.location || stopPhotos[0]?.hardData?.location || 'Neznámé místo';
+                    const stopName = buildPlaceholderStopName(stopIndex, location);
+                    stopCount += 1;
+                    groups.push({
+                        photos: stopPhotos,
+                        eventName: `${tripName}/${stopName}`,
+                        clusterId: `${tripId}-stop-${stopIndex + 1}`,
+                        clusterNumber: stopIndex + 1,
+                        eventKind: 'trip-stop',
+                        tripId,
+                        tripNumber: tripIndex + 1,
+                        stopNumber: stopIndex + 1,
+                        tripName
+                    });
+                });
+            });
+
+            episodes.homeSessions.forEach((sessionPhotos, index) => {
+                const id = `evt-home-${sessionPhotos[0].date.getTime()}-${index}`;
+                groups.push({
+                    photos: sessionPhotos,
+                    eventName: `Home ${index + 1}`,
+                    clusterId: id,
+                    clusterNumber: index + 1,
+                    eventKind: 'home',
+                    tripId: id,
+                    tripNumber: 0,
+                    stopNumber: 0
+                });
+            });
+
+            episodes.extras.forEach((extraPhotos, index) => {
+                const id = `evt-extra-${extraPhotos[0].date.getTime()}-${index}`;
+                groups.push({
+                    photos: extraPhotos,
+                    eventName: `Event ${index + 1}`,
+                    clusterId: id,
+                    clusterNumber: index + 1,
+                    eventKind: 'misc',
+                    tripId: id,
+                    tripNumber: 0,
+                    stopNumber: 0
+                });
+            });
+
+            groups.sort((a, b) => a.photos[0].date - b.photos[0].date);
+            return {
+                groups,
+                tripCount: episodes.trips.length,
+                homeSessionCount: episodes.homeSessions.length,
+                extraCount: episodes.extras.length,
+                stopCount,
+                homeRef: episodes.homeRef
+            };
+        };
+
         const generatePreview = async (file) => {
             const ext = file.name.split('.').pop().toLowerCase();
             try {
@@ -1258,11 +1567,17 @@
             
             const [visionModel, setVisionModel] = useState(initialSettings.visionModel || 'moondream');
             const [visionModelCustom, setVisionModelCustom] = useState(initialSettings.visionModelCustom || '');
+            const [groupingProfile, setGroupingProfile] = useState(initialSettings.groupingProfile || 'trips');
             const [clusteringMode, setClusteringMode] = useState(initialSettings.clusteringMode || 'auto');
             const [manualClusterSettings, setManualClusterSettings] = useState({
                 epsTimeHours: initialSettings.clusterEpsTimeHours ?? 1.5,
                 epsSpaceKm: initialSettings.clusterEpsSpaceKm ?? 4,
                 minPoints: initialSettings.clusterMinPoints ?? 3
+            });
+            const [manualTripSettings, setManualTripSettings] = useState({
+                tripGapHours: initialSettings.tripGapHours ?? 72,
+                homeRadiusKm: initialSettings.homeRadiusKm ?? 15,
+                homeSessionGapHours: initialSettings.homeSessionGapHours ?? 4
             });
             const [lastClusterSettings, setLastClusterSettings] = useState(null);
             
@@ -1318,13 +1633,17 @@
                     localStorage.setItem(SETTINGS_KEY, JSON.stringify({
                         lang, textModel, textModelCustom, geminiModelCustom, homeLocation,
                         visionModel, visionModelCustom, customFolders,
+                        groupingProfile,
                         clusteringMode,
                         clusterEpsTimeHours: manualClusterSettings.epsTimeHours,
                         clusterEpsSpaceKm: manualClusterSettings.epsSpaceKm,
-                        clusterMinPoints: manualClusterSettings.minPoints
+                        clusterMinPoints: manualClusterSettings.minPoints,
+                        tripGapHours: manualTripSettings.tripGapHours,
+                        homeRadiusKm: manualTripSettings.homeRadiusKm,
+                        homeSessionGapHours: manualTripSettings.homeSessionGapHours
                     }));
                 } catch (e) {}
-            }, [lang, textModel, textModelCustom, geminiModelCustom, homeLocation, visionModel, visionModelCustom, customFolders, clusteringMode, manualClusterSettings]);
+            }, [lang, textModel, textModelCustom, geminiModelCustom, homeLocation, visionModel, visionModelCustom, customFolders, groupingProfile, clusteringMode, manualClusterSettings, manualTripSettings]);
 
             useEffect(() => {
                 if (modelAutoFixRef.current || ollamaModels.length === 0) return;
@@ -1808,28 +2127,59 @@
                     const screenshots = work.filter(isLikelyScreenshot);
                     const normalPhotos = work.filter((photo) => !isLikelyScreenshot(photo));
 
-                    const effectiveClusterSettings = clusteringMode === 'auto'
-                        ? computeAutoClusterSettings(normalPhotos)
-                        : buildClusterSettings(manualClusterSettings);
-                    setLastClusterSettings(effectiveClusterSettings);
+                    const isTripsProfile = groupingProfile === 'trips';
+                    let effectiveClusterSettings;
+                    let eventGroups = [];
+                    let tripInfo = null;
 
-                    setProgress(t(
-                        `Seskupuji podle hustoty (${effectiveClusterSettings.epsTimeHours.toFixed(1)} h / ${effectiveClusterSettings.epsSpaceKm.toFixed(1)} km)...`,
-                        `Grouping by density (${effectiveClusterSettings.epsTimeHours.toFixed(1)} h / ${effectiveClusterSettings.epsSpaceKm.toFixed(1)} km)...`
-                    ));
-                    const clusters = clusterPhotosByDensity(normalPhotos, effectiveClusterSettings);
+                    if (isTripsProfile) {
+                        effectiveClusterSettings = clusteringMode === 'auto'
+                            ? computeAutoTripSettings(normalPhotos, homeLocation)
+                            : buildTripSettings(manualTripSettings);
+                        setLastClusterSettings({ ...effectiveClusterSettings, profile: 'trips' });
+                        setProgress(t(
+                            `Seskupuji cesty a domov (${effectiveClusterSettings.tripGapHours.toFixed(0)} h mezera / ${effectiveClusterSettings.homeRadiusKm.toFixed(0)} km domov)...`,
+                            `Grouping trips and home (${effectiveClusterSettings.tripGapHours.toFixed(0)} h gap / ${effectiveClusterSettings.homeRadiusKm.toFixed(0)} km home)...`
+                        ));
+                        tripInfo = buildHierarchicalEvents(normalPhotos, homeLocation, effectiveClusterSettings);
+                        eventGroups = tripInfo.groups;
+                    } else {
+                        effectiveClusterSettings = clusteringMode === 'auto'
+                            ? computeAutoClusterSettings(normalPhotos)
+                            : buildClusterSettings(manualClusterSettings);
+                        setLastClusterSettings({ ...effectiveClusterSettings, profile: 'places' });
+                        setProgress(t(
+                            `Seskupuji podle hustoty (${effectiveClusterSettings.epsTimeHours.toFixed(1)} h / ${effectiveClusterSettings.epsSpaceKm.toFixed(1)} km)...`,
+                            `Grouping by density (${effectiveClusterSettings.epsTimeHours.toFixed(1)} h / ${effectiveClusterSettings.epsSpaceKm.toFixed(1)} km)...`
+                        ));
+                        eventGroups = clusterPhotosByDensity(normalPhotos, effectiveClusterSettings).map((groupPhotos, index) => ({
+                            photos: groupPhotos,
+                            eventName: null,
+                            clusterId: `evt-place-${groupPhotos[0]?.date?.getTime() || Date.now()}-${index}`,
+                            clusterNumber: index + 1,
+                            eventKind: 'place',
+                            tripId: null,
+                            tripNumber: 0,
+                            stopNumber: 0
+                        }));
+                    }
 
-                    clusters.forEach((cluster, index) => {
-                        const dominant = applyDominantClusterLocation(cluster);
-                        const location = dominant?.location || cluster[0]?.hardData?.location || 'Neznámé místo';
-                        const placeholder = buildPlaceholderEventName(index, location);
-                        const clusterId = `evt-${cluster[0]?.date?.getTime() || Date.now()}-${index}`;
+                    eventGroups.forEach((group, index) => {
+                        const groupPhotos = group.photos;
+                        const dominant = applyDominantClusterLocation(groupPhotos);
+                        const location = dominant?.location || groupPhotos[0]?.hardData?.location || 'Neznámé místo';
+                        const placeholder = group.eventName || buildPlaceholderEventName(index, location);
+                        const clusterId = group.clusterId || `evt-${groupPhotos[0]?.date?.getTime() || Date.now()}-${index}`;
 
-                        cluster.forEach((photo) => {
+                        groupPhotos.forEach((photo) => {
                             const autoTags = buildAutoTags(photo.date, photo.hardData);
                             photo.aiData.tags = mergePhotoTags(photo.aiData.tags, autoTags, null);
                             photo.aiData.clusterId = clusterId;
-                            photo.aiData.clusterNumber = index + 1;
+                            photo.aiData.clusterNumber = group.clusterNumber || index + 1;
+                            photo.aiData.eventKind = group.eventKind || 'place';
+                            photo.aiData.tripId = group.tripId || null;
+                            photo.aiData.tripNumber = group.tripNumber || 0;
+                            photo.aiData.stopNumber = group.stopNumber || 0;
                             photo.aiData.category = 'Událost';
 
                             if (photo.aiData.eventNameSource === 'manual') {
@@ -1847,6 +2197,8 @@
                         photo.aiData.tags = mergePhotoTags(photo.aiData.tags, autoTags, null);
                         photo.aiData.clusterId = 'screenshots';
                         photo.aiData.clusterNumber = 0;
+                        photo.aiData.eventKind = 'screenshot';
+                        photo.aiData.tripId = null;
                         photo.aiData.category = 'Snímky obrazovky / Různé';
                         photo.aiData.event_name = 'Snímky obrazovky';
                         photo.aiData.eventNameSource = 'placeholder';
@@ -1860,13 +2212,16 @@
 
                     const knownLocations = new Set(work.map((p) => p.hardData.location).filter((location) => location && location !== 'Neznámé místo'));
                     const modeLabel = clusteringMode === 'auto' ? t('Auto', 'Auto') : t('Ruční', 'Manual');
-                    setMessage({
-                        title: t("Seskupeno", "Grouped"),
-                        text: t(
-                            `Vytvořeno ${clusters.length} událostí z ${normalPhotos.length} fotek (${knownLocations.size} lokací). Režim ${modeLabel}: ${effectiveClusterSettings.epsTimeHours.toFixed(1)} h / ${effectiveClusterSettings.epsSpaceKm.toFixed(1)} km, min. ${effectiveClusterSettings.minPoints} fotky. Každá fotka má čas, místo a dočasný název.`,
-                            `Created ${clusters.length} events from ${normalPhotos.length} photos (${knownLocations.size} locations). ${modeLabel} mode: ${effectiveClusterSettings.epsTimeHours.toFixed(1)} h / ${effectiveClusterSettings.epsSpaceKm.toFixed(1)} km, min ${effectiveClusterSettings.minPoints} photos. Every photo has a time, location and temporary name.`
+                    const summaryText = isTripsProfile
+                        ? t(
+                            `Vytvořeno ${tripInfo.tripCount} cest, ${tripInfo.stopCount} zastávek a ${tripInfo.homeSessionCount} domácích focení z ${normalPhotos.length} fotek (${knownLocations.size} lokací). Režim ${modeLabel}: mezera ${effectiveClusterSettings.tripGapHours.toFixed(0)} h, domov ${effectiveClusterSettings.homeRadiusKm.toFixed(0)} km, sezení ${effectiveClusterSettings.homeSessionGapHours.toFixed(1)} h.`,
+                            `Created ${tripInfo.tripCount} trips, ${tripInfo.stopCount} stops and ${tripInfo.homeSessionCount} home sessions from ${normalPhotos.length} photos (${knownLocations.size} locations). ${modeLabel} mode: ${effectiveClusterSettings.tripGapHours.toFixed(0)} h gap, ${effectiveClusterSettings.homeRadiusKm.toFixed(0)} km home, ${effectiveClusterSettings.homeSessionGapHours.toFixed(1)} h session.`
                         )
-                    });
+                        : t(
+                            `Vytvořeno ${eventGroups.length} událostí z ${normalPhotos.length} fotek (${knownLocations.size} lokací). Režim ${modeLabel}: ${effectiveClusterSettings.epsTimeHours.toFixed(1)} h / ${effectiveClusterSettings.epsSpaceKm.toFixed(1)} km, min. ${effectiveClusterSettings.minPoints} fotky.`,
+                            `Created ${eventGroups.length} events from ${normalPhotos.length} photos (${knownLocations.size} locations). ${modeLabel} mode: ${effectiveClusterSettings.epsTimeHours.toFixed(1)} h / ${effectiveClusterSettings.epsSpaceKm.toFixed(1)} km, min ${effectiveClusterSettings.minPoints} photos.`
+                        );
+                    setMessage({ title: t("Seskupeno", "Grouped"), text: summaryText });
                 } catch (e) {
                     setMessage({ title: t("Chyba seskupení", "Grouping error"), text: e.message });
                 }
@@ -2445,14 +2800,18 @@ DATA: ${JSON.stringify(data)}`;
                     if (type === 'event') {
                         updated.aiData.event_name = val;
                         updated.aiData.eventNameSource = 'manual';
+                        updated.aiData.eventKind = 'misc';
                         if (mergedClusterId) {
                             updated.aiData.clusterId = mergedClusterId;
+                            updated.aiData.tripId = mergedClusterId;
                             updated.aiData.clusterNumber = 0;
                         }
                     } else if (type === 'split') {
                         updated.aiData.event_name = val;
                         updated.aiData.eventNameSource = 'manual';
+                        updated.aiData.eventKind = 'misc';
                         updated.aiData.clusterId = splitClusterId;
+                        updated.aiData.tripId = splitClusterId;
                         updated.aiData.clusterNumber = 0;
                     } else if (type === 'parent-event') {
                         const current = updated.aiData.event_name || 'Nezařazeno';
@@ -2473,8 +2832,15 @@ DATA: ${JSON.stringify(data)}`;
                         // Only the explicitly edited cluster gets its placeholder folder renamed.
                         if (!isInherited && updated.aiData.eventNameSource === 'placeholder' && isPlaceholderEventName(updated.aiData.event_name || '')) {
                             const parentParts = (updated.aiData.event_name || '').split('/').slice(0, -1).map(cleanEventName).filter(Boolean);
-                            const placeholder = buildPlaceholderEventName((updated.aiData.clusterNumber || 1) - 1, val);
-                            updated.aiData.event_name = [...parentParts, placeholder].join('/');
+                            let placeholder = null;
+                            if (updated.aiData.eventKind === 'trip-stop') {
+                                placeholder = buildPlaceholderStopName((updated.aiData.stopNumber || 1) - 1, val);
+                            } else if (updated.aiData.eventKind !== 'home') {
+                                placeholder = buildPlaceholderEventName((updated.aiData.clusterNumber || 1) - 1, val);
+                            }
+                            if (placeholder) {
+                                updated.aiData.event_name = [...parentParts, placeholder].join('/');
+                            }
                         }
                     } else if (type === 'tag') {
                         updated.aiData.tags = [...new Set([...(updated.aiData.tags || []), val])];
@@ -2638,12 +3004,34 @@ DATA: ${JSON.stringify(data)}`;
                                             {t("Načte EXIF, přiřadí lokaci z Timeline, najde hustá fotografická místa a vytvoří složky událostí s dočasnými názvy. Fáze 3 je volitelná – složky můžete přejmenovat ručně.", "Reads EXIF, assigns a location from Timeline, finds dense photo bursts and creates event folders with temporary names. Phase 3 is optional – you can rename folders manually.")}
                                         </div>
 
+                                        <select value={groupingProfile} onChange={e => setGroupingProfile(e.target.value)} className="w-full bg-slate-800 text-xs p-1 rounded border border-slate-700 text-white">
+                                            <option value="trips">{t("Profil: Cesty + domov (doporučeno)", "Profile: Trips + home (recommended)")}</option>
+                                            <option value="places">{t("Profil: Místa (hustota)", "Profile: Places (density)")}</option>
+                                        </select>
+
                                         <select value={clusteringMode} onChange={e => setClusteringMode(e.target.value)} className="w-full bg-slate-800 text-xs p-1 rounded border border-slate-700 text-white">
-                                            <option value="auto">{t("Citlivost: Auto (podle hustoty fotek)", "Sensitivity: Auto (photo density)")}</option>
+                                            <option value="auto">{t("Citlivost: Auto (podle dat)", "Sensitivity: Auto (data-driven)")}</option>
                                             <option value="manual">{t("Citlivost: Ruční", "Sensitivity: Manual")}</option>
                                         </select>
 
-                                        {clusteringMode === 'manual' && (
+                                        {clusteringMode === 'manual' && groupingProfile === 'trips' && (
+                                            <div className="grid grid-cols-3 gap-2">
+                                                <div>
+                                                    <div className="text-[9px] text-slate-500">{t("Mezera (h)", "Gap (h)")}</div>
+                                                    <input type="number" min="12" max="336" step="1" value={manualTripSettings.tripGapHours} onChange={e => setManualTripSettings({ ...manualTripSettings, tripGapHours: Number(e.target.value) })} className="w-full bg-slate-800 p-1 rounded text-xs text-white border border-slate-700" />
+                                                </div>
+                                                <div>
+                                                    <div className="text-[9px] text-slate-500">{t("Domov (km)", "Home (km)")}</div>
+                                                    <input type="number" min="1" max="100" step="1" value={manualTripSettings.homeRadiusKm} onChange={e => setManualTripSettings({ ...manualTripSettings, homeRadiusKm: Number(e.target.value) })} className="w-full bg-slate-800 p-1 rounded text-xs text-white border border-slate-700" />
+                                                </div>
+                                                <div>
+                                                    <div className="text-[9px] text-slate-500">{t("Sezení (h)", "Session (h)")}</div>
+                                                    <input type="number" min="0.5" max="24" step="0.5" value={manualTripSettings.homeSessionGapHours} onChange={e => setManualTripSettings({ ...manualTripSettings, homeSessionGapHours: Number(e.target.value) })} className="w-full bg-slate-800 p-1 rounded text-xs text-white border border-slate-700" />
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {clusteringMode === 'manual' && groupingProfile === 'places' && (
                                             <div className="grid grid-cols-3 gap-2">
                                                 <div>
                                                     <div className="text-[9px] text-slate-500">{t("Čas (h)", "Time (h)")}</div>
@@ -2661,11 +3049,15 @@ DATA: ${JSON.stringify(data)}`;
                                         )}
 
                                         <div className="text-[10px] text-slate-500">
-                                            {clusteringMode === 'auto'
-                                                ? (lastClusterSettings
-                                                    ? t(`Auto: ${lastClusterSettings.epsTimeHours.toFixed(1)} h / ${lastClusterSettings.epsSpaceKm.toFixed(1)} km / min. ${lastClusterSettings.minPoints}`, `Auto: ${lastClusterSettings.epsTimeHours.toFixed(1)} h / ${lastClusterSettings.epsSpaceKm.toFixed(1)} km / min ${lastClusterSettings.minPoints}`)
-                                                    : t("Automaticky podle hustoty fotek", "Automatic by photo density"))
-                                                : t("Použije se ruční citlivost.", "Manual sensitivity will be used.")}
+                                            {clusteringMode === 'manual'
+                                                ? (groupingProfile === 'trips'
+                                                    ? t(`Ruční: mezera ${manualTripSettings.tripGapHours} h / domov ${manualTripSettings.homeRadiusKm} km / sezení ${manualTripSettings.homeSessionGapHours} h`, `Manual: ${manualTripSettings.tripGapHours} h gap / ${manualTripSettings.homeRadiusKm} km home / ${manualTripSettings.homeSessionGapHours} h session`)
+                                                    : t(`Ruční: ${manualClusterSettings.epsTimeHours} h / ${manualClusterSettings.epsSpaceKm} km / min. ${manualClusterSettings.minPoints}`, `Manual: ${manualClusterSettings.epsTimeHours} h / ${manualClusterSettings.epsSpaceKm} km / min ${manualClusterSettings.minPoints}`))
+                                                : (lastClusterSettings && lastClusterSettings.profile === groupingProfile
+                                                    ? (groupingProfile === 'trips'
+                                                        ? t(`Auto: mezera ${lastClusterSettings.tripGapHours.toFixed(0)} h / domov ${lastClusterSettings.homeRadiusKm.toFixed(0)} km / sezení ${lastClusterSettings.homeSessionGapHours.toFixed(1)} h`, `Auto: ${lastClusterSettings.tripGapHours.toFixed(0)} h gap / ${lastClusterSettings.homeRadiusKm.toFixed(0)} km home / ${lastClusterSettings.homeSessionGapHours.toFixed(1)} h session`)
+                                                        : t(`Auto: ${lastClusterSettings.epsTimeHours.toFixed(1)} h / ${lastClusterSettings.epsSpaceKm.toFixed(1)} km / min. ${lastClusterSettings.minPoints}`, `Auto: ${lastClusterSettings.epsTimeHours.toFixed(1)} h / ${lastClusterSettings.epsSpaceKm.toFixed(1)} km / min ${lastClusterSettings.minPoints}`))
+                                                    : t("Citlivost se spočítá při spuštění.", "Sensitivity is calculated when you run it."))}
                                         </div>
 
                                         <button onClick={runPhase2} disabled={isGrouping} className="w-full bg-rose-600 p-2 rounded text-xs text-white hover:bg-rose-500 disabled:bg-slate-700 disabled:cursor-wait">
