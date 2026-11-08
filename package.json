@@ -1,0 +1,17 @@
+{
+  "name": "clustr",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Clustr - local-first AI photo sorter PWA",
+  "type": "module",
+  "scripts": {
+    "dev": "npx --yes serve app",
+    "start": "npx --yes serve app",
+    "check": "node tools/check-app.mjs",
+    "test": "node tools/test-clustering.mjs",
+    "icons": "powershell -ExecutionPolicy Bypass -File tools/generate-icons.ps1"
+  },
+  "devDependencies": {
+    "@babel/standalone": "^7.28.4"
+  }
+}

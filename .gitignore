@@ -3,9 +3,24 @@ Timeline.json
 *.timeline.json
 Location History*.json
 
+# Dependencies / builds
+node_modules/
+app/node_modules/
+.next/
+out/
+dist/
+build/
+.vercel/
+.vercel/project.json
+*.tsbuildinfo
+
+# Test / tooling output
+test-results/
+playwright-report/
+coverage/
+*.log
+
 # OS / editor noise
 .DS_Store
 Thumbs.db
 desktop.ini
-*.log
-node_modules/
