@@ -30,6 +30,9 @@ It is a single-file React app with no build step and no backend. It can be deplo
 - **Places/density profile** - the same grid heatmap used as flat place events if you do not want trip folders.
 - **Screenshot / Clutter folder** - Czech/English screenshots, lossless images without camera/location, Downloads/meme paths and similar clutter go to `Screenshot-Clutter`, outside the clustering.
 - **Clean state** - the 🧹 button clears IndexedDB, local settings and cloud metadata.
+- **Manual trip window** - create one trip folder from all photos in a date range (e.g. 2–8 May) with an optional whole-trip location.
+- **Cluster review heatmap** - review clusters over time or on a map, select them, and apply a name/location immediately.
+- **TODO roadmap** - see `TODO.md` for Location Tinder, Ko-fi profile rework, Vercel issues and remaining architecture tasks.
 - **Auto + manual sensitivity** - Auto derives the trip/home or place window from the dataset. Trip sensitivity (gap, home radius, session gap) and stop/place sensitivity (time, space, min photos) are separate.
 - **Trip or stop AI naming** - Phase 3 can name the top-level trip folders or the stop subfolders, preserving the other level.
 - **Manual cluster edits** - Split selected photos into a new event, or merge events by renaming them together.

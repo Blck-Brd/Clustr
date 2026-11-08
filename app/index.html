@@ -499,6 +499,12 @@
         const SCREENSHOT_FOLDER = 'Screenshot-Clutter';
         const isScreenshotCategory = (value) => value === SCREENSHOT_CATEGORY || value === 'Snímky obrazovky / Různé';
 
+        const dateKey = (value) => {
+            const date = value instanceof Date ? value : new Date(value);
+            if (!Number.isFinite(date.getTime())) return '';
+            return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+        };
+
         const isPlaceholderEventName = (name) => /^(Event|Trip|Stop|Home)\s+\d+\b/i.test(String(name || '').trim());
 
         const normalizeLocationName = (name) => String(name || '')
@@ -1640,64 +1646,57 @@
         // photos are attached by time or grouped separately.
         const clusterPhotosIntoTrips = (photos, homeLocation, settings = DEFAULT_TRIP_SETTINGS) => {
             const homeRef = inferHomeReference(photos, homeLocation);
-            const homePhotos = [];
-            const awayPhotos = [];
-            const unknown = [];
+            const densityEpisodes = segmentDenseEpisodes(photos, settings);
+            const trips = [];
+            const homeSessionPhotos = [];
+            const extras = [];
 
-            photos.forEach((photo) => {
-                const hasCoords = Boolean(photo.hardData?.coords);
-                const hasNamedLocation = Boolean(photo.hardData?.locationKey && photo.hardData.location && photo.hardData.location !== 'Neznámé místo');
-                if (!hasCoords && !hasNamedLocation) {
-                    unknown.push(photo);
-                    return;
+            densityEpisodes.forEach((episodePhotos) => {
+                const home = [];
+                const away = [];
+                const unknown = [];
+
+                episodePhotos.forEach((photo) => {
+                    const hasCoords = Boolean(photo.hardData?.coords);
+                    const hasNamedLocation = Boolean(photo.hardData?.locationKey && photo.hardData.location && photo.hardData.location !== 'Neznámé místo');
+                    if (!hasCoords && !hasNamedLocation) {
+                        unknown.push(photo);
+                        return;
+                    }
+                    if (homeRef && isHomePhoto(photo, homeRef, settings.homeRadiusKm)) home.push(photo);
+                    else away.push(photo);
+                });
+
+                const spanHours = (episodePhotos[episodePhotos.length - 1].date.getTime() - episodePhotos[0].date.getTime()) / 3600000;
+
+                if (away.length > home.length) {
+                    // Away evidence wins: keep every unknown photo in this density episode inside the trip.
+                    trips.push([...away, ...unknown].sort((a, b) => a.date - b.date));
+                    homeSessionPhotos.push(...home);
+                } else if (home.length > 0) {
+                    homeSessionPhotos.push(...home, ...unknown);
+                } else if (spanHours > 24) {
+                    // No location evidence but a multi-day density block: one flat trip.
+                    trips.push([...unknown].sort((a, b) => a.date - b.date));
+                } else {
+                    extras.push(...unknown, ...away);
                 }
-                if (homeRef && isHomePhoto(photo, homeRef, settings.homeRadiusKm)) homePhotos.push(photo);
-                else awayPhotos.push(photo);
             });
 
-            const trips = segmentDenseEpisodes(awayPhotos, settings);
-
             const homeSessions = [];
-            groupPhotosByTimeGaps(homePhotos, settings.homeSessionGapHours * 3600000).forEach((group) => {
+            groupPhotosByTimeGaps(homeSessionPhotos, settings.homeSessionGapHours * 3600000).forEach((group) => {
                 splitLongEpisode(group, settings.maxHomeSessionHours, 3600000).forEach((part) => homeSessions.push(part));
             });
 
-            const episodes = [
-                ...trips.map((episodePhotos) => ({ kind: 'trip', photos: episodePhotos })),
-                ...homeSessions.map((episodePhotos) => ({ kind: 'home', photos: episodePhotos }))
-            ];
-            const remaining = [];
-
-            unknown.forEach((photo) => {
-                const time = photo.date.getTime();
-                let best = null;
-
-                episodes.forEach((episode) => {
-                    const times = episode.photos.map((item) => item.date.getTime());
-                    const start = Math.min(...times);
-                    const end = Math.max(...times);
-                    const distance = time < start ? start - time : time > end ? time - end : 0;
-                    if (distance <= settings.noiseAttachWindowMs && (!best || distance < best.distance)) {
-                        best = { episode, distance };
-                    }
-                });
-
-                if (best) best.episode.photos.push(photo);
-                else remaining.push(photo);
-            });
-
-            // Photos with no location at all still form trip-like episodes when they span multiple days.
-            segmentDenseEpisodes(remaining, settings).forEach((group) => {
-                const spanHours = (group[group.length - 1].date.getTime() - group[0].date.getTime()) / 3600000;
-                episodes.push({ kind: spanHours > 24 ? 'trip' : 'misc', photos: group });
-            });
+            const groupedExtras = [];
+            segmentDenseEpisodes(extras, settings).forEach((group) => groupedExtras.push(group));
 
             const sortByStart = (items) => items.sort((a, b) => a[0].date - b[0].date);
             return {
                 homeRef,
-                trips: sortByStart(episodes.filter((episode) => episode.kind === 'trip').map((episode) => episode.photos)),
-                homeSessions: sortByStart(episodes.filter((episode) => episode.kind === 'home').map((episode) => episode.photos)),
-                extras: sortByStart(episodes.filter((episode) => episode.kind === 'misc').map((episode) => episode.photos))
+                trips: sortByStart(trips),
+                homeSessions: sortByStart(homeSessions),
+                extras: sortByStart(groupedExtras)
             };
         };
 
@@ -1734,14 +1733,18 @@
             episodes.trips.forEach((tripPhotos, tripIndex) => {
                 const tripName = `Trip ${tripIndex + 1}`;
                 const tripId = `evt-trip-${tripPhotos[0].date.getTime()}-${tripIndex}`;
-                const hasKnownLocation = tripPhotos.some((photo) => {
+                const tripStart = tripPhotos[0].date.getTime();
+                const tripEnd = tripPhotos[tripPhotos.length - 1].date.getTime();
+                const stopSettings = stopSettingsOverride || computeAutoClusterSettings(tripPhotos);
+                const locatedCount = tripPhotos.filter((photo) => {
                     const hasCoords = Boolean(photo.hardData?.coords);
                     const hasNamedLocation = Boolean(photo.hardData?.locationKey && photo.hardData.location && photo.hardData.location !== 'Neznámé místo');
                     return hasCoords || hasNamedLocation;
-                });
+                }).length;
+                const minLocatedForStops = Math.max(2, stopSettings?.minPoints || 3);
 
-                // A trip with no location data becomes one flat folder instead of many time-only stops.
-                if (!hasKnownLocation) {
+                // Without enough located photos, one flat trip folder is the honest result.
+                if (locatedCount < minLocatedForStops) {
                     groups.push({
                         photos: tripPhotos,
                         eventName: tripName,
@@ -1751,12 +1754,13 @@
                         tripId,
                         tripNumber: tripIndex + 1,
                         stopNumber: 0,
+                        tripStart,
+                        tripEnd,
                         tripName
                     });
                     return;
                 }
 
-                const stopSettings = stopSettingsOverride || computeAutoClusterSettings(tripPhotos);
                 const stops = clusterPhotosByDensity(tripPhotos, stopSettings);
 
                 stops.forEach((stopPhotos, stopIndex) => {
@@ -1773,6 +1777,8 @@
                         tripId,
                         tripNumber: tripIndex + 1,
                         stopNumber: stopIndex + 1,
+                        tripStart,
+                        tripEnd,
                         tripName
                     });
                 });
@@ -1858,6 +1864,12 @@
             return null;
         };
 
+        const colorForKey = (key) => {
+            let hash = 0;
+            for (let i = 0; i < key.length; i += 1) hash = (hash * 31 + key.charCodeAt(i)) % 360;
+            return `hsl(${hash}, 72%, 62%)`;
+        };
+
         const App = () => {
             const [photos, setPhotos] = useState([]);
             const [timelineData, setTimelineData] = useState(null);
@@ -1880,6 +1892,7 @@
             const [renameModal, setRenameModal] = useState({ isOpen: false, oldName: '', newName: '', type: 'tag' });
             const [showExportModal, setShowExportModal] = useState(false);
             const [showHelpModal, setShowHelpModal] = useState(false);
+            const [showClusterReview, setShowClusterReview] = useState(false);
             
             const [cloudDb, setCloudDb] = useState(null);
             const [cloudMetadata, setCloudMetadata] = useState(null);
@@ -1892,6 +1905,7 @@
             const [lastSelectedId, setLastSelectedId] = useState(null); // Pro Shift-click výběr
             const [customFolders, setCustomFolders] = useState(() => Array.isArray(initialSettings.customFolders) ? initialSettings.customFolders : []); // Uchování prázdných/nových složek
             const [bulkModal, setBulkModal] = useState({ isOpen: false, type: '', value: '' });
+            const [tripModal, setTripModal] = useState({ isOpen: false, start: '', end: '', name: '', location: '' });
             
             const [lang, setLang] = useState(initialSettings.lang || 'cs');
             const [analyzingPhotoId, setAnalyzingPhotoId] = useState(null);
@@ -2549,6 +2563,95 @@
                 }
             };
 
+            const openTripModal = () => {
+                const source = selectedPhotos.size > 0
+                    ? photos.filter((photo) => selectedPhotos.has(photo.id))
+                    : photos;
+                const times = source
+                    .map((photo) => (photo.date instanceof Date ? photo.date.getTime() : new Date(photo.date).getTime()))
+                    .filter(Number.isFinite);
+                const min = times.length ? new Date(Math.min(...times)) : new Date();
+                const max = times.length ? new Date(Math.max(...times)) : new Date();
+                const format = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+                setTripModal({
+                    isOpen: true,
+                    start: format(min),
+                    end: format(max),
+                    name: '',
+                    location: ''
+                });
+            };
+
+            const applyManualTrip = () => {
+                const start = new Date(`${tripModal.start}T00:00:00`).getTime();
+                const end = new Date(`${tripModal.end}T23:59:59.999`).getTime();
+                if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) {
+                    setMessage({ title: t('Chyba', 'Error'), text: t('Neplatné datumové okno.', 'Invalid date window.') });
+                    return;
+                }
+
+                const ids = new Set(
+                    photos
+                        .filter((photo) => !isScreenshotCategory(photo.aiData?.category))
+                        .filter((photo) => photo.aiData?.category !== '🗑️ K vymazání')
+                        .filter((photo) => {
+                            const time = photo.date instanceof Date ? photo.date.getTime() : new Date(photo.date).getTime();
+                            return Number.isFinite(time) && time >= start && time <= end;
+                        })
+                        .map((photo) => photo.id)
+                );
+
+                if (ids.size === 0) {
+                    setMessage({ title: t('Chyba', 'Error'), text: t('V tomto okně nejsou žádné fotky.', 'No photos in this window.') });
+                    return;
+                }
+
+                const tripNumber = Math.max(0, ...photos.map((photo) => photo.aiData?.tripNumber || 0)) + 1;
+                const tripId = `evt-manual-trip-${Date.now()}`;
+                const eventName = (tripModal.name || `Trip ${tripNumber}`).trim();
+                const location = tripModal.location.trim();
+
+                setPhotos((previous) => previous.map((photo) => {
+                    if (!ids.has(photo.id)) return photo;
+                    const updated = { ...photo, aiData: { ...photo.aiData } };
+                    updated.aiData.tripId = tripId;
+                    updated.aiData.tripNumber = tripNumber;
+                    updated.aiData.clusterId = tripId;
+                    updated.aiData.clusterNumber = 0;
+                    updated.aiData.stopNumber = 0;
+                    updated.aiData.tripStart = start;
+                    updated.aiData.tripEnd = end;
+                    updated.aiData.eventKind = 'trip';
+                    updated.aiData.event_name = eventName;
+                    updated.aiData.eventNameSource = 'manual';
+                    updated.aiData.tripNameSource = 'manual';
+                    updated.aiData.stopNameSource = 'manual';
+                    updated.aiData.category = 'Událost';
+
+                    if (location) {
+                        const oldLocation = updated.hardData?.location;
+                        updated.hardData = { ...(updated.hardData || {}) };
+                        updated.hardData.location = location;
+                        updated.hardData.locationKey = normalizeLocationName(location);
+                        updated.hardData.locationSource = 'manual';
+                        updated.hardData.coords = null;
+                        let tags = (updated.aiData.tags || []).filter((tag) => tag !== oldLocation && tag !== 'Neznámé místo' && tag !== '#Neznámé místo');
+                        tags.push(location);
+                        updated.aiData.tags = [...new Set(tags)];
+                    }
+
+                    return updated;
+                }));
+
+                setTripModal({ isOpen: false, start: '', end: '', name: '', location: '' });
+                setSelectedPhotos(new Set());
+                setActiveFilters((prev) => prev.filter((filter) => !filter.startsWith('event-')));
+                setMessage({
+                    title: t('Cesta vytvořena', 'Trip created'),
+                    text: t(`Vytvořena cesta „${eventName}“ pro ${ids.size} fotek.`, `Created trip "${eventName}" for ${ids.size} photos.`)
+                });
+            };
+
             const runPhase1 = async () => {
                 if (photos.length === 0) return;
                 setIsExtracting(true);
@@ -2704,6 +2807,8 @@
                             photo.aiData.tripId = group.tripId || null;
                             photo.aiData.tripNumber = group.tripNumber || 0;
                             photo.aiData.stopNumber = group.stopNumber || 0;
+                            photo.aiData.tripStart = group.tripStart || null;
+                            photo.aiData.tripEnd = group.tripEnd || null;
                             photo.aiData.category = 'Událost';
 
                             if (photo.aiData.eventNameSource === 'manual') {
@@ -3346,11 +3451,27 @@ DATA: ${JSON.stringify(data)}`;
                         .filter((clusterId) => clusterId && clusterId !== 'screenshots')
                 );
 
+                const targetTripIds = new Set(
+                    photos
+                        .filter((p) => selectedIds.has(p.id))
+                        .map((p) => p.aiData?.tripId)
+                        .filter(Boolean)
+                );
+
                 const idsToUpdate = new Set(selectedIds);
                 if (type === 'event' || type === 'parent-event' || type === 'location') {
                     targetClusterIds.forEach((clusterId) => {
                         photos.forEach((p) => {
                             if (p.aiData?.clusterId === clusterId) idsToUpdate.add(p.id);
+                        });
+                    });
+                }
+
+                // A manual location applies to the whole trip window (all stops included).
+                if (type === 'location') {
+                    targetTripIds.forEach((tripId) => {
+                        photos.forEach((p) => {
+                            if (p.aiData?.tripId === tripId) idsToUpdate.add(p.id);
                         });
                     });
                 }
@@ -3415,7 +3536,9 @@ DATA: ${JSON.stringify(data)}`;
                             let placeholder = null;
                             if (updated.aiData.eventKind === 'trip-stop') {
                                 placeholder = buildPlaceholderStopName((updated.aiData.stopNumber || 1) - 1, val);
-                            } else if (updated.aiData.eventKind !== 'home' && updated.aiData.eventKind !== 'trip') {
+                            } else if (updated.aiData.eventKind === 'trip') {
+                                placeholder = `Trip ${updated.aiData.tripNumber || 1} - ${val}`;
+                            } else if (updated.aiData.eventKind !== 'home') {
                                 placeholder = buildPlaceholderEventName((updated.aiData.clusterNumber || 1) - 1, val);
                             }
                             if (placeholder) {
@@ -3443,6 +3566,82 @@ DATA: ${JSON.stringify(data)}`;
                             `Bulk edit applied to ${count} photos (including whole events)${inheritedNote}.${mergeNote}`
                         )
                 });
+            };
+
+            const applyClusterNames = (keys, value, level) => {
+                const keySet = new Set(keys);
+                setPhotos((previous) => previous.map((photo) => {
+                    const key = level === 'trips'
+                        ? (photo.aiData?.tripId || photo.aiData?.clusterId)
+                        : photo.aiData?.clusterId;
+                    if (!keySet.has(key)) return photo;
+
+                    const currentName = photo.aiData?.event_name || '';
+                    const eventName = buildEventNameForNaming(currentName, value, level === 'trips' ? 'trips' : 'stops');
+                    const nextAiData = {
+                        ...photo.aiData,
+                        event_name: eventName,
+                        eventNameSource: 'manual'
+                    };
+                    if (level === 'trips') nextAiData.tripNameSource = 'manual';
+                    else if (photo.aiData?.eventKind === 'trip-stop') nextAiData.stopNameSource = 'manual';
+                    else nextAiData.tripNameSource = 'manual';
+
+                    return { ...photo, aiData: nextAiData };
+                }));
+            };
+
+            const applyClusterLocation = (keys, value, level) => {
+                const keySet = new Set(keys);
+                setPhotos((previous) => previous.map((photo) => {
+                    const key = level === 'trips'
+                        ? (photo.aiData?.tripId || photo.aiData?.clusterId)
+                        : photo.aiData?.clusterId;
+                    if (!keySet.has(key)) return photo;
+
+                    const oldLocation = photo.hardData?.location;
+                    const nextHardData = {
+                        ...(photo.hardData || {}),
+                        location: value,
+                        locationKey: normalizeLocationName(value),
+                        locationSource: 'manual',
+                        coords: null
+                    };
+                    const nextAiData = { ...photo.aiData };
+                    let tags = (nextAiData.tags || []).filter((tag) => tag !== oldLocation && tag !== 'Neznámé místo' && tag !== '#Neznámé místo');
+                    tags.push(value);
+                    nextAiData.tags = [...new Set(tags)];
+
+                    if (nextAiData.eventNameSource === 'placeholder' && isPlaceholderEventName(nextAiData.event_name || '')) {
+                        const parentParts = (nextAiData.event_name || '').split('/').slice(0, -1).map(cleanEventName).filter(Boolean);
+                        if (nextAiData.eventKind === 'trip') {
+                            nextAiData.event_name = `Trip ${nextAiData.tripNumber || 1} - ${value}`;
+                        } else if (nextAiData.eventKind === 'trip-stop') {
+                            nextAiData.event_name = [...parentParts, buildPlaceholderStopName((nextAiData.stopNumber || 1) - 1, value)].join('/');
+                        } else if (nextAiData.eventKind !== 'home') {
+                            nextAiData.event_name = [...parentParts, buildPlaceholderEventName((nextAiData.clusterNumber || 1) - 1, value)].join('/');
+                        }
+                    }
+
+                    return { ...photo, hardData: nextHardData, aiData: nextAiData };
+                }));
+            };
+
+            const editTripWindowFromGroup = (group) => {
+                const start = group.tripStart || new Date(group.first).getTime();
+                const end = group.tripEnd || new Date(group.last).getTime();
+                const format = (value) => {
+                    const date = new Date(value);
+                    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+                };
+                setTripModal({
+                    isOpen: true,
+                    start: format(start),
+                    end: format(end),
+                    name: group.name || '',
+                    location: group.location || ''
+                });
+                setShowClusterReview(false);
             };
 
             const filteredPhotos = useMemo(() => {
@@ -3692,6 +3891,20 @@ DATA: ${JSON.stringify(data)}`;
                                         <button onClick={runPhase2} disabled={isGrouping} className="w-full bg-rose-600 p-2 rounded text-xs text-white hover:bg-rose-500 disabled:bg-slate-700 disabled:cursor-wait">
                                             {isGrouping ? (progress || t('⏳ Seskupuji...', '⏳ Grouping...')) : t('📸 Seskupit fotky', '📸 Group Photos')}
                                         </button>
+
+                                        <button onClick={openTripModal} className="w-full bg-slate-800 p-2 rounded text-xs text-slate-200 hover:bg-slate-700 border border-slate-700">
+                                            📅 {t('Ručně vytvořit cestu (datumové okno)', 'Manual trip window')}
+                                        </button>
+                                        <div className="text-[9px] text-slate-500">
+                                            {t('Vytvoří jednu složku cesty ze všech fotek v zadaném datovém rozsahu (např. 2.5.–8.5.).', 'Creates one trip folder from all photos in a date range (e.g. 2 May–8 May).')}
+                                        </div>
+
+                                        <button onClick={() => setShowClusterReview(true)} disabled={photos.length === 0} className="w-full bg-slate-800 p-2 rounded text-xs text-slate-200 hover:bg-slate-700 border border-slate-700 disabled:opacity-50">
+                                            📊 {t('Zkontrolovat shluky (heatmapa)', 'Review clusters (heatmap)')}
+                                        </button>
+                                        <div className="text-[9px] text-slate-500">
+                                            {t('Zobrazí clustery v čase/mapě. Kliknutím vyberete cluster a hned ho pojmenujete nebo mu nastavíte lokaci.', 'Shows clusters over time/map. Click a cluster to name it or set its location immediately.')}
+                                        </div>
                                     </div>
 
                                     <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 space-y-2">
@@ -3946,6 +4159,56 @@ DATA: ${JSON.stringify(data)}`;
                         </div>
                     )}
 
+                    {showClusterReview && (
+                        <ClusterReviewModal
+                            photos={photos}
+                            t={t}
+                            lang={lang}
+                            lastClusterSettings={lastClusterSettings}
+                            onClose={() => setShowClusterReview(false)}
+                            onApplyName={applyClusterNames}
+                            onApplyLocation={applyClusterLocation}
+                            onEditTripWindow={editTripWindowFromGroup}
+                        />
+                    )}
+
+                    {tripModal.isOpen && (
+                        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[80] p-4">
+                            <div className="bg-slate-900 p-6 rounded-xl border border-slate-700 w-full max-w-md shadow-2xl">
+                                <div className="font-bold mb-1 text-lg">📅 {t('Ruční cesta', 'Manual trip')}</div>
+                                <div className="text-xs text-slate-400 mb-4">
+                                    {t('Vytvoří jednu složku cesty ze všech fotek v zadaném rozsahu. Vhodné, když automatické seskupení cestu rozdělí.', 'Creates one trip folder from all photos in the range. Useful when automatic grouping splits a trip.')}
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3 mb-3">
+                                    <div>
+                                        <div className="text-[10px] text-slate-500 uppercase mb-1">{t('Od', 'From')}</div>
+                                        <input type="date" value={tripModal.start} onChange={(event) => setTripModal({ ...tripModal, start: event.target.value })} className="w-full bg-slate-800 p-2 rounded text-white border border-slate-700" />
+                                    </div>
+                                    <div>
+                                        <div className="text-[10px] text-slate-500 uppercase mb-1">{t('Do', 'To')}</div>
+                                        <input type="date" value={tripModal.end} onChange={(event) => setTripModal({ ...tripModal, end: event.target.value })} className="w-full bg-slate-800 p-2 rounded text-white border border-slate-700" />
+                                    </div>
+                                </div>
+
+                                <div className="mb-3">
+                                    <div className="text-[10px] text-slate-500 uppercase mb-1">{t('Název cesty', 'Trip name')}</div>
+                                    <input type="text" value={tripModal.name} onChange={(event) => setTripModal({ ...tripModal, name: event.target.value })} placeholder={t('např. Dovolená Chorvatsko', 'e.g. Croatia vacation')} className="w-full bg-slate-800 p-2 rounded text-white border border-slate-700" autoFocus />
+                                </div>
+
+                                <div className="mb-5">
+                                    <div className="text-[10px] text-slate-500 uppercase mb-1">{t('Lokace (volitelné)', 'Location (optional)')}</div>
+                                    <input type="text" value={tripModal.location} onChange={(event) => setTripModal({ ...tripModal, location: event.target.value })} placeholder={t('např. Pag, Chorvatsko', 'e.g. Pag, Croatia')} className="w-full bg-slate-800 p-2 rounded text-white border border-slate-700" />
+                                </div>
+
+                                <div className="flex justify-end gap-3">
+                                    <button onClick={() => setTripModal({ isOpen: false, start: '', end: '', name: '', location: '' })} className="px-4 py-2 text-sm text-slate-400 hover:text-white">{t('Zrušit', 'Cancel')}</button>
+                                    <button onClick={applyManualTrip} className="px-6 py-2 bg-orange-600 hover:bg-orange-500 rounded font-bold text-sm text-white shadow-lg transition-colors">{t('Vytvořit cestu', 'Create trip')}</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {showTinder && (
                         <div className="fixed inset-0 bg-black/95 z-[100] flex flex-col">
                             <div className="p-6 text-white flex justify-between items-center bg-gradient-to-b from-black to-transparent">
@@ -4045,6 +4308,384 @@ DATA: ${JSON.stringify(data)}`;
                 </div>
             );
         };
+
+        const ClusterReviewModal = ({
+            photos,
+            t,
+            lang,
+            lastClusterSettings,
+            onClose,
+            onApplyName,
+            onApplyLocation,
+            onEditTripWindow
+        }) => {
+            const [level, setLevel] = useState('trips');
+            const [tab, setTab] = useState('timeline');
+            const [selectedKeys, setSelectedKeys] = useState(() => new Set());
+            const [name, setName] = useState('');
+            const [location, setLocation] = useState('');
+            const [hover, setHover] = useState(null);
+            const timelineRef = useRef(null);
+            const mapRef = useRef(null);
+
+            const groups = useMemo(() => {
+                const map = new Map();
+                photos.forEach((photo) => {
+                    if (isScreenshotCategory(photo.aiData?.category)) return;
+                    const key = level === 'trips'
+                        ? (photo.aiData?.tripId || photo.aiData?.clusterId)
+                        : photo.aiData?.clusterId;
+                    if (!key) return;
+                    let group = map.get(key);
+                    if (!group) {
+                        group = {
+                            key,
+                            photos: [],
+                            first: photo.date,
+                            last: photo.date,
+                            names: new Map(),
+                            locations: new Map(),
+                            kinds: new Map(),
+                            dayCounts: new Map(),
+                            tripStart: photo.aiData?.tripStart || null,
+                            tripEnd: photo.aiData?.tripEnd || null,
+                            eventKind: photo.aiData?.eventKind || 'misc'
+                        };
+                        map.set(key, group);
+                    }
+                    group.photos.push(photo);
+                    if (photo.date < group.first) group.first = photo.date;
+                    if (photo.date > group.last) group.last = photo.date;
+                    if (photo.aiData?.tripStart && (!group.tripStart || photo.aiData.tripStart < group.tripStart)) group.tripStart = photo.aiData.tripStart;
+                    if (photo.aiData?.tripEnd && (!group.tripEnd || photo.aiData.tripEnd > group.tripEnd)) group.tripEnd = photo.aiData.tripEnd;
+                    if (photo.aiData?.eventKind) group.eventKind = photo.aiData.eventKind;
+                    const photoName = photo.aiData?.event_name || '';
+                    if (photoName) group.names.set(photoName, (group.names.get(photoName) || 0) + 1);
+                    const photoLocation = photo.hardData?.location;
+                    if (photoLocation && photoLocation !== 'Neznámé místo') group.locations.set(photoLocation, (group.locations.get(photoLocation) || 0) + 1);
+                    const kind = getPhotoKind(photo);
+                    group.kinds.set(kind, (group.kinds.get(kind) || 0) + 1);
+                    const day = dateKey(photo.date);
+                    if (day) group.dayCounts.set(day, (group.dayCounts.get(day) || 0) + 1);
+                });
+
+                return [...map.values()]
+                    .map((group) => {
+                        const nameEntry = [...group.names.entries()].sort((a, b) => b[1] - a[1])[0];
+                        const locationEntry = [...group.locations.entries()].sort((a, b) => b[1] - a[1])[0];
+                        const kindEntry = [...group.kinds.entries()].sort((a, b) => b[1] - a[1])[0];
+                        return {
+                            ...group,
+                            name: nameEntry ? nameEntry[0] : t('Bez názvu', 'Unnamed'),
+                            location: locationEntry ? locationEntry[0] : '',
+                            kind: kindEntry ? kindEntry[0] : 'misc',
+                            color: colorForKey(group.key)
+                        };
+                    })
+                    .sort((a, b) => a.first - b.first);
+            }, [photos, level, t]);
+
+            const bounds = useMemo(() => {
+                if (groups.length === 0) return null;
+                const minDate = Math.min(...groups.map((group) => new Date(group.first).setHours(0, 0, 0, 0)));
+                const maxDate = Math.max(...groups.map((group) => new Date(group.last).setHours(0, 0, 0, 0)));
+                const dayMs = 86400000;
+                return { minDate, maxDate, spanDays: Math.max(1, Math.round((maxDate - minDate) / dayMs) + 1) };
+            }, [groups]);
+
+            const geoPoints = useMemo(() => groups.flatMap((group) => group.photos
+                .filter((photo) => photo.hardData?.coords && Number.isFinite(photo.hardData.coords.lat) && Number.isFinite(photo.hardData.coords.lon))
+                .map((photo) => ({
+                    lat: photo.hardData.coords.lat,
+                    lon: photo.hardData.coords.lon,
+                    groupKey: group.key,
+                    color: group.color
+                }))), [groups]);
+
+            const geoBounds = useMemo(() => {
+                if (geoPoints.length === 0) return null;
+                const lats = geoPoints.map((point) => point.lat);
+                const lons = geoPoints.map((point) => point.lon);
+                return {
+                    minLat: Math.min(...lats),
+                    maxLat: Math.max(...lats),
+                    minLon: Math.min(...lons),
+                    maxLon: Math.max(...lons)
+                };
+            }, [geoPoints]);
+
+            useEffect(() => {
+                const selected = groups.filter((group) => selectedKeys.has(group.key));
+                if (selected.length === 1) {
+                    setName(selected[0].name);
+                    setLocation(selected[0].location || '');
+                } else {
+                    setName('');
+                    setLocation('');
+                }
+            }, [selectedKeys, groups]);
+
+            useEffect(() => {
+                if (tab !== 'timeline' || !timelineRef.current || !bounds || groups.length === 0) return;
+                const canvas = timelineRef.current;
+                const ctx = canvas.getContext('2d');
+                const left = 190;
+                const right = 12;
+                const top = 8;
+                const rowHeight = 22;
+                const width = 980;
+                const height = top + groups.length * rowHeight + 24;
+                const dpr = window.devicePixelRatio || 1;
+
+                canvas.style.width = `${width}px`;
+                canvas.style.height = `${height}px`;
+                canvas.width = Math.round(width * dpr);
+                canvas.height = Math.round(height * dpr);
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+                ctx.fillStyle = '#0f172a';
+                ctx.fillRect(0, 0, width, height);
+
+                const dayWidth = Math.max(2, (width - left - right) / bounds.spanDays);
+                const days = [...new Set(groups.flatMap((group) => [...group.dayCounts.keys()]))].sort();
+                ctx.font = '9px sans-serif';
+                ctx.fillStyle = '#64748b';
+                days.forEach((day, index) => {
+                    if (index % Math.max(1, Math.floor(days.length / 10)) !== 0) return;
+                    const x = left + Math.round((new Date(`${day}T00:00:00`).getTime() - bounds.minDate) / 86400000) * dayWidth;
+                    ctx.save();
+                    ctx.translate(x + 2, height - 6);
+                    ctx.rotate(-Math.PI / 4);
+                    ctx.fillText(day.slice(5), 0, 0);
+                    ctx.restore();
+                });
+
+                groups.forEach((group, row) => {
+                    const y = top + row * rowHeight;
+                    const selected = selectedKeys.has(group.key);
+                    ctx.fillStyle = selected ? 'rgba(249, 115, 22, 0.18)' : (row % 2 === 0 ? 'rgba(30, 41, 59, 0.55)' : 'rgba(15, 23, 42, 0.35)');
+                    ctx.fillRect(0, y, width, rowHeight);
+                    ctx.fillStyle = group.color;
+                    ctx.font = '10px sans-serif';
+                    const label = `${group.name} (${group.photos.length})`;
+                    ctx.fillText(label.length > 28 ? `${label.slice(0, 27)}…` : label, 6, y + 14);
+                    group.dayCounts.forEach((count, day) => {
+                        const offset = Math.round((new Date(`${day}T00:00:00`).getTime() - bounds.minDate) / 86400000);
+                        const x = left + offset * dayWidth;
+                        const ratio = Math.min(1, count / 20);
+                        ctx.globalAlpha = 0.25 + ratio * 0.75;
+                        ctx.fillStyle = group.color;
+                        ctx.fillRect(x, y + 3, Math.max(1, dayWidth - 0.5), rowHeight - 6);
+                        ctx.globalAlpha = 1;
+                    });
+                });
+            }, [tab, groups, bounds, selectedKeys]);
+
+            useEffect(() => {
+                if (tab !== 'map' || !mapRef.current) return;
+                const canvas = mapRef.current;
+                const ctx = canvas.getContext('2d');
+                const width = 860;
+                const height = 440;
+                const padding = 34;
+                const dpr = window.devicePixelRatio || 1;
+
+                canvas.style.width = `${width}px`;
+                canvas.style.height = `${height}px`;
+                canvas.width = Math.round(width * dpr);
+                canvas.height = Math.round(height * dpr);
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+                ctx.fillStyle = '#0f172a';
+                ctx.fillRect(0, 0, width, height);
+                if (!geoBounds) return;
+
+                const lonSpan = Math.max(0.0001, geoBounds.maxLon - geoBounds.minLon);
+                const latSpan = Math.max(0.0001, geoBounds.maxLat - geoBounds.minLat);
+                const midLat = (geoBounds.minLat + geoBounds.maxLat) / 2;
+                const lonScale = Math.cos((midLat * Math.PI) / 180);
+                const spanX = lonSpan * lonScale;
+                const spanY = latSpan;
+                const scale = Math.min((width - 2 * padding) / spanX, (height - 2 * padding) / spanY);
+                const offsetX = (width - spanX * scale) / 2;
+                const offsetY = (height - spanY * scale) / 2;
+                const project = (lat, lon) => [
+                    offsetX + (lon - geoBounds.minLon) * lonScale * scale,
+                    height - offsetY - (lat - geoBounds.minLat) * scale
+                ];
+
+                ctx.strokeStyle = 'rgba(71, 85, 105, 0.35)';
+                for (let i = 0; i <= 8; i += 1) {
+                    const x = padding + ((width - 2 * padding) * i) / 8;
+                    const y = padding + ((height - 2 * padding) * i) / 8;
+                    ctx.beginPath(); ctx.moveTo(x, padding); ctx.lineTo(x, height - padding); ctx.stroke();
+                    ctx.beginPath(); ctx.moveTo(padding, y); ctx.lineTo(width - padding, y); ctx.stroke();
+                }
+
+                geoPoints.forEach((point) => {
+                    const [x, y] = project(point.lat, point.lon);
+                    ctx.fillStyle = point.color;
+                    ctx.globalAlpha = selectedKeys.has(point.groupKey) ? 0.95 : 0.45;
+                    ctx.beginPath();
+                    ctx.arc(x, y, selectedKeys.has(point.groupKey) ? 3.5 : 2, 0, Math.PI * 2);
+                    ctx.fill();
+                });
+                ctx.globalAlpha = 1;
+                ctx.fillStyle = '#94a3b8';
+                ctx.font = '10px sans-serif';
+                ctx.fillText(`${geoPoints.length} ${t('fotek s polohou', 'photos with location')}`, width - 150, 18);
+            }, [tab, geoPoints, geoBounds, selectedKeys, t]);
+
+            const toggleGroup = (key) => {
+                setSelectedKeys((previous) => {
+                    const next = new Set(previous);
+                    if (next.has(key)) next.delete(key);
+                    else next.add(key);
+                    return next;
+                });
+            };
+
+            const handleTimelineClick = (event) => {
+                if (!timelineRef.current || groups.length === 0) return;
+                const rect = timelineRef.current.getBoundingClientRect();
+                const y = event.clientY - rect.top - 8;
+                const row = Math.floor(y / 22);
+                if (row < 0 || row >= groups.length) return;
+                toggleGroup(groups[row].key);
+            };
+
+            const handleMapClick = (event) => {
+                if (!mapRef.current || geoPoints.length === 0 || !geoBounds) return;
+                const rect = mapRef.current.getBoundingClientRect();
+                const x = event.clientX - rect.left;
+                const y = event.clientY - rect.top;
+                const width = 860;
+                const height = 440;
+                const padding = 34;
+                const lonSpan = Math.max(0.0001, geoBounds.maxLon - geoBounds.minLon);
+                const latSpan = Math.max(0.0001, geoBounds.maxLat - geoBounds.minLat);
+                const midLat = (geoBounds.minLat + geoBounds.maxLat) / 2;
+                const lonScale = Math.cos((midLat * Math.PI) / 180);
+                const spanX = lonSpan * lonScale;
+                const spanY = latSpan;
+                const scale = Math.min((width - 2 * padding) / spanX, (height - 2 * padding) / spanY);
+                const offsetX = (width - spanX * scale) / 2;
+                const offsetY = (height - spanY * scale) / 2;
+                let best = null;
+                geoPoints.forEach((point) => {
+                    const px = offsetX + (point.lon - geoBounds.minLon) * lonScale * scale;
+                    const py = height - offsetY - (point.lat - geoBounds.minLat) * scale;
+                    const distance = Math.hypot(px - x, py - y);
+                    if (distance < 10 && (!best || distance < best.distance)) best = { point, distance };
+                });
+                if (best) toggleGroup(best.point.groupKey);
+            };
+
+            const selectedGroups = groups.filter((group) => selectedKeys.has(group.key));
+            const apply = () => {
+                if (selectedKeys.size === 0) return;
+                if (name.trim()) onApplyName([...selectedKeys], name.trim(), level);
+                if (location.trim()) onApplyLocation([...selectedKeys], location.trim(), level);
+            };
+
+            return (
+                <div className="fixed inset-0 bg-black/85 z-[125] flex items-center justify-center p-4" onClick={onClose}>
+                    <div className="bg-slate-900 border border-slate-700 rounded-xl w-full max-w-6xl max-h-[92vh] overflow-y-auto custom-scrollbar p-5" onClick={(event) => event.stopPropagation()}>
+                        <div className="flex items-start justify-between gap-4 mb-4">
+                            <div>
+                                <div className="text-lg font-bold text-orange-400">{t('Kontrola shluků na heatmapě', 'Cluster heatmap review')}</div>
+                                <div className="text-[11px] text-slate-500">
+                                    {t('Klikněte na řádek nebo bod a pojmenujte cluster. Název i lokace se aplikují na celý vybraný cluster.', 'Click a row or point, then name the cluster. Name and location apply to the whole selected cluster.')}
+                                </div>
+                            </div>
+                            <button onClick={onClose} className="text-slate-500 hover:text-white text-2xl leading-none">&times;</button>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2 mb-3">
+                            <div className="flex bg-slate-950 border border-slate-800 rounded-full p-0.5">
+                                <button onClick={() => { setLevel('trips'); setSelectedKeys(new Set()); }} className={`px-3 py-1 rounded-full text-xs font-bold ${level === 'trips' ? 'bg-orange-600 text-white' : 'text-slate-400'}`}>{t('Cesty', 'Trips')}</button>
+                                <button onClick={() => { setLevel('stops'); setSelectedKeys(new Set()); }} className={`px-3 py-1 rounded-full text-xs font-bold ${level === 'stops' ? 'bg-orange-600 text-white' : 'text-slate-400'}`}>{t('Zastávky / události', 'Stops / events')}</button>
+                            </div>
+                            <div className="flex bg-slate-950 border border-slate-800 rounded-full p-0.5">
+                                <button onClick={() => setTab('timeline')} className={`px-3 py-1 rounded-full text-xs font-bold ${tab === 'timeline' ? 'bg-cyan-700 text-white' : 'text-slate-400'}`}>{t('Časová heatmapa', 'Time heatmap')}</button>
+                                <button onClick={() => setTab('map')} className={`px-3 py-1 rounded-full text-xs font-bold ${tab === 'map' ? 'bg-cyan-700 text-white' : 'text-slate-400'}`}>{t('Mapa', 'Map')}</button>
+                            </div>
+                            <div className="text-[10px] text-slate-500">
+                                {lastClusterSettings?.profile === 'trips'
+                                    ? t(`Cesty: ${lastClusterSettings.trip?.heatmapRadiusDays ?? 2} dny okno / ${lastClusterSettings.trip?.maxInactiveDays ?? 1} dny bez fotek`, `Trips: ${lastClusterSettings.trip?.heatmapRadiusDays ?? 2} day window / ${lastClusterSettings.trip?.maxInactiveDays ?? 1} rest days`)
+                                    : t('Citlivost: podle aktuálního nastavení.', 'Sensitivity: current settings.')}
+                            </div>
+                        </div>
+
+                        <div className="grid lg:grid-cols-[1fr_280px] gap-4">
+                            <div className="min-w-0">
+                                {tab === 'timeline' ? (
+                                    <div className="max-h-[55vh] overflow-auto custom-scrollbar border border-slate-800 rounded-lg p-2 bg-slate-950">
+                                        <canvas ref={timelineRef} onClick={handleTimelineClick} className="cursor-pointer" />
+                                    </div>
+                                ) : (
+                                    <div className="max-h-[55vh] overflow-auto custom-scrollbar border border-slate-800 rounded-lg p-2 bg-slate-950">
+                                        {geoPoints.length === 0 ? (
+                                            <div className="text-sm text-slate-500 p-4">{t('Žádné fotky s GPS/Timeline souřadnicemi.', 'No photos with GPS/Timeline coordinates.')}</div>
+                                        ) : (
+                                            <canvas ref={mapRef} onClick={handleMapClick} className="cursor-pointer" />
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="border border-slate-800 rounded-lg p-2 bg-slate-950 max-h-[55vh] overflow-y-auto custom-scrollbar">
+                                {groups.length === 0 && <div className="text-[11px] text-slate-600 p-2">{t('Nejprve spusťte fázi 2.', 'Run Phase 2 first.')}</div>}
+                                {groups.map((group) => (
+                                    <button
+                                        key={group.key}
+                                        onClick={() => toggleGroup(group.key)}
+                                        className={`w-full text-left px-2 py-1.5 rounded mb-1 border transition-colors ${selectedKeys.has(group.key) ? 'border-orange-500 bg-orange-950/40' : 'border-transparent hover:bg-slate-800/70'}`}
+                                    >
+                                        <div className="flex items-center gap-2 text-[11px] text-slate-300">
+                                            <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: group.color }} />
+                                            <span className="truncate flex-1">{group.name}</span>
+                                            <span className="text-slate-500">{group.photos.length}</span>
+                                        </div>
+                                        <div className="text-[9px] text-slate-600 mt-0.5">
+                                            {new Date(group.first).toLocaleDateString(lang === 'cs' ? 'cs-CZ' : 'en-US')} – {new Date(group.last).toLocaleDateString(lang === 'cs' ? 'cs-CZ' : 'en-US')}
+                                            {group.location ? ` · ${group.location}` : ''}
+                                        </div>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="mt-4 border-t border-slate-800 pt-4 flex flex-wrap items-end gap-3">
+                            <div className="text-xs text-slate-400 min-w-[110px]">
+                                {selectedKeys.size} {t('vybráno', 'selected')}
+                            </div>
+                            <div className="flex-1 min-w-[160px]">
+                                <div className="text-[10px] text-slate-500 uppercase mb-1">{t('Název clusteru', 'Cluster name')}</div>
+                                <input type="text" value={name} onChange={(event) => setName(event.target.value)} placeholder={t('např. Dovolená Chorvatsko', 'e.g. Croatia vacation')} className="w-full bg-slate-800 p-2 rounded text-sm text-white border border-slate-700" />
+                            </div>
+                            <div className="flex-1 min-w-[160px]">
+                                <div className="text-[10px] text-slate-500 uppercase mb-1">{t('Lokace (volitelné)', 'Location (optional)')}</div>
+                                <input type="text" value={location} onChange={(event) => setLocation(event.target.value)} placeholder={t('např. Pag, Chorvatsko', 'e.g. Pag, Croatia')} className="w-full bg-slate-800 p-2 rounded text-sm text-white border border-slate-700" />
+                            </div>
+                            <button onClick={apply} disabled={selectedKeys.size === 0 || (!name.trim() && !location.trim())} className="px-4 py-2 bg-orange-600 hover:bg-orange-500 disabled:bg-slate-700 rounded font-bold text-sm text-white">
+                                {t('Aplikovat na výběr', 'Apply to selection')}
+                            </button>
+                            <button onClick={() => setSelectedKeys(new Set(groups.map((group) => group.key)))} className="px-3 py-2 bg-slate-800 hover:bg-slate-700 rounded text-xs text-slate-300">
+                                {t('Vybrat vše', 'Select all')}
+                            </button>
+                            <button onClick={() => setSelectedKeys(new Set())} className="px-3 py-2 bg-slate-800 hover:bg-slate-700 rounded text-xs text-slate-300">
+                                {t('Zrušit výběr', 'Clear')}
+                            </button>
+                            {selectedGroups.length === 1 && level === 'trips' && (
+                                <button onClick={() => onEditTripWindow(selectedGroups[0])} className="px-3 py-2 bg-cyan-800 hover:bg-cyan-700 rounded text-xs text-white">
+                                    📅 {t('Upravit datumové okno', 'Edit trip window')}
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);

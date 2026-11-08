@@ -136,6 +136,29 @@ Added after the first checkpoint:
   - Root Timeline covers July–October 2026, while Croatia is 2–8 May 2026, so no Timeline locations exist for it.
   - Result after the fixes: **1 screenshot/clutter group + 1 `Trip 1` folder (262 photos, flat)**.
 
+### Fifth pass - whole-trip density, manual trip window, cluster review heatmap
+
+- **All-photo density episodes**:
+  - Trip episodes are now built from **all normal photos**, not only located/away photos.
+  - If only a few photos have a location, the unknown photos in the same density episode stay in the trip instead of becoming separate events.
+  - A trip needs at least `minPoints` located photos before stop subfolders are attempted; otherwise it becomes one flat `Trip N` folder.
+- **Manual location propagates across the whole trip**:
+  - `tripId`, `tripStart` and `tripEnd` are stored on every trip photo.
+  - A bulk location edit now applies to every photo with the same `tripId`, not just the same stop/cluster or the 12-hour neighbourhood.
+  - A flat trip placeholder is renamed to `Trip N - location`.
+- **Manual trip window**:
+  - New “📅 Manual trip window” action. Select photos (or use the full range), set From/To dates, a name and an optional location.
+  - It creates one trip folder from all photos in the window; this is the explicit escape hatch for “we know Croatia was 2 May–8 May”.
+- **Cluster review heatmap**:
+  - New “📊 Review clusters (heatmap)” action in Phase 2.
+  - Time heatmap: one row per cluster, columns are days, colour intensity = photos per day. Click a row to select.
+  - Map view: photos/clusters coloured by cluster; click a point to select.
+  - Sidebar lists clusters with counts and dates. Select one or more, set a name and/or location, and apply to the whole selection.
+  - Single selected trip also exposes “Edit trip window”.
+- **Screenshot/Clutter** remains a separate `Screenshot-Clutter` group and is excluded from trip/stop clustering.
+- **TODO**:
+  - Created `TODO.md` with: Location Tinder, Ko-fi profile rework, Vercel issues, project picker, Vite build, real-world Timeline coverage and test coverage.
+
 ### Known limitations / next steps
 
 1. **Timeline coverage matters** - if the Timeline JSON does not cover the photo dates (for example Croatia May 2026 vs a July–October Timeline), those photos have no location. They will be grouped by density into one flat trip folder without stops. Import a Timeline covering those dates for location names/stops.

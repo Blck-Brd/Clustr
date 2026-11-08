@@ -102,6 +102,13 @@ try {
     assert.ok(afterScrollTiles < 120, `Gallery should stay virtualized after scrolling (${afterScrollTiles}/120)`);
     console.log(`Virtualized gallery after scroll: ${afterScrollTiles}/120 tiles rendered`);
 
+    // Cluster review heatmap opens and renders without runtime errors.
+    await page.getByRole('button', { name: /Zkontrolovat shluky|Review clusters/ }).click();
+    await page.getByText(/Kontrola shluků na heatmapě|Cluster heatmap review/).waitFor({ timeout: 10000 });
+    assert.ok(await page.getByText(/Nejprve spusťte fázi 2|Run Phase 2 first/).count() > 0, 'Cluster review should explain that Phase 2 is required');
+    await page.getByRole('button', { name: '×' }).click();
+    console.log('Cluster review heatmap: OK');
+
     // Clean state: reset clears photos/folders and skips the Timeline auto-load once.
     page.once('dialog', (dialog) => dialog.accept());
     await page.getByRole('button', { name: '🧹' }).click();
