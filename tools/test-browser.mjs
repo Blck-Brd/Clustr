@@ -9,10 +9,7 @@ import { chromium } from 'playwright';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const port = 4175;
 const baseUrl = `http://127.0.0.1:${port}/`;
-const smallPng = Buffer.from(
-    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
-    'base64'
-);
+const smallJpg = Buffer.from('/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==', 'base64');
 
 const waitForServer = async () => {
     for (let attempt = 0; attempt < 50; attempt += 1) {
@@ -27,7 +24,7 @@ const waitForServer = async () => {
 
 const photoDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clustr-photos-'));
 for (let index = 0; index < 120; index += 1) {
-    fs.writeFileSync(path.join(photoDir, `photo-${String(index).padStart(3, '0')}.png`), smallPng);
+    fs.writeFileSync(path.join(photoDir, `photo-${String(index).padStart(3, '0')}.jpg`), smallJpg);
 }
 
 const server = spawn(process.execPath, [path.join(root, 'tools', 'serve.mjs')], {
@@ -102,12 +99,31 @@ try {
     assert.ok(afterScrollTiles < 120, `Gallery should stay virtualized after scrolling (${afterScrollTiles}/120)`);
     console.log(`Virtualized gallery after scroll: ${afterScrollTiles}/120 tiles rendered`);
 
-    // Cluster review heatmap opens and renders without runtime errors.
+    // Cluster review heatmap: empty state before Phase 2.
     await page.getByRole('button', { name: /Zkontrolovat shluky|Review clusters/ }).click();
     await page.getByText(/Kontrola shluků na heatmapě|Cluster heatmap review/).waitFor({ timeout: 10000 });
     assert.ok(await page.getByText(/Nejprve spusťte fázi 2|Run Phase 2 first/).count() > 0, 'Cluster review should explain that Phase 2 is required');
     await page.getByRole('button', { name: '×' }).click();
-    console.log('Cluster review heatmap: OK');
+    console.log('Cluster review empty state: OK');
+
+    // Run Phase 2 and verify clusters appear in the heatmap review.
+    await page.getByRole('button', { name: /Seskupit fotky|Group Photos/ }).click();
+    await page.getByText(/Seskupeno|Grouped/).waitFor({ timeout: 60000 });
+    await page.getByRole('button', { name: 'OK', exact: true }).click();
+    await page.getByRole('button', { name: /Zkontrolovat shluky|Review clusters/ }).click();
+    await page.getByText(/Kontrola shluků na heatmapě|Cluster heatmap review/).waitFor({ timeout: 10000 });
+    await page.locator('[data-cluster-group]').first().waitFor({ timeout: 10000 });
+    const reviewGroups = await page.locator('[data-cluster-group]').count();
+    assert.ok(reviewGroups > 0, 'Cluster review should show clusters after Phase 2');
+    const canvasSize = await page.locator('[data-cluster-review-canvas="timeline"]').evaluate((canvas) => ({ width: canvas.width, height: canvas.height }));
+    assert.ok(canvasSize.width > 0 && canvasSize.height > 0, 'Cluster heatmap canvas should have a size');
+    await page.locator('[data-cluster-group]').first().click();
+    await page.locator('[data-review-name]').fill('Test Trip');
+    await page.locator('[data-review-apply]').click();
+    await page.waitForTimeout(600);
+    assert.ok(await page.getByText('Test Trip', { exact: false }).count() > 0, 'Renamed cluster should appear in the review list');
+    await page.getByRole('button', { name: '×' }).click();
+    console.log('Cluster review with clusters: OK');
 
     // Clean state: reset clears photos/folders and skips the Timeline auto-load once.
     page.once('dialog', (dialog) => dialog.accept());

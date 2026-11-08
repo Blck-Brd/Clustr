@@ -154,7 +154,9 @@ Added after the first checkpoint:
   - Time heatmap: one row per cluster, columns are days, colour intensity = photos per day. Click a row to select.
   - Map view: photos/clusters coloured by cluster; click a point to select.
   - Sidebar lists clusters with counts and dates. Select one or more, set a name and/or location, and apply to the whole selection.
-  - Single selected trip also exposes “Edit trip window”.
+  - Single selected trip also exposes "Edit trip window".
+  - If no clusters are available, the modal shows a diagnostic empty state with photo/cluster/clutter counts and a reminder to run Phase 2.
+  - Playwright now runs Phase 2 with synthetic photos, verifies the heatmap canvas and group list, and renames a cluster through the review UI.
 - **Screenshot/Clutter** remains a separate `Screenshot-Clutter` group and is excluded from trip/stop clustering.
 - **TODO**:
   - Created `TODO.md` with: Location Tinder, Ko-fi profile rework, Vercel issues, project picker, Vite build, real-world Timeline coverage and test coverage.

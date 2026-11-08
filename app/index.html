@@ -1864,6 +1864,21 @@
             return null;
         };
 
+        const KIND_COLORS = {
+            trip: '#0891b2',
+            home: '#10b981',
+            screenshot: '#64748b',
+            misc: '#f59e0b'
+        };
+
+        const getPhotoKind = (photo) => {
+            if (isScreenshotCategory(photo.aiData?.category)) return 'screenshot';
+            const kind = photo.aiData?.eventKind;
+            if (kind === 'trip' || kind === 'trip-stop') return 'trip';
+            if (kind === 'home') return 'home';
+            return 'misc';
+        };
+
         const colorForKey = (key) => {
             let hash = 0;
             for (let i = 0; i < key.length; i += 1) hash = (hash * 31 + key.charCodeAt(i)) % 360;
@@ -4332,9 +4347,10 @@ DATA: ${JSON.stringify(data)}`;
                 const map = new Map();
                 photos.forEach((photo) => {
                     if (isScreenshotCategory(photo.aiData?.category)) return;
+                    const eventName = photo.aiData?.event_name;
                     const key = level === 'trips'
-                        ? (photo.aiData?.tripId || photo.aiData?.clusterId)
-                        : photo.aiData?.clusterId;
+                        ? (photo.aiData?.tripId || photo.aiData?.clusterId || (eventName ? `event:${eventName}` : null))
+                        : (photo.aiData?.clusterId || (eventName ? `event:${eventName}` : null));
                     if (!key) return;
                     let group = map.get(key);
                     if (!group) {
@@ -4384,6 +4400,12 @@ DATA: ${JSON.stringify(data)}`;
                     })
                     .sort((a, b) => a.first - b.first);
             }, [photos, level, t]);
+
+            const reviewStats = useMemo(() => ({
+                total: photos.length,
+                clustered: photos.filter((photo) => photo.aiData?.clusterId || photo.aiData?.tripId || photo.aiData?.event_name).length,
+                clutter: photos.filter((photo) => isScreenshotCategory(photo.aiData?.category)).length
+            }), [photos]);
 
             const bounds = useMemo(() => {
                 if (groups.length === 0) return null;
@@ -4617,16 +4639,33 @@ DATA: ${JSON.stringify(data)}`;
 
                         <div className="grid lg:grid-cols-[1fr_280px] gap-4">
                             <div className="min-w-0">
-                                {tab === 'timeline' ? (
+                                {groups.length === 0 ? (
+                                    <div className="h-64 flex flex-col items-center justify-center border border-slate-800 rounded-lg bg-slate-950 p-6 text-center">
+                                        <div className="text-3xl mb-2">📊</div>
+                                        <div className="text-sm font-bold text-slate-300">{t('Žádné clustery k zobrazení', 'No clusters to show')}</div>
+                                        <div className="text-[11px] text-slate-500 mt-2">
+                                            {t(
+                                                `Fotek: ${reviewStats.total}, se clusterem: ${reviewStats.clustered}, clutter: ${reviewStats.clutter}.`,
+                                                `Photos: ${reviewStats.total}, with a cluster: ${reviewStats.clustered}, clutter: ${reviewStats.clutter}.`
+                                            )}
+                                        </div>
+                                        <div className="text-[11px] text-slate-500 mt-1 max-w-md">
+                                            {t(
+                                                'Spusťte fázi 2 (Seskupit fotky), pak heatmapu otevřete znovu. Screenshoty a clutter jsou záměrně mimo clustery.',
+                                                'Run Phase 2 (Group Photos), then reopen the heatmap. Screenshots and clutter are intentionally excluded from clusters.'
+                                            )}
+                                        </div>
+                                    </div>
+                                ) : tab === 'timeline' ? (
                                     <div className="max-h-[55vh] overflow-auto custom-scrollbar border border-slate-800 rounded-lg p-2 bg-slate-950">
-                                        <canvas ref={timelineRef} onClick={handleTimelineClick} className="cursor-pointer" />
+                                        <canvas ref={timelineRef} data-cluster-review-canvas="timeline" onClick={handleTimelineClick} className="cursor-pointer" />
                                     </div>
                                 ) : (
                                     <div className="max-h-[55vh] overflow-auto custom-scrollbar border border-slate-800 rounded-lg p-2 bg-slate-950">
                                         {geoPoints.length === 0 ? (
                                             <div className="text-sm text-slate-500 p-4">{t('Žádné fotky s GPS/Timeline souřadnicemi.', 'No photos with GPS/Timeline coordinates.')}</div>
                                         ) : (
-                                            <canvas ref={mapRef} onClick={handleMapClick} className="cursor-pointer" />
+                                            <canvas ref={mapRef} data-cluster-review-canvas="map" onClick={handleMapClick} className="cursor-pointer" />
                                         )}
                                     </div>
                                 )}
@@ -4637,6 +4676,7 @@ DATA: ${JSON.stringify(data)}`;
                                 {groups.map((group) => (
                                     <button
                                         key={group.key}
+                                        data-cluster-group={group.key}
                                         onClick={() => toggleGroup(group.key)}
                                         className={`w-full text-left px-2 py-1.5 rounded mb-1 border transition-colors ${selectedKeys.has(group.key) ? 'border-orange-500 bg-orange-950/40' : 'border-transparent hover:bg-slate-800/70'}`}
                                     >
@@ -4660,13 +4700,13 @@ DATA: ${JSON.stringify(data)}`;
                             </div>
                             <div className="flex-1 min-w-[160px]">
                                 <div className="text-[10px] text-slate-500 uppercase mb-1">{t('Název clusteru', 'Cluster name')}</div>
-                                <input type="text" value={name} onChange={(event) => setName(event.target.value)} placeholder={t('např. Dovolená Chorvatsko', 'e.g. Croatia vacation')} className="w-full bg-slate-800 p-2 rounded text-sm text-white border border-slate-700" />
+                                <input type="text" data-review-name value={name} onChange={(event) => setName(event.target.value)} placeholder={t('např. Dovolená Chorvatsko', 'e.g. Croatia vacation')} className="w-full bg-slate-800 p-2 rounded text-sm text-white border border-slate-700" />
                             </div>
                             <div className="flex-1 min-w-[160px]">
                                 <div className="text-[10px] text-slate-500 uppercase mb-1">{t('Lokace (volitelné)', 'Location (optional)')}</div>
-                                <input type="text" value={location} onChange={(event) => setLocation(event.target.value)} placeholder={t('např. Pag, Chorvatsko', 'e.g. Pag, Croatia')} className="w-full bg-slate-800 p-2 rounded text-sm text-white border border-slate-700" />
+                                <input type="text" data-review-location value={location} onChange={(event) => setLocation(event.target.value)} placeholder={t('např. Pag, Chorvatsko', 'e.g. Pag, Croatia')} className="w-full bg-slate-800 p-2 rounded text-sm text-white border border-slate-700" />
                             </div>
-                            <button onClick={apply} disabled={selectedKeys.size === 0 || (!name.trim() && !location.trim())} className="px-4 py-2 bg-orange-600 hover:bg-orange-500 disabled:bg-slate-700 rounded font-bold text-sm text-white">
+                            <button data-review-apply onClick={apply} disabled={selectedKeys.size === 0 || (!name.trim() && !location.trim())} className="px-4 py-2 bg-orange-600 hover:bg-orange-500 disabled:bg-slate-700 rounded font-bold text-sm text-white">
                                 {t('Aplikovat na výběr', 'Apply to selection')}
                             </button>
                             <button onClick={() => setSelectedKeys(new Set(groups.map((group) => group.key)))} className="px-3 py-2 bg-slate-800 hover:bg-slate-700 rounded text-xs text-slate-300">
