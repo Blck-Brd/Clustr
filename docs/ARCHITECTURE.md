@@ -25,9 +25,11 @@ docs/                Architecture, deployment and data-format notes
    - **Default profile: Trips + home.**
      - Infer home from Timeline HOME, the explicit home setting, or the location with the most distinct days (only for datasets longer than 30 days).
      - Home photos become home sessions (`Home N`), split by the home-session gap.
-     - Away photos become trips, split when the away gap exceeds the trip gap (default 72 h) or the trip exceeds the max duration.
-     - Inside each trip, run density DBSCAN to create stop subfolders: `Trip N/Stop M - location`. Stop sensitivity is Auto per trip or Manual from the UI.
-   - **Places profile:** flat spatiotemporal DBSCAN events (`Event N - location`) using Auto or manual time/space/min-photo values.
+     - Away photos become trips using a **daily density heatmap**: daily counts are smoothed (default radius 2 days), active days are those above a relative threshold, and runs are split at low-density valleys. This keeps a 2–8 May vacation together even with a rest day.
+     - If a trip has no location at all, it becomes one flat `Trip N` folder instead of many time-only stops.
+     - Inside located trips, stop detection uses a **spatiotemporal grid heatmap**: time/space bins, 3×3×3 smoothing, and connected hot cells become stop subfolders: `Trip N/Stop M - location`.
+   - **Places profile:** the same spatiotemporal grid heatmap used as flat events (`Event N - location`).
+   - Screenshots and clutter are routed to `Screenshot-Clutter` before clustering: English/Czech screenshot names, screenshot/clutter/download paths, and PNG/WebP/GIF images with no camera and no location.
    - Assign `clusterId`, `tripId`, `tripNumber`, `stopNumber`, `eventKind`, temporary names and auto tags.
    - Fill unknown locations inside a group from its dominant location.
 4. **Phase 3 - AI names**

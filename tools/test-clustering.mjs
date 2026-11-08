@@ -398,4 +398,27 @@ assert.equal(nearestMeta.location, 'Praha');
 assert.equal(nearestMeta.locationSource, 'timeline-near');
 assert.equal(fetchStats.calls, beforeFetch, 'Nearest named Timeline lookup must not call Nominatim');
 
+// Czech screenshots and location-less clutter are routed to the Screenshot-Clutter folder.
+assert.equal(h.isLikelyScreenshot({ name: 'Snímek obrazovky 2026-11-06 160029.png', hardData: { camera: 'Nikon', location: 'Praha', coords: { lat: 50, lon: 14 } }, aiData: {} }), true);
+assert.equal(h.isLikelyScreenshot({ name: 'random-image.png', hardData: { camera: 'Neznámý fotoaparát', location: 'Neznámé místo' }, aiData: {} }), true);
+assert.equal(h.isLikelyScreenshot({ name: 'DSC_0001.jpg', hardData: { camera: 'Nikon', location: 'Praha', coords: { lat: 50, lon: 14 } }, aiData: {} }), false);
+
+// A location-less 7-day vacation must become one flat trip folder, not many time events.
+const noLocationVacation = [];
+for (let day = 0; day < 7; day += 1) {
+    for (let i = 0; i < 35; i += 1) {
+        noLocationVacation.push(photo(
+            vacationStart + day * 86400000 + 9 * 3600000 + i * 10 * 60000,
+            'Neznámé místo',
+            ''
+        ));
+    }
+}
+const noLocationHierarchy = h.buildHierarchicalEvents(noLocationVacation, '', h.buildTripSettings());
+assert.equal(noLocationHierarchy.tripCount, 1);
+assert.equal(noLocationHierarchy.stopCount, 0);
+assert.equal(noLocationHierarchy.groups.length, 1);
+assert.equal(noLocationHierarchy.groups[0].eventName, 'Trip 1');
+assert.equal(noLocationHierarchy.groups[0].photos.length, noLocationVacation.length);
+
 console.log('All clustering/Timeline helper tests passed.');

@@ -114,13 +114,36 @@ Added after the first checkpoint:
   - Playwright + installed Chrome.
   - Verifies Timeline auto-load, EXIF worker response, and virtualized tile count.
 
+### Fourth pass - density heatmap clustering, clutter, clean state
+
+- **Daily density heatmap for trips/episodes**:
+  - Daily photo counts are smoothed over ±2 days.
+  - Active days use `max(1, peak × 0.15)`; runs split only at low-density valleys with at most 1 rest day.
+  - The 2–8 May location-less vacation now becomes **one `Trip 1` folder**, not ~10 time events.
+- **Spatiotemporal grid heatmap for stops**:
+  - Photos are binned by time (`epsTime/2`) and projected space (`epsSpace/2`).
+  - The grid is smoothed with a 3×3×3 neighborhood; connected hot cells become stops.
+  - This replaces the previous DBSCAN implementation while keeping the same Auto/Manual settings.
+- **Screenshot/Clutter routing**:
+  - Detects English/Czech screenshot names (`Screenshot`, `Snímek obrazovky`, `obrazovky`), `Screenshots`/clutter/download paths, and PNG/WebP/GIF files with no camera and no location.
+  - Everything goes to the `Screenshot-Clutter` folder and is excluded from trip clustering.
+- **Clean state**:
+  - Added the 🧹 reset button. It clears IndexedDB, local settings, geocode cache and cloud metadata, then reloads.
+  - The Timeline auto-load is skipped for the first reload after reset.
+  - Cloud metadata is no longer restored from Firestore; IndexedDB is the source of truth.
+- **Real Pictures dataset check**:
+  - `C:\Users\andre\Pictures`: 633 images → **371 screenshots/clutter**, 262 Croatia photos.
+  - Root Timeline covers July–October 2026, while Croatia is 2–8 May 2026, so no Timeline locations exist for it.
+  - Result after the fixes: **1 screenshot/clutter group + 1 `Trip 1` folder (262 photos, flat)**.
+
 ### Known limitations / next steps
 
-1. **Trips closer than the trip gap merge by design** - two trips without home photos and with less than `tripGapHours` between away photos become one trip. Increase/decrease the gap in manual mode if needed.
-2. **Local AI over HTTPS** - Ollama at `http://localhost:11434` may be restricted when the PWA is served from Vercel HTTPS. Use local serving / `vercel dev` for local AI.
-3. **Ollama presets** - default preset names may not be installed; the app lists installed models and preflights the selected one.
-4. **Project storage** - still one IndexedDB project; a project picker is the next storage task.
-5. **Build system** - still in-browser Babel; Vite modules are the next architecture task.
+1. **Timeline coverage matters** - if the Timeline JSON does not cover the photo dates (for example Croatia May 2026 vs a July–October Timeline), those photos have no location. They will be grouped by density into one flat trip folder without stops. Import a Timeline covering those dates for location names/stops.
+2. **Location-less trips are flat** - without GPS/Timeline coordinates there are no meaningful stop subfolders, so the whole trip is one folder.
+3. **Local AI over HTTPS** - Ollama at `http://localhost:11434` may be restricted when the PWA is served from Vercel HTTPS. Use local serving / `vercel dev` for local AI.
+4. **Ollama presets** - default preset names may not be installed; the app lists installed models and preflights the selected one.
+5. **Project storage** - still one IndexedDB project; a project picker is the next storage task.
+6. **Build system** - still in-browser Babel; Vite modules are the next architecture task.
 
 ### Continue here
 
@@ -128,4 +151,4 @@ Added after the first checkpoint:
 - Deploy: Vercel Root Directory = `app`; no build command.
 - Local run: `npm run dev` → http://127.0.0.1:4173/
 - Tests: `npm run check`, `npm test`, `npm run test:browser`.
-- Next recommended task: project picker + Vite build, then real-world threshold tuning.
+- Next recommended task: import a Timeline covering the photo dates and re-run Phase 2; then project picker + Vite build.

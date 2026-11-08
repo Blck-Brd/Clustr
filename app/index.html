@@ -495,6 +495,10 @@
             'Neznámé místo', '#Neznámé místo', 'Bez EXIFu', 'Screenshot', 'Snímky obrazovky'
         ]);
 
+        const SCREENSHOT_CATEGORY = 'Screenshot / Clutter';
+        const SCREENSHOT_FOLDER = 'Screenshot-Clutter';
+        const isScreenshotCategory = (value) => value === SCREENSHOT_CATEGORY || value === 'Snímky obrazovky / Různé';
+
         const isPlaceholderEventName = (name) => /^(Event|Trip|Stop|Home)\s+\d+\b/i.test(String(name || '').trim());
 
         const normalizeLocationName = (name) => String(name || '')
@@ -949,9 +953,19 @@
 
         const isLikelyScreenshot = (photo) => {
             const name = String(photo.name || '').toLowerCase();
-            if (photo.aiData?.category === 'Snímky obrazovky / Různé') return true;
+            const path = String(photo.path || photo.name || '').toLowerCase();
+
+            if (isScreenshotCategory(photo.aiData?.category)) return true;
             if ((photo.aiData?.tags || []).some((tag) => /^screenshot$/i.test(tag))) return true;
-            return /screenshot|screen[\s_-]?shot|snipaste/i.test(name);
+            if (/(screenshot|screen[\s_-]?shot|snipaste|sn[íi]mek obrazovky|sn[íi]mky obrazovky|obrazovky|clutter|meme|downloads?|st[áa]žen)/i.test(path)) return true;
+
+            // Screenshots/clutter exported as lossless images usually have no camera and no location.
+            const extension = name.split('.').pop();
+            const lossless = ['png', 'webp', 'gif', 'bmp', 'svg'].includes(extension);
+            const noCamera = !photo.hardData?.camera || photo.hardData.camera === 'Neznámý fotoaparát';
+            const noLocation = !photo.hardData?.coords
+                && (!photo.hardData?.location || photo.hardData.location === 'Neznámé místo');
+            return lossless && noCamera && noLocation;
         };
 
         const groupPhotosByTimeGaps = (items, gapMs = DEFAULT_CLUSTER_SETTINGS.noiseGroupGapMs) => {
@@ -1093,6 +1107,8 @@
 
         // DBSCAN in time + projected space. Dense photo bursts become events;
         // sparse driving photos are attached to the nearest event or grouped by time gaps.
+        // Spatiotemporal density heatmap: bin time + projected coordinates, smooth the grid,
+        // then treat connected hot cells as stop clusters.
         const clusterPhotosByDensity = (photos, settings = DEFAULT_CLUSTER_SETTINGS) => {
             const withCoords = [];
             const withoutCoords = [];
@@ -1103,119 +1119,129 @@
                 else withoutCoords.push(photo);
             });
 
-            let clusters = [];
-
-            if (withCoords.length > 0) {
-                const sorted = [...withCoords].sort((a, b) => a.date - b.date);
-                const count = sorted.length;
-                const times = sorted.map((photo) => photo.date.getTime());
-                const meanLat = sorted.reduce((sum, photo) => sum + photo.hardData.coords.lat, 0) / count;
-                const cosLat = Math.cos((meanLat * Math.PI) / 180);
-                const xs = new Float64Array(count);
-                const ys = new Float64Array(count);
-
-                sorted.forEach((photo, index) => {
-                    xs[index] = photo.hardData.coords.lon * 111.32 * cosLat;
-                    ys[index] = photo.hardData.coords.lat * 110.57;
+            if (withCoords.length === 0) {
+                return segmentDenseEpisodes(photos, {
+                    ...DEFAULT_TRIP_SETTINGS,
+                    maxInactiveDays: settings.maxInactiveDays ?? 1
                 });
+            }
 
-                const epsTimeMs = settings.epsTimeHours * 3600000;
-                const epsSpaceSq = settings.epsSpaceKm ** 2;
-                const left = new Int32Array(count);
-                const right = new Int32Array(count);
-                let leftCursor = 0;
-                let rightCursor = 0;
+            const sorted = [...withCoords].sort((a, b) => a.date - b.date);
+            const count = sorted.length;
+            const times = sorted.map((photo) => photo.date.getTime());
+            const meanLat = sorted.reduce((sum, photo) => sum + photo.hardData.coords.lat, 0) / count;
+            const cosLat = Math.cos((meanLat * Math.PI) / 180);
+            const xs = new Float64Array(count);
+            const ys = new Float64Array(count);
 
-                for (let i = 0; i < count; i += 1) {
-                    while (times[i] - times[leftCursor] > epsTimeMs) leftCursor += 1;
-                    if (rightCursor < i) rightCursor = i;
-                    while (rightCursor < count && times[rightCursor] - times[i] <= epsTimeMs) rightCursor += 1;
-                    left[i] = leftCursor;
-                    right[i] = rightCursor;
+            sorted.forEach((photo, index) => {
+                xs[index] = photo.hardData.coords.lon * 111.32 * cosLat;
+                ys[index] = photo.hardData.coords.lat * 110.57;
+            });
+
+            const minTime = times[0];
+            let minX = Infinity;
+            let minY = Infinity;
+            for (let i = 0; i < count; i += 1) {
+                minX = Math.min(minX, xs[i]);
+                minY = Math.min(minY, ys[i]);
+            }
+
+            const timeBinMs = Math.max(0.5, (settings.epsTimeHours || 1.5) / 2) * 3600000;
+            const spaceCellKm = Math.max(1, (settings.epsSpaceKm || 4) / 2);
+            const minDensity = Math.max(2, settings.minPoints || 3);
+
+            const cells = new Map();
+            sorted.forEach((photo, index) => {
+                const t = Math.floor((times[index] - minTime) / timeBinMs);
+                const x = Math.floor((xs[index] - minX) / spaceCellKm);
+                const y = Math.floor((ys[index] - minY) / spaceCellKm);
+                const key = `${t}|${x}|${y}`;
+                let cell = cells.get(key);
+                if (!cell) {
+                    cell = { t, x, y, photos: [] };
+                    cells.set(key, cell);
                 }
+                cell.photos.push(photo);
+            });
 
-                const regionQuery = (index) => {
-                    const neighbors = [];
-                    for (let j = left[index]; j < right[index]; j += 1) {
-                        const dx = xs[index] - xs[j];
-                        const dy = ys[index] - ys[j];
-                        if (dx * dx + dy * dy <= epsSpaceSq) neighbors.push(j);
+            const density = new Map();
+            cells.forEach((cell, key) => {
+                let value = 0;
+                for (let dt = -1; dt <= 1; dt += 1) {
+                    for (let dx = -1; dx <= 1; dx += 1) {
+                        for (let dy = -1; dy <= 1; dy += 1) {
+                            const neighbor = cells.get(`${cell.t + dt}|${cell.x + dx}|${cell.y + dy}`);
+                            if (neighbor) value += neighbor.photos.length;
+                        }
                     }
-                    return neighbors;
-                };
+                }
+                density.set(key, value);
+            });
 
-                const visited = new Uint8Array(count);
-                const assignment = new Int32Array(count);
-                assignment.fill(-1);
-                let clusterId = -1;
+            const hotCells = new Set();
+            density.forEach((value, key) => {
+                if (value >= minDensity) hotCells.add(key);
+            });
 
-                for (let i = 0; i < count; i += 1) {
-                    if (visited[i]) continue;
-                    visited[i] = 1;
-                    const neighbors = regionQuery(i);
+            const visited = new Set();
+            const components = [];
+            const collectNeighbors = (key) => {
+                const [t, x, y] = key.split('|').map(Number);
+                const neighbors = [];
+                for (let dt = -1; dt <= 1; dt += 1) {
+                    for (let dx = -1; dx <= 1; dx += 1) {
+                        for (let dy = -1; dy <= 1; dy += 1) {
+                            if (dt === 0 && dx === 0 && dy === 0) continue;
+                            const neighborKey = `${t + dt}|${x + dx}|${y + dy}`;
+                            if (hotCells.has(neighborKey) && !visited.has(neighborKey)) neighbors.push(neighborKey);
+                        }
+                    }
+                }
+                return neighbors;
+            };
 
-                    if (neighbors.length < settings.minPoints) continue;
+            hotCells.forEach((key) => {
+                if (visited.has(key)) return;
+                const keys = [];
+                const stack = [key];
+                visited.add(key);
 
-                    clusterId += 1;
-                    const inSeeds = new Uint8Array(count);
-                    const seeds = [];
-
-                    neighbors.forEach((index) => {
-                        if (!inSeeds[index]) {
-                            inSeeds[index] = 1;
-                            seeds.push(index);
+                while (stack.length > 0) {
+                    const current = stack.pop();
+                    keys.push(current);
+                    collectNeighbors(current).forEach((neighborKey) => {
+                        if (!visited.has(neighborKey)) {
+                            visited.add(neighborKey);
+                            stack.push(neighborKey);
                         }
                     });
-
-                    for (let s = 0; s < seeds.length; s += 1) {
-                        const index = seeds[s];
-                        if (assignment[index] >= 0 && assignment[index] !== clusterId) continue;
-                        assignment[index] = clusterId;
-
-                        if (!visited[index]) {
-                            visited[index] = 1;
-                            const indexNeighbors = regionQuery(index);
-                            if (indexNeighbors.length >= settings.minPoints) {
-                                indexNeighbors.forEach((k) => {
-                                    if (!inSeeds[k]) {
-                                        inSeeds[k] = 1;
-                                        seeds.push(k);
-                                    }
-                                });
-                            }
-                        }
-                    }
                 }
+                components.push(keys);
+            });
 
-                const groups = new Map();
-                for (let i = 0; i < count; i += 1) {
-                    const id = assignment[i];
-                    if (id < 0) continue;
-                    if (!groups.has(id)) groups.set(id, []);
-                    groups.get(id).push(sorted[i]);
-                }
-
-                groups.forEach((cluster) => {
-                    clusters.push(...splitDenseCluster(cluster, settings));
+            const hotPhotoIds = new Set();
+            const clusters = components.map((keys) => {
+                const clusterPhotos = [];
+                keys.forEach((key) => {
+                    cells.get(key).photos.forEach((photo) => {
+                        hotPhotoIds.add(photo.id);
+                        clusterPhotos.push(photo);
+                    });
                 });
+                return clusterPhotos.sort((a, b) => a.date - b.date);
+            });
 
-                const noise = [];
-                for (let i = 0; i < count; i += 1) {
-                    if (assignment[i] < 0) noise.push(sorted[i]);
-                }
-                clusters = attachNoisePhotos(clusters, noise, settings);
-            }
+            const noise = sorted.filter((photo) => !hotPhotoIds.has(photo.id));
+            const attached = attachNoisePhotos(clusters, [...noise, ...withoutCoords], settings);
 
-            if (withoutCoords.length > 0) {
-                clusters = attachNoisePhotos(clusters, withoutCoords, settings);
-            }
-
-            return mergeNearbyClusters(clusters, settings)
+            return mergeNearbyClusters(attached, settings)
                 .filter((cluster) => cluster.length > 0)
                 .map((cluster) => [...cluster].sort((a, b) => a.date - b.date))
                 .sort((a, b) => a[0].date - b[0].date);
         };
 
+        // --- TRIPS + HOME (hierarchical grouping) ---
         const applyDominantClusterLocation = (cluster) => {
             const counts = new Map();
             cluster.forEach((photo) => {
@@ -1369,9 +1395,14 @@
         }));
 
         // --- TRIPS + HOME (hierarchical grouping) ---
+
         const DEFAULT_TRIP_SETTINGS = {
             tripGapHours: 72,
+            maxInactiveDays: 1,
             maxTripDays: 30,
+            heatmapRadiusDays: 2,
+            heatmapThresholdRatio: 0.15,
+            heatmapMinPhotos: 1,
             homeRadiusKm: 15,
             homeSessionGapHours: 4,
             maxHomeSessionHours: 12,
@@ -1381,7 +1412,11 @@
 
         const buildTripSettings = (overrides = {}) => ({
             tripGapHours: clampNumber(Number(overrides.tripGapHours) || DEFAULT_TRIP_SETTINGS.tripGapHours, 12, 24 * 14),
+            maxInactiveDays: clampNumber(Number(overrides.maxInactiveDays) || DEFAULT_TRIP_SETTINGS.maxInactiveDays, 0, 14),
             maxTripDays: clampNumber(Number(overrides.maxTripDays) || DEFAULT_TRIP_SETTINGS.maxTripDays, 1, 365),
+            heatmapRadiusDays: clampNumber(Number(overrides.heatmapRadiusDays) || DEFAULT_TRIP_SETTINGS.heatmapRadiusDays, 0, 14),
+            heatmapThresholdRatio: clampNumber(Number(overrides.heatmapThresholdRatio) || DEFAULT_TRIP_SETTINGS.heatmapThresholdRatio, 0.01, 1),
+            heatmapMinPhotos: clampNumber(Number(overrides.heatmapMinPhotos) || DEFAULT_TRIP_SETTINGS.heatmapMinPhotos, 1, 100),
             homeRadiusKm: clampNumber(Number(overrides.homeRadiusKm) || DEFAULT_TRIP_SETTINGS.homeRadiusKm, 1, 100),
             homeSessionGapHours: clampNumber(Number(overrides.homeSessionGapHours) || DEFAULT_TRIP_SETTINGS.homeSessionGapHours, 0.5, 24),
             maxHomeSessionHours: clampNumber(Number(overrides.maxHomeSessionHours) || DEFAULT_TRIP_SETTINGS.maxHomeSessionHours, 1, 72),
@@ -1511,6 +1546,96 @@
             return parts;
         };
 
+        // Daily density heatmap: smooth photo counts per day, find hot runs, and split at low-density valleys.
+        const segmentDenseEpisodes = (photos, settings = DEFAULT_TRIP_SETTINGS) => {
+            const sorted = [...photos].sort((a, b) => a.date - b.date);
+            if (sorted.length === 0) return [];
+
+            const startOfDay = (date) => Math.floor(new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime() / 86400000);
+            const firstDay = startOfDay(sorted[0].date);
+            const lastDay = startOfDay(sorted[sorted.length - 1].date);
+            const dayCounts = new Map();
+            sorted.forEach((photo) => {
+                const day = startOfDay(photo.date);
+                dayCounts.set(day, (dayCounts.get(day) || 0) + 1);
+            });
+
+            const radius = Number.isFinite(settings.heatmapRadiusDays) ? settings.heatmapRadiusDays : 2;
+            const ratio = Number.isFinite(settings.heatmapThresholdRatio) ? settings.heatmapThresholdRatio : 0.15;
+            const minPhotos = Number.isFinite(settings.heatmapMinPhotos) ? settings.heatmapMinPhotos : 1;
+            const maxInactiveDays = Number.isFinite(settings.maxInactiveDays) ? settings.maxInactiveDays : 1;
+
+            const density = new Map();
+            let peak = 0;
+            for (let day = firstDay; day <= lastDay; day += 1) {
+                let count = 0;
+                for (let offset = -radius; offset <= radius; offset += 1) count += dayCounts.get(day + offset) || 0;
+                density.set(day, count);
+                peak = Math.max(peak, count);
+            }
+
+            const threshold = Math.max(minPhotos, peak * ratio);
+            const runs = [];
+            let currentRun = null;
+            let inactiveDays = 0;
+
+            for (let day = firstDay; day <= lastDay; day += 1) {
+                const active = (density.get(day) || 0) >= threshold;
+                if (active) {
+                    if (!currentRun) currentRun = { start: day, end: day, photos: [] };
+                    else currentRun.end = day;
+                    inactiveDays = 0;
+                } else if (currentRun) {
+                    inactiveDays += 1;
+                    if (inactiveDays > maxInactiveDays) {
+                        runs.push(currentRun);
+                        currentRun = null;
+                        inactiveDays = 0;
+                    }
+                }
+            }
+            if (currentRun) runs.push(currentRun);
+
+            if (runs.length === 0) {
+                const fallback = new Map();
+                sorted.forEach((photo) => {
+                    const day = startOfDay(photo.date);
+                    if (!fallback.has(day)) fallback.set(day, []);
+                    fallback.get(day).push(photo);
+                });
+                return [...fallback.values()].map((group) => group.sort((a, b) => a.date - b.date));
+            }
+
+            const runForDay = (day) => {
+                let best = null;
+                let bestDistance = Infinity;
+                for (const run of runs) {
+                    if (day >= run.start && day <= run.end) return run;
+                    const distance = day < run.start ? run.start - day : day > run.end ? day - run.end : 0;
+                    if (distance <= maxInactiveDays + 1 && distance < bestDistance) {
+                        best = run;
+                        bestDistance = distance;
+                    }
+                }
+                return best;
+            };
+
+            const leftovers = [];
+            sorted.forEach((photo) => {
+                const day = startOfDay(photo.date);
+                const run = runForDay(day);
+                if (run) run.photos.push(photo);
+                else leftovers.push(photo);
+            });
+
+            const groups = runs
+                .map((run) => run.photos.sort((a, b) => a.date - b.date))
+                .filter((group) => group.length > 0);
+
+            groupPhotosByTimeGaps(leftovers, Math.max(1, maxInactiveDays) * 86400000).forEach((group) => groups.push(group));
+            return groups.sort((a, b) => a[0].date - b[0].date);
+        };
+
         // Away photos become trips; home photos become home sessions. Unknown-location
         // photos are attached by time or grouped separately.
         const clusterPhotosIntoTrips = (photos, homeLocation, settings = DEFAULT_TRIP_SETTINGS) => {
@@ -1530,10 +1655,7 @@
                 else awayPhotos.push(photo);
             });
 
-            const trips = [];
-            groupPhotosByTimeGaps(awayPhotos, settings.tripGapHours * 3600000).forEach((group) => {
-                splitLongEpisode(group, settings.maxTripDays * 24, 6 * 3600000).forEach((part) => trips.push(part));
-            });
+            const trips = segmentDenseEpisodes(awayPhotos, settings);
 
             const homeSessions = [];
             groupPhotosByTimeGaps(homePhotos, settings.homeSessionGapHours * 3600000).forEach((group) => {
@@ -1564,8 +1686,10 @@
                 else remaining.push(photo);
             });
 
-            groupPhotosByTimeGaps(remaining, settings.noiseGroupGapMs).forEach((group) => {
-                episodes.push({ kind: 'misc', photos: group });
+            // Photos with no location at all still form trip-like episodes when they span multiple days.
+            segmentDenseEpisodes(remaining, settings).forEach((group) => {
+                const spanHours = (group[group.length - 1].date.getTime() - group[0].date.getTime()) / 3600000;
+                episodes.push({ kind: spanHours > 24 ? 'trip' : 'misc', photos: group });
             });
 
             const sortByStart = (items) => items.sort((a, b) => a[0].date - b[0].date);
@@ -1610,6 +1734,28 @@
             episodes.trips.forEach((tripPhotos, tripIndex) => {
                 const tripName = `Trip ${tripIndex + 1}`;
                 const tripId = `evt-trip-${tripPhotos[0].date.getTime()}-${tripIndex}`;
+                const hasKnownLocation = tripPhotos.some((photo) => {
+                    const hasCoords = Boolean(photo.hardData?.coords);
+                    const hasNamedLocation = Boolean(photo.hardData?.locationKey && photo.hardData.location && photo.hardData.location !== 'Neznámé místo');
+                    return hasCoords || hasNamedLocation;
+                });
+
+                // A trip with no location data becomes one flat folder instead of many time-only stops.
+                if (!hasKnownLocation) {
+                    groups.push({
+                        photos: tripPhotos,
+                        eventName: tripName,
+                        clusterId: tripId,
+                        clusterNumber: 0,
+                        eventKind: 'trip',
+                        tripId,
+                        tripNumber: tripIndex + 1,
+                        stopNumber: 0,
+                        tripName
+                    });
+                    return;
+                }
+
                 const stopSettings = stopSettingsOverride || computeAutoClusterSettings(tripPhotos);
                 const stops = clusterPhotosByDensity(tripPhotos, stopSettings);
 
@@ -1940,10 +2086,6 @@
                         if (snap.exists()) {
                             const data = snap.data();
                             if (data.geminiApiKey) setGeminiApiKey(data.geminiApiKey);
-                            if (data.metadata) {
-                                setCloudMetadata(data.metadata);
-                                setNeedsRelink(true);
-                            }
                         }
                     } catch (e) { console.error("Cloud init error", e); }
                 };
@@ -2006,6 +2148,13 @@
                 let cancelled = false;
 
                 (async () => {
+                    try {
+                        if (localStorage.getItem('aiSorter.skipTimelineAutoLoad') === '1') {
+                            localStorage.removeItem('aiSorter.skipTimelineAutoLoad');
+                            return;
+                        }
+                    } catch (e) {}
+
                     try {
                         const response = await fetch('./Timeline.json', { cache: 'no-store' });
                         if (!response.ok) return;
@@ -2078,6 +2227,7 @@
                         id: Math.random().toString(36).substr(2, 9),
                         file: f, 
                         name: f.name, 
+                        path: f.webkitRelativePath || f.name,
                         url: isRaw ? null : URL.createObjectURL(f), 
                         isRaw: isRaw,
                         thumbLoading: isRaw,
@@ -2368,6 +2518,37 @@
                 return metas;
             };
 
+            const resetWorkspace = () => {
+                if (!window.confirm(t(
+                    'Smazat všechna lokální data (fotky, složky, Timeline i nastavení) a začít znovu?',
+                    'Delete all local data (photos, folders, Timeline and settings) and start fresh?'
+                ))) return;
+
+                try { localStorage.removeItem(SETTINGS_KEY); } catch (e) {}
+                try { localStorage.setItem('aiSorter.skipTimelineAutoLoad', '1'); } catch (e) {}
+                geocodeCache.clear();
+
+                if (cloudDb) {
+                    try {
+                        const { db, appId, uid, doc, setDoc } = cloudDb;
+                        const payload = { metadata: null };
+                        if (geminiApiKey) payload.geminiApiKey = geminiApiKey;
+                        setDoc(doc(db, 'artifacts', appId, 'users', uid, 'workspace', 'current'), payload).catch(() => {});
+                    } catch (e) {}
+                }
+
+                const reload = () => window.location.reload();
+                try {
+                    const request = indexedDB.deleteDatabase(PROJECT_DB);
+                    request.onsuccess = reload;
+                    request.onerror = reload;
+                    request.onblocked = () => setTimeout(reload, 600);
+                    setTimeout(reload, 1500);
+                } catch (e) {
+                    reload();
+                }
+            };
+
             const runPhase1 = async () => {
                 if (photos.length === 0) return;
                 setIsExtracting(true);
@@ -2546,8 +2727,8 @@
                         photo.aiData.clusterNumber = 0;
                         photo.aiData.eventKind = 'screenshot';
                         photo.aiData.tripId = null;
-                        photo.aiData.category = 'Snímky obrazovky / Různé';
-                        photo.aiData.event_name = 'Snímky obrazovky';
+                        photo.aiData.category = SCREENSHOT_CATEGORY;
+                        photo.aiData.event_name = SCREENSHOT_FOLDER;
                         photo.aiData.eventNameSource = 'placeholder';
                         photo.aiData.tripNameSource = 'placeholder';
                         photo.aiData.stopNameSource = 'placeholder';
@@ -2633,7 +2814,7 @@
                     updated.forEach((photo) => {
                         const clusterId = photo.aiData?.clusterId;
                         if (!clusterId || clusterId === 'screenshots') return;
-                        if (photo.aiData?.category === 'Snímky obrazovky / Různé') return;
+                        if (isScreenshotCategory(photo.aiData?.category)) return;
                         const groupKey = namingTrips ? (photo.aiData?.tripId || clusterId) : clusterId;
                         if (!groups.has(groupKey)) groups.set(groupKey, []);
                         groups.get(groupKey).push(photo);
@@ -2989,8 +3170,8 @@ DATA: ${JSON.stringify(data)}`;
                         if (!p.file) continue;
 
                         let folderPath = p.aiData?.event_name || p.hardData?.location || "Ostatní";
-                        if (p.aiData?.category === 'Snímky obrazovky / Různé' || p.aiData?.tags?.includes('Screenshot')) {
-                            folderPath = "Snímky obrazovky";
+                        if (isScreenshotCategory(p.aiData?.category) || p.aiData?.tags?.includes('Screenshot')) {
+                            folderPath = SCREENSHOT_FOLDER;
                         }
 
                         const folderParts = folderPath.split('/').map(sanitizeSegment).filter(Boolean);
@@ -3234,7 +3415,7 @@ DATA: ${JSON.stringify(data)}`;
                             let placeholder = null;
                             if (updated.aiData.eventKind === 'trip-stop') {
                                 placeholder = buildPlaceholderStopName((updated.aiData.stopNumber || 1) - 1, val);
-                            } else if (updated.aiData.eventKind !== 'home') {
+                            } else if (updated.aiData.eventKind !== 'home' && updated.aiData.eventKind !== 'trip') {
                                 placeholder = buildPlaceholderEventName((updated.aiData.clusterNumber || 1) - 1, val);
                             }
                             if (placeholder) {
@@ -3286,7 +3467,7 @@ DATA: ${JSON.stringify(data)}`;
 
                         let passScreenshot = true;
                         if (screenshotFilter) {
-                            passScreenshot = p.aiData?.category === 'Snímky obrazovky / Různé';
+                            passScreenshot = isScreenshotCategory(p.aiData?.category);
                         }
 
                         // Mezi kategoriemi (Složka vs Tag) platí AND
@@ -3646,6 +3827,9 @@ DATA: ${JSON.stringify(data)}`;
                                         💾 {(isLocalSaving || isCloudSyncing) ? t("Ukládání...", "Saving...") : t("Uloženo", "Saved")}
                                     </div>
                                 )}
+                                <button onClick={resetWorkspace} title={t("Smazat lokální data", "Reset local data")} className="bg-slate-800 hover:bg-rose-900/60 border border-slate-700 text-slate-300 font-bold w-9 h-9 rounded-full transition-colors flex items-center justify-center shadow-md text-sm">
+                                    🧹
+                                </button>
                                 <button onClick={() => setShowHelpModal(true)} title={t("Nápověda k aplikaci", "Application Help")} className="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-bold w-9 h-9 rounded-full transition-colors flex items-center justify-center shadow-md text-sm">
                                     ❓
                                 </button>

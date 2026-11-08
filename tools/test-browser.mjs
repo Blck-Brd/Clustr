@@ -102,6 +102,15 @@ try {
     assert.ok(afterScrollTiles < 120, `Gallery should stay virtualized after scrolling (${afterScrollTiles}/120)`);
     console.log(`Virtualized gallery after scroll: ${afterScrollTiles}/120 tiles rendered`);
 
+    // Clean state: reset clears photos/folders and skips the Timeline auto-load once.
+    page.once('dialog', (dialog) => dialog.accept());
+    await page.getByRole('button', { name: '🧹' }).click();
+    await page.waitForTimeout(2500);
+    await page.waitForLoadState('domcontentloaded');
+    assert.equal(await page.locator('[data-photo-id]').count(), 0, 'Reset should remove photos');
+    assert.equal(await page.getByText(/Timeline \(293\)/).count(), 0, 'Reset should skip the Timeline auto-load on first reload');
+    console.log('Clean-state reset: OK');
+
     assert.equal(pageErrors.length, 0, `Browser errors: ${pageErrors.join(' | ')}`);
     console.log('Browser test passed.');
 } finally {

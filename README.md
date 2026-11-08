@@ -8,7 +8,7 @@ It is a single-file React app with no build step and no backend. It can be deplo
 
 1. **Upload Folder** - select a photo directory.
 2. **Timeline JSON (optional)** - import Google Timeline so locations can be assigned by photo time.
-3. **Phase 2 - Grouping** - reads EXIF date/time, assigns a location from Timeline (falling back to GPS), interpolates missing locations, and builds the event tree. The default profile creates **one folder per trip** (`Trip 1`) with **stop subfolders** (`Trip 1/Stop 1 - Kutná Hora`), plus separate home sessions and weekend trips. The `Places` profile creates flat dense location events instead. Sensitivity is Auto by default; manual values are available.
+3. **Phase 2 - Grouping** - reads EXIF date/time, assigns a location from Timeline (falling back to GPS), interpolates missing locations, and builds the event tree. The default profile creates **one folder per trip** (`Trip 1`) with **stop subfolders** (`Trip 1/Stop 1 - Kutná Hora`), plus separate home sessions and weekend trips. The `Places` profile creates flat dense location events instead. Trip boundaries come from a smoothed daily photo-density heatmap, not fixed gaps. Sensitivity is Auto by default; manual values are available. Photos without any location still form one flat trip folder if their density spans multiple days.
 4. **Phase 3 - AI Names** - sends each event summary (date, time, location, tags) to Ollama or Gemini and replaces the temporary names. Manually named events are left untouched.
 5. **Phase 4 - Visual Tags** - optional batch or single-image tagging with Moondream / Llama Vision through Ollama.
 6. **Review and Export** - use Tinder mode, edit folders/tags, then export photos and XMP sidecars.
@@ -26,8 +26,10 @@ It is a single-file React app with no build step and no backend. It can be deplo
 - **EXIF extraction** - capture date, camera, GPS, and automatic season / time-of-day tags.
 - **Timeline matching** - imports visits, activities and timeline paths, binary-searches by EXIF time, and resolves unnamed coordinates to the nearest named Timeline location before falling back to GPS/Nominatim.
 - **Local persistence** - photo metadata and Timeline data are saved to IndexedDB and relinked after a refresh by file name, size and modified time.
-- **Trips + home hierarchy (default)** - away periods become one trip folder each; dense stops inside a trip become subfolders. Home photo shoots and weekend trips stay separate.
-- **Places/density profile** - spatiotemporal DBSCAN (1.5 h / 4 km, minimum 3 photos) for flat place events if you do not want trip folders.
+- **Trips + home hierarchy (default)** - a smoothed **daily photo-density heatmap** finds active days and rest valleys, so one vacation becomes one trip folder. Stops inside a trip use a spatiotemporal **grid heatmap**.
+- **Places/density profile** - the same grid heatmap used as flat place events if you do not want trip folders.
+- **Screenshot / Clutter folder** - Czech/English screenshots, lossless images without camera/location, Downloads/meme paths and similar clutter go to `Screenshot-Clutter`, outside the clustering.
+- **Clean state** - the 🧹 button clears IndexedDB, local settings and cloud metadata.
 - **Auto + manual sensitivity** - Auto derives the trip/home or place window from the dataset. Trip sensitivity (gap, home radius, session gap) and stop/place sensitivity (time, space, min photos) are separate.
 - **Trip or stop AI naming** - Phase 3 can name the top-level trip folders or the stop subfolders, preserving the other level.
 - **Manual cluster edits** - Split selected photos into a new event, or merge events by renaming them together.
@@ -118,6 +120,12 @@ Event naming sends a strict JSON prompt, validates the response shape, retries m
 **Locations are wrong or missing**
 
 Timeline matching uses EXIF time with a 2-hour tolerance. Photos without a Timeline match fall back to GPS; missing locations are interpolated from the nearest known location within 12 hours and then filled from the cluster's dominant location. Manual location edits are preserved on re-runs.
+
+Important: the imported Timeline must cover the **photo dates**. If it does not, those photos have no location and are grouped by density into one flat trip folder (no stop subfolders) rather than being split by fixed time gaps.
+
+**Screenshots/clutter still appear in events**
+
+They should be routed to `Screenshot-Clutter`. Detection covers English and Czech “screenshot/obrazovky” names, `Screenshots`/clutter folder paths, and PNG/WebP/GIF images with no camera and no location. Re-run Phase 2 after updating.
 
 **Vision tags are poor**
 
