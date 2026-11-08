@@ -68,9 +68,16 @@ Manual event actions:
 - Photo blobs are never stored. After a reload, the app asks you to re-select the folder and relinks metadata by name, size and last-modified time.
 - Firestore now stores only the Gemini API key. It no longer receives the full photo metadata payload.
 
-## Known scale limits (next rework targets)
+## Workers and gallery
 
-- Phase 2 still runs EXIF + geocoding on the main thread. Move it into a worker pool.
-- The gallery renders every tile; virtualize the grid for 2,000+ photos.
-- Add a collision-safe project picker if multiple photo libraries should be kept side by side.
+- `app/exif-worker.js` is run in a pool of up to 4 dedicated workers. Each parses one file and returns only the needed EXIF fields; malformed files time out after 30 s.
+- `app/geo-worker.js` serializes Nominatim requests (1.1 s spacing) and caches results. The main thread falls back to inline parsing/geocoding if workers are unavailable.
+- `app/vendor/exifr.full.umd.js` is served locally so the worker pool does not depend on a CDN at runtime.
+- The gallery renders only visible rows (plus overscan), using measured width/height and a translated grid.
+
+## Next rework targets
+
+- Add a collision-safe project picker so multiple photo libraries can coexist in IndexedDB.
+- Move from in-browser Babel to a Vite build with modules and Playwright E2E coverage.
+- Optional per-project/per-trip sensitivity overrides.
 

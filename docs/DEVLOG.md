@@ -93,18 +93,39 @@ Added after the first checkpoint:
   - Only if nothing is close does it call Nominatim.
   - Tested with synthetic near/far coordinates and against the real Timeline HOME segment; the lookup avoids the Nominatim fetch.
 
+### Third pass - workers, virtualization, localhost
+
+- **EXIF worker pool** (`app/exif-worker.js`):
+  - Up to 4 dedicated workers, one file at a time, only needed EXIF fields returned.
+  - 30 s parse timeout; main-thread fallback if workers/exifr are unavailable.
+  - `app/vendor/exifr.full.umd.js` is served locally and cached by the PWA.
+- **Geocode worker** (`app/geo-worker.js`):
+  - Serialized Nominatim requests (1.1 s), persistent in-worker cache.
+  - Main-thread fallback with the existing reverseGeocode cache.
+- **Worker pipeline**:
+  - Phase 1/2 use `buildMetadataMap`: EXIF pool → Timeline resolve/nearest named → unique-coordinate geocoding → interpolation.
+- **Virtualized gallery**:
+  - Measures the scroll container, computes columns/rows and renders only the visible window plus overscan.
+  - Browser test renders 48/120 tiles initially and after scrolling, instead of all 120.
+- **Localhost**:
+  - `npm run dev` now runs `tools/serve.mjs` at **http://127.0.0.1:4173/**.
+  - The server exposes `/Timeline.json` from the repo root; the app auto-loads it on startup.
+- **Browser test** (`npm run test:browser`):
+  - Playwright + installed Chrome.
+  - Verifies Timeline auto-load, EXIF worker response, and virtualized tile count.
+
 ### Known limitations / next steps
 
 1. **Trips closer than the trip gap merge by design** - two trips without home photos and with less than `tripGapHours` between away photos become one trip. Increase/decrease the gap in manual mode if needed.
-2. **Main-thread processing** - EXIF and geocoding still run on the main thread. Move to a Web Worker pool for large folders.
-3. **Gallery rendering** - no virtualization yet; 2,000+ tiles are heavy.
-4. **Local AI over HTTPS** - Ollama at `http://localhost:11434` may be restricted when the PWA is served from Vercel HTTPS. Use local serving / `vercel dev` for local AI.
-5. **Ollama presets** - default preset names may not be installed; the app lists installed models and preflights the selected one.
+2. **Local AI over HTTPS** - Ollama at `http://localhost:11434` may be restricted when the PWA is served from Vercel HTTPS. Use local serving / `vercel dev` for local AI.
+3. **Ollama presets** - default preset names may not be installed; the app lists installed models and preflights the selected one.
+4. **Project storage** - still one IndexedDB project; a project picker is the next storage task.
+5. **Build system** - still in-browser Babel; Vite modules are the next architecture task.
 
 ### Continue here
 
 - Repository: https://github.com/Blck-Brd/Clustr
 - Deploy: Vercel Root Directory = `app`; no build command.
-- Local run: `npm run dev` (serves `app/`).
-- Tests: `npm run check`, `npm test`.
-- Next recommended task: Web Worker pool + virtualized gallery; optional per-project/per-trip overrides.
+- Local run: `npm run dev` → http://127.0.0.1:4173/
+- Tests: `npm run check`, `npm test`, `npm run test:browser`.
+- Next recommended task: project picker + Vite build, then real-world threshold tuning.

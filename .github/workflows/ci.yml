@@ -23,3 +23,6 @@ jobs:
 
       - name: Test clustering helpers
         run: npm test
+
+      - name: Browser smoke test
+        run: npm run test:browser

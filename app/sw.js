@@ -1,8 +1,11 @@
-const CACHE_NAME = 'clustr-shell-v2';
+const CACHE_NAME = 'clustr-shell-v4';
 const APP_SHELL = [
     './',
     './index.html',
     './manifest.webmanifest',
+    './exif-worker.js',
+    './geo-worker.js',
+    './vendor/exifr.full.umd.js',
     './icons/icon-192.png',
     './icons/icon-512.png',
     './icons/favicon.png',
@@ -82,3 +85,4 @@ self.addEventListener('fetch', (event) => {
         }))
     );
 });
+

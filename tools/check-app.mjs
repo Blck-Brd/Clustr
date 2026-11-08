@@ -11,6 +11,9 @@ const requiredFiles = [
     'index.html',
     'manifest.webmanifest',
     'sw.js',
+    'exif-worker.js',
+    'geo-worker.js',
+    'vendor/exifr.full.umd.js',
     'icons/icon-192.png',
     'icons/icon-512.png',
     'icons/favicon.png',
@@ -54,6 +57,16 @@ try {
 } catch (error) {
     console.error('JavaScript syntax error:', error.message);
     failed = true;
+}
+
+for (const file of ['sw.js', 'exif-worker.js', 'geo-worker.js']) {
+    try {
+        new Function(fs.readFileSync(path.join(appDir, file), 'utf8'));
+        console.log(`${file} is syntactically valid`);
+    } catch (error) {
+        console.error(`${file} syntax error:`, error.message);
+        failed = true;
+    }
 }
 
 for (const file of ['manifest.webmanifest', 'vercel.json']) {

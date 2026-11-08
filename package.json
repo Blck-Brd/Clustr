@@ -5,13 +5,15 @@
   "description": "Clustr - local-first AI photo sorter PWA",
   "type": "module",
   "scripts": {
-    "dev": "npx --yes serve app",
-    "start": "npx --yes serve app",
+    "dev": "node tools/serve.mjs",
+    "start": "node tools/serve.mjs",
     "check": "node tools/check-app.mjs",
     "test": "node tools/test-clustering.mjs && node tools/test-timeline-real.mjs && node tools/test-trip-fuzz.mjs",
+    "test:browser": "node tools/test-browser.mjs",
     "icons": "powershell -ExecutionPolicy Bypass -File tools/generate-icons.ps1"
   },
   "devDependencies": {
-    "@babel/standalone": "^7.28.4"
+    "@babel/standalone": "^7.28.4",
+    "playwright": "^1.65.0"
   }
 }

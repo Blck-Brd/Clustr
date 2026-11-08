@@ -33,6 +33,8 @@ It is a single-file React app with no build step and no backend. It can be deplo
 - **Manual cluster edits** - Split selected photos into a new event, or merge events by renaming them together.
 - **Location inheritance** - a manually added location propagates through the event and to nearby photos that have no location of their own (12 h window).
 - **RAW + HEIC previews** - embedded thumbnails via exifr, HEIC conversion via heic2any, TIFF/RAW decoding via UTIF.
+- **Worker pool** - EXIF parsing runs in a pool of dedicated workers; Nominatim geocoding runs in a serialized geocode worker.
+- **Virtualized gallery** - only visible photo tiles are mounted, so 2,000+ photos stay responsive.
 - **AI event names** - strict JSON prompts, output-shape normalization, retries, and clear model errors.
 - **Vision tagging** - short image descriptions converted into cleaned keyword tags.
 - **Folder tree** - nested folders with drag & drop, rename, wrap, and bulk editing.
@@ -57,6 +59,14 @@ Open `app/index.html` directly, or serve the app folder locally:
 
 ```powershell
 npm run dev
+```
+
+This serves the app at **http://127.0.0.1:4173/** and exposes the root `Timeline.json` at `/Timeline.json`; when present, the app imports it automatically on load. The personal file stays ignored by Git.
+
+Browser smoke test (requires installed Chrome):
+
+```powershell
+npm run test:browser
 ```
 
 ## Repository layout

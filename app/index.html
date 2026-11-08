@@ -18,7 +18,7 @@
     <script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
     <!-- EXIFR full umí číst i zabudované náhledy v RAWu -->
-    <script src="https://cdn.jsdelivr.net/npm/exifr/dist/full.umd.js"></script>
+    <script src="vendor/exifr.full.umd.js"></script>
     <!-- HEIC to JPEG konvertor -->
     <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
     <!-- UTIF dekodér pro složité TIFF/RAW (NEF, CR2, DNG) -->
@@ -727,7 +727,7 @@
             return { name, distance: best.distance, semanticType: best.semanticType };
         };
 
-        const extractPhotoMetadata = async (photo, timeline, homeLocation) => {
+        const resolvePhotoMetadata = (photo, exif, timeline, homeLocation) => {
             let date = photo.date instanceof Date ? photo.date : new Date(photo.date || Date.now());
             if (!Number.isFinite(date.getTime())) {
                 date = new Date(photo.file?.lastModified || Date.now());
@@ -735,24 +735,20 @@
             let camera = photo.hardData?.camera || 'Neznámý fotoaparát';
             let coords = null;
 
-            try {
-                const exif = await exifr.parse(photo.file, true);
-                const exifDate = exif?.DateTimeOriginal || exif?.CreateDate || exif?.ModifyDate;
-                if (exifDate) {
-                    const parsedDate = new Date(exifDate);
-                    if (Number.isFinite(parsedDate.getTime())) date = parsedDate;
-                }
-                if (exif?.Make || exif?.Model) camera = `${exif.Make || ''} ${exif.Model || ''}`.trim();
-                if (Number.isFinite(exif?.latitude) && Number.isFinite(exif?.longitude)) {
-                    coords = { lat: exif.latitude, lon: exif.longitude };
-                }
-            } catch (e) {
-                console.warn(`EXIF se nepodařilo načíst pro ${photo.name}`, e);
+            const exifDate = exif?.DateTimeOriginal || exif?.CreateDate || exif?.ModifyDate;
+            if (exifDate) {
+                const parsedDate = new Date(exifDate);
+                if (Number.isFinite(parsedDate.getTime())) date = parsedDate;
+            }
+            if (exif?.Make || exif?.Model) camera = `${exif.Make || ''} ${exif.Model || ''}`.trim();
+            if (Number.isFinite(exif?.latitude) && Number.isFinite(exif?.longitude)) {
+                coords = { lat: exif.latitude, lon: exif.longitude };
             }
 
             const manualLocation = photo.aiData?.locationSource === 'manual' && photo.hardData?.location && photo.hardData.location !== 'Neznámé místo';
             let location = manualLocation ? photo.hardData.location : null;
             let locationSource = manualLocation ? 'manual' : null;
+            let needsGeocode = false;
             // A manual place overrides EXIF/Timeline coordinates for grouping.
             if (manualLocation) coords = null;
 
@@ -771,11 +767,7 @@
                         location = nearest.name;
                         locationSource = nearest.semanticType === 'HOME' ? 'home' : 'timeline-near';
                     } else {
-                        const geocoded = await reverseGeocode(coordsForGeocode(coords));
-                        if (geocoded && geocoded !== 'Neznámé místo') {
-                            location = geocoded;
-                            locationSource = 'gps';
-                        }
+                        needsGeocode = true;
                     }
                 }
             }
@@ -797,9 +789,145 @@
                 location,
                 locationKey,
                 locationSource,
+                needsGeocode,
                 timeStr: date.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' })
             };
         };
+
+        const extractPhotoMetadata = async (photo, timeline, homeLocation, exifOverride) => {
+            let exif = exifOverride;
+            if (exif === undefined) {
+                try {
+                    exif = await exifr.parse(photo.file, true);
+                } catch (e) {
+                    console.warn(`EXIF se nepodařilo načíst pro ${photo.name}`, e);
+                }
+            }
+
+            const meta = resolvePhotoMetadata(photo, exif, timeline, homeLocation);
+            if (meta.needsGeocode) {
+                const geocoded = await reverseGeocode(coordsForGeocode(meta.coords));
+                if (geocoded && geocoded !== 'Neznámé místo') {
+                    meta.location = geocoded;
+                    meta.locationSource = 'gps';
+                }
+                meta.needsGeocode = false;
+            }
+            return meta;
+        };
+
+        const parseExifInWorkerPool = (items, onProgress) => new Promise((resolve, reject) => {
+            if (typeof Worker === 'undefined' || items.length === 0) {
+                reject(new Error('Worker pool unavailable'));
+                return;
+            }
+
+            const workerCount = Math.min(4, Math.max(1, (navigator.hardwareConcurrency || 2) - 1), items.length);
+            const workers = [];
+
+            try {
+                for (let i = 0; i < workerCount; i += 1) workers.push(new Worker('exif-worker.js'));
+            } catch (error) {
+                workers.forEach((worker) => { try { worker.terminate(); } catch (e) {} });
+                reject(error);
+                return;
+            }
+
+            const results = new Map();
+            let nextIndex = 0;
+            let completed = 0;
+            let settled = false;
+
+            const cleanup = () => workers.forEach((worker) => { try { worker.terminate(); } catch (e) {} });
+            const finish = () => {
+                if (settled) return;
+                settled = true;
+                cleanup();
+                resolve(results);
+            };
+            const fail = (error) => {
+                if (settled) return;
+                settled = true;
+                cleanup();
+                reject(error);
+            };
+            const assign = (worker) => {
+                if (nextIndex >= items.length) return;
+                const item = items[nextIndex];
+                nextIndex += 1;
+                worker.postMessage({ type: 'parse', id: item.id, file: item.file });
+            };
+
+            workers.forEach((worker) => {
+                worker.onmessage = (event) => {
+                    const data = event.data || {};
+                    if (data.type === 'init-error') {
+                        fail(new Error(data.message || 'EXIF worker init failed'));
+                        return;
+                    }
+                    if (data.type !== 'result') return;
+
+                    results.set(data.id, data.exif || null);
+                    completed += 1;
+                    if (onProgress) onProgress(completed, items.length);
+
+                    if (completed >= items.length) {
+                        finish();
+                        return;
+                    }
+                    if (nextIndex < items.length) assign(worker);
+                };
+                worker.onerror = (event) => fail(new Error(event.message || 'EXIF worker error'));
+                assign(worker);
+            });
+        });
+
+        const geocodeCoordsInWorker = (requests, onProgress) => new Promise((resolve, reject) => {
+            if (typeof Worker === 'undefined' || requests.length === 0) {
+                reject(new Error('Geocode worker unavailable'));
+                return;
+            }
+
+            let worker;
+            try {
+                worker = new Worker('geo-worker.js');
+            } catch (error) {
+                reject(error);
+                return;
+            }
+
+            const results = new Map();
+            let completed = 0;
+            let settled = false;
+
+            const cleanup = () => { try { worker.terminate(); } catch (e) {} };
+            const finish = () => {
+                if (settled) return;
+                settled = true;
+                cleanup();
+                resolve(results);
+            };
+            const fail = (error) => {
+                if (settled) return;
+                settled = true;
+                cleanup();
+                reject(error);
+            };
+
+            worker.onmessage = (event) => {
+                const data = event.data || {};
+                if (data.type !== 'geocode-result') return;
+                results.set(data.key, data.name || null);
+                completed += 1;
+                if (onProgress) onProgress(completed, requests.length);
+                if (completed >= requests.length) finish();
+            };
+            worker.onerror = (event) => fail(new Error(event.message || 'Geocode worker error'));
+
+            requests.forEach((request) => {
+                worker.postMessage({ type: 'geocode', key: request.key, coords: request.coords });
+            });
+        });
 
         const buildAutoTags = (date, hardData) => {
             const tags = [getSeason(date), getTimeOfDay(date)];
@@ -1649,6 +1777,8 @@
             
             const fileInputRef = useRef(null);
             const timelineInputRef = useRef(null);
+            const galleryRef = useRef(null);
+            const [galleryView, setGalleryView] = useState({ scrollTop: 0, width: 0, height: 0 });
             const photosRef = useRef(photos);
             photosRef.current = photos;
             const modelAutoFixRef = useRef(false);
@@ -1734,6 +1864,42 @@
                 modelAutoFixRef.current = true;
                 setTextModel(preferred);
             }, [ollamaModels, textModel]);
+
+            useEffect(() => {
+                const element = galleryRef.current;
+                if (!element) return;
+
+                let ticking = false;
+                const update = () => {
+                    setGalleryView({
+                        scrollTop: element.scrollTop,
+                        width: element.clientWidth,
+                        height: element.clientHeight
+                    });
+                };
+                const onScroll = () => {
+                    if (ticking) return;
+                    ticking = true;
+                    window.requestAnimationFrame(() => {
+                        update();
+                        ticking = false;
+                    });
+                };
+
+                update();
+                const observer = new ResizeObserver(update);
+                observer.observe(element);
+                element.addEventListener('scroll', onScroll, { passive: true });
+
+                return () => {
+                    observer.disconnect();
+                    element.removeEventListener('scroll', onScroll);
+                };
+            }, []);
+
+            useEffect(() => {
+                if (galleryRef.current) galleryRef.current.scrollTop = 0;
+            }, [activeFilters, searchQuery]);
 
             useEffect(() => () => {
                 photosRef.current.forEach((p) => {
@@ -1834,6 +2000,27 @@
 
                 return () => clearTimeout(timer);
             }, [photos, timelineData]);
+
+            // Local dev convenience: if the dev server exposes Timeline.json, load it automatically.
+            useEffect(() => {
+                let cancelled = false;
+
+                (async () => {
+                    try {
+                        const response = await fetch('./Timeline.json', { cache: 'no-store' });
+                        if (!response.ok) return;
+                        const raw = await response.json();
+                        const items = Array.isArray(raw) ? raw : (raw.timelineObjects || raw.semanticSegments || []);
+                        const entries = normalizeTimelineData(items);
+                        if (cancelled || entries.length === 0) return;
+                        setTimelineData((previous) => (previous && previous.length > 0 ? previous : entries));
+                    } catch (error) {
+                        // 404/opaque responses are expected on deployments without the personal file.
+                    }
+                })();
+
+                return () => { cancelled = true; };
+            }, []);
 
             const processThumbnails = async (loadedFiles) => {
                 const CONCURRENCY_LIMIT = 6; 
@@ -2097,6 +2284,90 @@
                 }
             };
 
+            const buildMetadataMap = async (items, sortedTimeline) => {
+                const exifById = new Map();
+                let workerPoolUsed = false;
+
+                try {
+                    const exifResults = await parseExifInWorkerPool(items, (done, total) => {
+                        setProgress(t(`EXIF ${done}/${total}...`, `EXIF ${done}/${total}...`));
+                    });
+                    exifResults.forEach((value, key) => exifById.set(key, value));
+                    workerPoolUsed = true;
+                } catch (e) {
+                    console.warn('EXIF worker pool unavailable, using main thread', e);
+                }
+
+                const metas = new Map();
+                const geocodeRequests = new Map();
+                let parsedCount = 0;
+
+                for (const photo of items) {
+                    let exif = exifById.get(photo.id);
+                    // A missing/null worker result is retried on the main thread.
+                    if (exif === undefined || exif === null) {
+                        try {
+                            exif = await exifr.parse(photo.file, true);
+                        } catch (e) {
+                            exif = null;
+                        }
+                    }
+
+                    const meta = resolvePhotoMetadata(photo, exif, sortedTimeline, homeLocation);
+                    if (meta.needsGeocode) {
+                        const key = coordsForGeocode(meta.coords);
+                        if (geocodeCache.has(key)) {
+                            const cached = geocodeCache.get(key);
+                            if (cached) {
+                                meta.location = cached;
+                                meta.locationSource = 'gps';
+                                meta.needsGeocode = false;
+                            }
+                        }
+                        if (meta.needsGeocode) {
+                            if (!geocodeRequests.has(key)) geocodeRequests.set(key, { coords: meta.coords, ids: [] });
+                            geocodeRequests.get(key).ids.push(photo.id);
+                        }
+                    }
+
+                    metas.set(photo.id, meta);
+                    parsedCount += 1;
+                    if (!workerPoolUsed && parsedCount % 10 === 0) {
+                        setProgress(t(`EXIF ${parsedCount}/${items.length}...`, `EXIF ${parsedCount}/${items.length}...`));
+                    }
+                }
+
+                if (geocodeRequests.size > 0) {
+                    const requests = [...geocodeRequests.entries()].map(([key, value]) => ({ key, coords: value.coords }));
+                    let geocodeResults = null;
+
+                    try {
+                        geocodeResults = await geocodeCoordsInWorker(requests, (done, total) => {
+                            setProgress(t(`Lokace ${done}/${total}...`, `Locations ${done}/${total}...`));
+                        });
+                    } catch (e) {
+                        console.warn('Geocode worker unavailable, using main thread', e);
+                    }
+
+                    for (const [key, value] of geocodeRequests.entries()) {
+                        let name = geocodeResults ? (geocodeResults.get(key) ?? null) : await reverseGeocode(key);
+                        if (name && name !== 'Neznámé místo') {
+                            geocodeCache.set(key, name);
+                            value.ids.forEach((id) => {
+                                const meta = metas.get(id);
+                                if (meta && meta.needsGeocode) {
+                                    meta.location = name;
+                                    meta.locationSource = 'gps';
+                                    meta.needsGeocode = false;
+                                }
+                            });
+                        }
+                    }
+                }
+
+                return metas;
+            };
+
             const runPhase1 = async () => {
                 if (photos.length === 0) return;
                 setIsExtracting(true);
@@ -2109,10 +2380,13 @@
                     aiData: p.aiData ? { ...p.aiData, tags: [...(p.aiData.tags || [])] } : { tags: [] }
                 }));
 
+                const metas = await buildMetadataMap(updated, sortedTimeline);
+
                 for (let i = 0; i < updated.length; i++) {
                     const p = updated[i];
+                    const meta = metas.get(p.id);
+                    if (!meta) continue;
                     const previousLocation = p.hardData?.location;
-                    const meta = await extractPhotoMetadata(p, sortedTimeline, homeLocation);
                     const autoTags = buildAutoTags(meta.date, { location: meta.location, camera: meta.camera });
 
                     updated[i] = {
@@ -2131,8 +2405,7 @@
                         aiData: { ...p.aiData, tags: mergePhotoTags(p.aiData.tags, autoTags, previousLocation) }
                     };
 
-                    if (i % 10 === 0 || i === updated.length - 1) {
-                        setProgress(t(`EXIF a lokace ${i + 1}/${updated.length}...`, `EXIF and location ${i + 1}/${updated.length}...`));
+                    if (i % 25 === 0 || i === updated.length - 1) {
                         setPhotos([...updated]);
                     }
                 }
@@ -2160,10 +2433,13 @@
                         aiData: p.aiData ? { ...p.aiData, tags: [...(p.aiData.tags || [])] } : { tags: [] }
                     }));
 
+                    const metas = await buildMetadataMap(work, sortedTimeline);
+
                     for (let i = 0; i < work.length; i++) {
                         const photo = work[i];
+                        const meta = metas.get(photo.id);
+                        if (!meta) continue;
                         const previousLocation = photo.hardData?.location;
-                        const meta = await extractPhotoMetadata(photo, sortedTimeline, homeLocation);
                         const autoTags = buildAutoTags(meta.date, { location: meta.location, camera: meta.camera });
 
                         work[i] = {
@@ -2183,7 +2459,6 @@
                         };
 
                         if (i % 25 === 0 || i === work.length - 1) {
-                            setProgress(t(`EXIF a lokace ${i + 1}/${work.length}...`, `EXIF and location ${i + 1}/${work.length}...`));
                             setPhotos([...work]);
                         }
                     }
@@ -3096,6 +3371,22 @@ DATA: ${JSON.stringify(data)}`;
                 );
             };
 
+            const GALLERY_GAP = 16;
+            const GALLERY_MIN_TILE = 150;
+            const galleryContentWidth = Math.max(0, galleryView.width - 48);
+            const galleryColumns = Math.max(1, Math.min(8, Math.floor((galleryContentWidth + GALLERY_GAP) / (GALLERY_MIN_TILE + GALLERY_GAP))));
+            const galleryComputedTile = galleryColumns > 0
+                ? (galleryContentWidth - GALLERY_GAP * (galleryColumns - 1)) / galleryColumns
+                : GALLERY_MIN_TILE;
+            const galleryTileWidth = Math.max(GALLERY_MIN_TILE, galleryComputedTile || GALLERY_MIN_TILE);
+            const galleryRowHeight = galleryTileWidth + GALLERY_GAP;
+            const galleryRowCount = Math.ceil(filteredPhotos.length / galleryColumns);
+            const galleryOverscan = 3;
+            const galleryStartRow = Math.max(0, Math.floor(galleryView.scrollTop / galleryRowHeight) - galleryOverscan);
+            const galleryEndRow = Math.min(galleryRowCount, Math.ceil((galleryView.scrollTop + galleryView.height) / galleryRowHeight) + galleryOverscan);
+            const visiblePhotos = filteredPhotos.slice(galleryStartRow * galleryColumns, galleryEndRow * galleryColumns);
+            const galleryTotalHeight = Math.max(0, galleryRowCount * galleryRowHeight - GALLERY_GAP);
+
             return (
                 <div className="flex h-screen overflow-hidden">
                     <div className="w-80 bg-slate-900 border-r border-slate-800 flex flex-col">
@@ -3368,12 +3659,25 @@ DATA: ${JSON.stringify(data)}`;
                                 )}
                             </div>
                         </div>
-                        <div className="flex-1 overflow-y-auto p-6 custom-scrollbar pb-32">
-                            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                                {filteredPhotos.map(p => {
+                        <div ref={galleryRef} data-gallery="true" className="flex-1 overflow-y-auto p-6 custom-scrollbar pb-32">
+                            {filteredPhotos.length > 0 && (
+                                <div style={{ height: `${galleryTotalHeight}px`, position: 'relative' }}>
+                                    <div
+                                        style={{
+                                            position: 'absolute',
+                                            top: 0,
+                                            left: 0,
+                                            right: 0,
+                                            transform: `translateY(${galleryStartRow * galleryRowHeight}px)`,
+                                            display: 'grid',
+                                            gridTemplateColumns: `repeat(${galleryColumns}, minmax(0, 1fr))`,
+                                            gap: `${GALLERY_GAP}px`
+                                        }}
+                                    >
+                                        {visiblePhotos.map(p => {
                                     const isSelected = selectedPhotos.has(p.id);
                                     return (
-                                        <div key={p.id} onClick={(e) => toggleSelection(p.id, e)} className={`relative aspect-square bg-slate-800 rounded-lg overflow-hidden group cursor-pointer transition-all ${isSelected ? 'ring-4 ring-orange-500 scale-[0.98]' : 'hover:ring-2 hover:ring-slate-500'}`}>
+                                        <div key={p.id} data-photo-id={p.id} onClick={(e) => toggleSelection(p.id, e)} className={`relative aspect-square bg-slate-800 rounded-lg overflow-hidden group cursor-pointer transition-all ${isSelected ? 'ring-4 ring-orange-500 scale-[0.98]' : 'hover:ring-2 hover:ring-slate-500'}`}>
                                             <div className={`absolute top-2 left-2 z-10 w-6 h-6 flex items-center justify-center rounded-full border-2 transition-colors ${isSelected ? 'bg-orange-500 border-orange-500' : 'border-white/50 bg-black/30 opacity-0 group-hover:opacity-100'}`}>
                                                 {isSelected && <span className="text-white text-sm font-bold block mt-[-2px]">✓</span>}
                                             </div>
@@ -3412,8 +3716,10 @@ DATA: ${JSON.stringify(data)}`;
                                             </div>
                                         </div>
                                     );
-                                })}
-                            </div>
+                                        })}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
 

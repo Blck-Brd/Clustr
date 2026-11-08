@@ -23,7 +23,13 @@ GitHub Pages serves the repository root. The app is therefore reachable at `/Clu
 npm run dev
 ```
 
-This serves `app/` with `npx serve`. Opening `app/index.html` directly also works for most features.
+This serves `app/` at **http://127.0.0.1:4173/** and also exposes the root `Timeline.json` at `/Timeline.json`. When that file exists, the app imports it automatically. Opening `app/index.html` directly also works for most features, but workers and the auto-loaded Timeline are more reliable through the local server.
+
+Browser smoke test (uses installed Chrome):
+
+```powershell
+npm run test:browser
+```
 
 ## Local AI note
 
