@@ -179,6 +179,14 @@
             .trim()
             .slice(0, 80);
 
+        const buildEventNameForNaming = (currentName, aiName, level) => {
+            const clean = cleanEventName(aiName);
+            if (!clean) return currentName;
+            const parts = String(currentName || '').split('/').filter(Boolean).map(cleanEventName);
+            if (level === 'trips') return [clean, ...parts.slice(1)].join('/');
+            return parts.length > 1 ? [...parts.slice(0, -1), clean].join('/') : clean;
+        };
+
         // AI modely vrací různé tvary: mapu {"0": "název"}, pole stringů,
         // pole objektů [{id, name}] nebo obal {"slozky": [...]}. Sjednotíme je.
         const normalizeNameMap = (raw, expectedCount = 0, targetIndices = null) => {
@@ -677,13 +685,19 @@
 
         const extractPhotoMetadata = async (photo, timeline, homeLocation) => {
             let date = photo.date instanceof Date ? photo.date : new Date(photo.date || Date.now());
+            if (!Number.isFinite(date.getTime())) {
+                date = new Date(photo.file?.lastModified || Date.now());
+            }
             let camera = photo.hardData?.camera || 'Neznámý fotoaparát';
             let coords = null;
 
             try {
                 const exif = await exifr.parse(photo.file, true);
                 const exifDate = exif?.DateTimeOriginal || exif?.CreateDate || exif?.ModifyDate;
-                if (exifDate) date = new Date(exifDate);
+                if (exifDate) {
+                    const parsedDate = new Date(exifDate);
+                    if (Number.isFinite(parsedDate.getTime())) date = parsedDate;
+                }
                 if (exif?.Make || exif?.Model) camera = `${exif.Make || ''} ${exif.Model || ''}`.trim();
                 if (Number.isFinite(exif?.latitude) && Number.isFinite(exif?.longitude)) {
                     coords = { lat: exif.latitude, lon: exif.longitude };
@@ -1410,7 +1424,7 @@
 
         // Produces the flat list of event groups used by Phase 2:
         // one group per home session, one group per stop inside each trip.
-        const buildHierarchicalEvents = (photos, homeLocation, settings = DEFAULT_TRIP_SETTINGS) => {
+        const buildHierarchicalEvents = (photos, homeLocation, settings = DEFAULT_TRIP_SETTINGS, stopSettingsOverride = null) => {
             const episodes = clusterPhotosIntoTrips(photos, homeLocation, settings);
             const groups = [];
             let stopCount = 0;
@@ -1418,7 +1432,7 @@
             episodes.trips.forEach((tripPhotos, tripIndex) => {
                 const tripName = `Trip ${tripIndex + 1}`;
                 const tripId = `evt-trip-${tripPhotos[0].date.getTime()}-${tripIndex}`;
-                const stopSettings = computeAutoClusterSettings(tripPhotos);
+                const stopSettings = stopSettingsOverride || computeAutoClusterSettings(tripPhotos);
                 const stops = clusterPhotosByDensity(tripPhotos, stopSettings);
 
                 stops.forEach((stopPhotos, stopIndex) => {
@@ -1559,6 +1573,7 @@
             const [analyzingPhotoId, setAnalyzingPhotoId] = useState(null);
             const t = (cs, en) => lang === 'cs' ? cs : en;
 
+            const [namingLevel, setNamingLevel] = useState(initialSettings.namingLevel || 'trips');
             const [textModel, setTextModel] = useState(initialSettings.textModel === 'gemini-3.8-pro' ? 'gemini-3.8-flash' : (initialSettings.textModel || 'llama3.2'));
             const [textModelCustom, setTextModelCustom] = useState(initialSettings.textModelCustom || '');
             const [geminiModelCustom, setGeminiModelCustom] = useState(initialSettings.geminiModelCustom || '');
@@ -1568,6 +1583,7 @@
             const [visionModel, setVisionModel] = useState(initialSettings.visionModel || 'moondream');
             const [visionModelCustom, setVisionModelCustom] = useState(initialSettings.visionModelCustom || '');
             const [groupingProfile, setGroupingProfile] = useState(initialSettings.groupingProfile || 'trips');
+            const [tripSensitivityMode, setTripSensitivityMode] = useState(initialSettings.tripSensitivityMode || 'auto');
             const [clusteringMode, setClusteringMode] = useState(initialSettings.clusteringMode || 'auto');
             const [manualClusterSettings, setManualClusterSettings] = useState({
                 epsTimeHours: initialSettings.clusterEpsTimeHours ?? 1.5,
@@ -1631,9 +1647,10 @@
             useEffect(() => {
                 try {
                     localStorage.setItem(SETTINGS_KEY, JSON.stringify({
-                        lang, textModel, textModelCustom, geminiModelCustom, homeLocation,
+                        lang, namingLevel, textModel, textModelCustom, geminiModelCustom, homeLocation,
                         visionModel, visionModelCustom, customFolders,
                         groupingProfile,
+                        tripSensitivityMode,
                         clusteringMode,
                         clusterEpsTimeHours: manualClusterSettings.epsTimeHours,
                         clusterEpsSpaceKm: manualClusterSettings.epsSpaceKm,
@@ -1643,7 +1660,7 @@
                         homeSessionGapHours: manualTripSettings.homeSessionGapHours
                     }));
                 } catch (e) {}
-            }, [lang, textModel, textModelCustom, geminiModelCustom, homeLocation, visionModel, visionModelCustom, customFolders, groupingProfile, clusteringMode, manualClusterSettings, manualTripSettings]);
+            }, [lang, namingLevel, textModel, textModelCustom, geminiModelCustom, homeLocation, visionModel, visionModelCustom, customFolders, groupingProfile, tripSensitivityMode, clusteringMode, manualClusterSettings, manualTripSettings]);
 
             useEffect(() => {
                 if (modelAutoFixRef.current || ollamaModels.length === 0) return;
@@ -2133,15 +2150,16 @@
                     let tripInfo = null;
 
                     if (isTripsProfile) {
-                        effectiveClusterSettings = clusteringMode === 'auto'
+                        effectiveClusterSettings = tripSensitivityMode === 'auto'
                             ? computeAutoTripSettings(normalPhotos, homeLocation)
                             : buildTripSettings(manualTripSettings);
-                        setLastClusterSettings({ ...effectiveClusterSettings, profile: 'trips' });
+                        const manualStopSettings = clusteringMode === 'manual' ? buildClusterSettings(manualClusterSettings) : null;
+                        setLastClusterSettings({ profile: 'trips', trip: effectiveClusterSettings, tripMode: tripSensitivityMode, stopMode: clusteringMode });
                         setProgress(t(
                             `Seskupuji cesty a domov (${effectiveClusterSettings.tripGapHours.toFixed(0)} h mezera / ${effectiveClusterSettings.homeRadiusKm.toFixed(0)} km domov)...`,
                             `Grouping trips and home (${effectiveClusterSettings.tripGapHours.toFixed(0)} h gap / ${effectiveClusterSettings.homeRadiusKm.toFixed(0)} km home)...`
                         ));
-                        tripInfo = buildHierarchicalEvents(normalPhotos, homeLocation, effectiveClusterSettings);
+                        tripInfo = buildHierarchicalEvents(normalPhotos, homeLocation, effectiveClusterSettings, manualStopSettings);
                         eventGroups = tripInfo.groups;
                     } else {
                         effectiveClusterSettings = clusteringMode === 'auto'
@@ -2185,9 +2203,13 @@
                             if (photo.aiData.eventNameSource === 'manual') {
                                 // Ručně pojmenované události zůstávají při re-seskupení nedotčené.
                                 photo.aiData.eventNameSource = 'manual';
+                                photo.aiData.tripNameSource = photo.aiData.tripNameSource || 'manual';
+                                photo.aiData.stopNameSource = photo.aiData.stopNameSource || 'manual';
                             } else {
                                 photo.aiData.event_name = placeholder;
                                 photo.aiData.eventNameSource = 'placeholder';
+                                photo.aiData.tripNameSource = 'placeholder';
+                                photo.aiData.stopNameSource = 'placeholder';
                             }
                         });
                     });
@@ -2202,6 +2224,8 @@
                         photo.aiData.category = 'Snímky obrazovky / Různé';
                         photo.aiData.event_name = 'Snímky obrazovky';
                         photo.aiData.eventNameSource = 'placeholder';
+                        photo.aiData.tripNameSource = 'placeholder';
+                        photo.aiData.stopNameSource = 'placeholder';
                         photo.aiData.tags = [...new Set([...photo.aiData.tags, 'Screenshot'])];
                     });
 
@@ -2278,16 +2302,32 @@
                 }));
 
                 try {
+                    const namingTrips = namingLevel === 'trips';
                     const groups = new Map();
+
                     updated.forEach((photo) => {
                         const clusterId = photo.aiData?.clusterId;
                         if (!clusterId || clusterId === 'screenshots') return;
                         if (photo.aiData?.category === 'Snímky obrazovky / Různé') return;
-                        if (!groups.has(clusterId)) groups.set(clusterId, []);
-                        groups.get(clusterId).push(photo);
+                        const groupKey = namingTrips ? (photo.aiData?.tripId || clusterId) : clusterId;
+                        if (!groups.has(groupKey)) groups.set(groupKey, []);
+                        groups.get(groupKey).push(photo);
                     });
 
-                    const clusters = [...groups.values()].filter((items) => items.some((photo) => photo.aiData?.eventNameSource !== 'manual'));
+                    const isManualForLevel = (photo) => {
+                        if (namingTrips) {
+                            return photo.aiData?.tripNameSource === 'manual'
+                                || (photo.aiData?.tripNameSource === undefined && photo.aiData?.eventNameSource === 'manual');
+                        }
+                        if (photo.aiData?.eventKind === 'trip-stop') {
+                            return photo.aiData?.stopNameSource === 'manual'
+                                || (photo.aiData?.stopNameSource === undefined && photo.aiData?.eventNameSource === 'manual');
+                        }
+                        return photo.aiData?.tripNameSource === 'manual'
+                            || (photo.aiData?.tripNameSource === undefined && photo.aiData?.eventNameSource === 'manual');
+                    };
+
+                    const clusters = [...groups.values()].filter((items) => items.some((photo) => !isManualForLevel(photo)));
                     if (clusters.length === 0) {
                         setMessage({ title: t("Nic k pojmenování", "Nothing to name"), text: t("Všechny události už mají ruční název.", "All events already have manual names.") });
                         setIsAnalyzing(false);
@@ -2437,18 +2477,28 @@ DATA: ${JSON.stringify(data)}`;
                         usedBaseNames.add(uniqueName);
 
                         cluster.forEach((photo) => {
-                            if (photo.aiData?.eventNameSource === 'manual') return;
+                            if (isManualForLevel(photo)) return;
                             const idx = indexById.get(photo.id) ?? -1;
                             if (idx === -1) return;
+
                             const currentName = updated[idx].aiData?.event_name || '';
-                            const parentParts = currentName.split('/').slice(0, -1).map(cleanEventName).filter(Boolean);
-                            const eventName = [...parentParts, uniqueName].join('/');
-                            updated[idx].aiData = {
+                            const eventName = buildEventNameForNaming(currentName, uniqueName, namingTrips ? 'trips' : 'stops');
+
+                            const sourceValue = aiName ? 'ai' : 'placeholder';
+                            const nextAiData = {
                                 ...updated[idx].aiData,
                                 event_name: eventName,
-                                eventNameSource: aiName ? 'ai' : 'placeholder',
+                                eventNameSource: sourceValue,
                                 category: 'Událost'
                             };
+                            if (namingTrips) {
+                                nextAiData.tripNameSource = sourceValue;
+                            } else if (updated[idx].aiData?.eventKind === 'trip-stop') {
+                                nextAiData.stopNameSource = sourceValue;
+                            } else {
+                                nextAiData.tripNameSource = sourceValue;
+                            }
+                            updated[idx].aiData = nextAiData;
                             changesCount += 1;
                         });
                     });
@@ -2458,11 +2508,12 @@ DATA: ${JSON.stringify(data)}`;
                     const fallbackNote = fallbackCount > 0
                         ? t(` ${fallbackCount} událostí dostalo náhradní název podle místa a data.`, ` ${fallbackCount} events received fallback names based on location and date.`)
                         : '';
+                    const levelLabel = namingTrips ? t('cest', 'trips') : t('zastávek/událostí', 'stops/events');
                     setMessage({
                         title: t("Události pojmenovány", "Events named"),
                         text: t(
-                            `AI pojmenovala ${clusters.length - fallbackCount} událostí. Aktualizováno ${changesCount} fotek.${fallbackNote}`,
-                            `AI named ${clusters.length - fallbackCount} events. Updated ${changesCount} photos.${fallbackNote}`
+                            `AI pojmenovala ${clusters.length - fallbackCount} ${levelLabel}. Aktualizováno ${changesCount} fotek.${fallbackNote}`,
+                            `AI named ${clusters.length - fallbackCount} ${levelLabel}. Updated ${changesCount} photos.${fallbackNote}`
                         )
                     });
                 } catch (e) {
@@ -2686,13 +2737,32 @@ DATA: ${JSON.stringify(data)}`;
                     parts[parts.length - 1] = newName.trim().replace(/\//g, '-');
                     const newFullPath = parts.join('/');
                     const newPrefix = newFullPath + '/';
+                    const isTopLevelRename = !oldName.includes('/');
 
                     setPhotos(prev => prev.map(p => {
                         const ev = p.aiData?.event_name || '';
                         if (ev === oldName) {
-                            return { ...p, aiData: { ...p.aiData, event_name: newFullPath, eventNameSource: 'manual' } };
+                            return {
+                                ...p,
+                                aiData: {
+                                    ...p.aiData,
+                                    event_name: newFullPath,
+                                    eventNameSource: 'manual',
+                                    tripNameSource: isTopLevelRename ? 'manual' : (p.aiData?.tripNameSource || 'placeholder'),
+                                    stopNameSource: isTopLevelRename ? (p.aiData?.stopNameSource || 'placeholder') : 'manual'
+                                }
+                            };
                         } else if (ev.startsWith(oldPrefix)) {
-                            return { ...p, aiData: { ...p.aiData, event_name: newPrefix + ev.substring(oldPrefix.length), eventNameSource: 'manual' } };
+                            return {
+                                ...p,
+                                aiData: {
+                                    ...p.aiData,
+                                    event_name: newPrefix + ev.substring(oldPrefix.length),
+                                    eventNameSource: 'manual',
+                                    tripNameSource: isTopLevelRename ? 'manual' : (p.aiData?.tripNameSource || 'placeholder'),
+                                    stopNameSource: isTopLevelRename ? (p.aiData?.stopNameSource || 'placeholder') : 'manual'
+                                }
+                            };
                         }
                         return p;
                     }));
@@ -2800,6 +2870,8 @@ DATA: ${JSON.stringify(data)}`;
                     if (type === 'event') {
                         updated.aiData.event_name = val;
                         updated.aiData.eventNameSource = 'manual';
+                        updated.aiData.tripNameSource = 'manual';
+                        updated.aiData.stopNameSource = 'manual';
                         updated.aiData.eventKind = 'misc';
                         if (mergedClusterId) {
                             updated.aiData.clusterId = mergedClusterId;
@@ -2809,6 +2881,8 @@ DATA: ${JSON.stringify(data)}`;
                     } else if (type === 'split') {
                         updated.aiData.event_name = val;
                         updated.aiData.eventNameSource = 'manual';
+                        updated.aiData.tripNameSource = 'manual';
+                        updated.aiData.stopNameSource = 'manual';
                         updated.aiData.eventKind = 'misc';
                         updated.aiData.clusterId = splitClusterId;
                         updated.aiData.tripId = splitClusterId;
@@ -3009,54 +3083,87 @@ DATA: ${JSON.stringify(data)}`;
                                             <option value="places">{t("Profil: Místa (hustota)", "Profile: Places (density)")}</option>
                                         </select>
 
-                                        <select value={clusteringMode} onChange={e => setClusteringMode(e.target.value)} className="w-full bg-slate-800 text-xs p-1 rounded border border-slate-700 text-white">
-                                            <option value="auto">{t("Citlivost: Auto (podle dat)", "Sensitivity: Auto (data-driven)")}</option>
-                                            <option value="manual">{t("Citlivost: Ruční", "Sensitivity: Manual")}</option>
-                                        </select>
+﻿                                        {groupingProfile === 'trips' && (
+                                            <>
+                                                <select value={tripSensitivityMode} onChange={e => setTripSensitivityMode(e.target.value)} className="w-full bg-slate-800 text-xs p-1 rounded border border-slate-700 text-white">
+                                                    <option value="auto">{t("Citlivost cest: Auto", "Trip sensitivity: Auto")}</option>
+                                                    <option value="manual">{t("Citlivost cest: Ruční", "Trip sensitivity: Manual")}</option>
+                                                </select>
 
-                                        {clusteringMode === 'manual' && groupingProfile === 'trips' && (
-                                            <div className="grid grid-cols-3 gap-2">
-                                                <div>
-                                                    <div className="text-[9px] text-slate-500">{t("Mezera (h)", "Gap (h)")}</div>
-                                                    <input type="number" min="12" max="336" step="1" value={manualTripSettings.tripGapHours} onChange={e => setManualTripSettings({ ...manualTripSettings, tripGapHours: Number(e.target.value) })} className="w-full bg-slate-800 p-1 rounded text-xs text-white border border-slate-700" />
-                                                </div>
-                                                <div>
-                                                    <div className="text-[9px] text-slate-500">{t("Domov (km)", "Home (km)")}</div>
-                                                    <input type="number" min="1" max="100" step="1" value={manualTripSettings.homeRadiusKm} onChange={e => setManualTripSettings({ ...manualTripSettings, homeRadiusKm: Number(e.target.value) })} className="w-full bg-slate-800 p-1 rounded text-xs text-white border border-slate-700" />
-                                                </div>
-                                                <div>
-                                                    <div className="text-[9px] text-slate-500">{t("Sezení (h)", "Session (h)")}</div>
-                                                    <input type="number" min="0.5" max="24" step="0.5" value={manualTripSettings.homeSessionGapHours} onChange={e => setManualTripSettings({ ...manualTripSettings, homeSessionGapHours: Number(e.target.value) })} className="w-full bg-slate-800 p-1 rounded text-xs text-white border border-slate-700" />
-                                                </div>
-                                            </div>
+                                                {tripSensitivityMode === 'manual' && (
+                                                    <div className="grid grid-cols-3 gap-2">
+                                                        <div>
+                                                            <div className="text-[9px] text-slate-500">{t("Mezera (h)", "Gap (h)")}</div>
+                                                            <input type="number" min="12" max="336" step="1" value={manualTripSettings.tripGapHours} onChange={e => setManualTripSettings({ ...manualTripSettings, tripGapHours: Number(e.target.value) })} className="w-full bg-slate-800 p-1 rounded text-xs text-white border border-slate-700" />
+                                                        </div>
+                                                        <div>
+                                                            <div className="text-[9px] text-slate-500">{t("Domov (km)", "Home (km)")}</div>
+                                                            <input type="number" min="1" max="100" step="1" value={manualTripSettings.homeRadiusKm} onChange={e => setManualTripSettings({ ...manualTripSettings, homeRadiusKm: Number(e.target.value) })} className="w-full bg-slate-800 p-1 rounded text-xs text-white border border-slate-700" />
+                                                        </div>
+                                                        <div>
+                                                            <div className="text-[9px] text-slate-500">{t("Sezení (h)", "Session (h)")}</div>
+                                                            <input type="number" min="0.5" max="24" step="0.5" value={manualTripSettings.homeSessionGapHours} onChange={e => setManualTripSettings({ ...manualTripSettings, homeSessionGapHours: Number(e.target.value) })} className="w-full bg-slate-800 p-1 rounded text-xs text-white border border-slate-700" />
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                <select value={clusteringMode} onChange={e => setClusteringMode(e.target.value)} className="w-full bg-slate-800 text-xs p-1 rounded border border-slate-700 text-white">
+                                                    <option value="auto">{t("Citlivost zastávek: Auto", "Stop sensitivity: Auto")}</option>
+                                                    <option value="manual">{t("Citlivost zastávek: Ruční", "Stop sensitivity: Manual")}</option>
+                                                </select>
+
+                                                {clusteringMode === 'manual' && (
+                                                    <div className="grid grid-cols-3 gap-2">
+                                                        <div>
+                                                            <div className="text-[9px] text-slate-500">{t("Čas (h)", "Time (h)")}</div>
+                                                            <input type="number" min="0.5" max="12" step="0.5" value={manualClusterSettings.epsTimeHours} onChange={e => setManualClusterSettings({ ...manualClusterSettings, epsTimeHours: Number(e.target.value) })} className="w-full bg-slate-800 p-1 rounded text-xs text-white border border-slate-700" />
+                                                        </div>
+                                                        <div>
+                                                            <div className="text-[9px] text-slate-500">{t("Místo (km)", "Place (km)")}</div>
+                                                            <input type="number" min="0.5" max="50" step="0.5" value={manualClusterSettings.epsSpaceKm} onChange={e => setManualClusterSettings({ ...manualClusterSettings, epsSpaceKm: Number(e.target.value) })} className="w-full bg-slate-800 p-1 rounded text-xs text-white border border-slate-700" />
+                                                        </div>
+                                                        <div>
+                                                            <div className="text-[9px] text-slate-500">{t("Min. fotek", "Min photos")}</div>
+                                                            <input type="number" min="2" max="20" step="1" value={manualClusterSettings.minPoints} onChange={e => setManualClusterSettings({ ...manualClusterSettings, minPoints: Number(e.target.value) })} className="w-full bg-slate-800 p-1 rounded text-xs text-white border border-slate-700" />
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </>
                                         )}
 
-                                        {clusteringMode === 'manual' && groupingProfile === 'places' && (
-                                            <div className="grid grid-cols-3 gap-2">
-                                                <div>
-                                                    <div className="text-[9px] text-slate-500">{t("Čas (h)", "Time (h)")}</div>
-                                                    <input type="number" min="0.5" max="12" step="0.5" value={manualClusterSettings.epsTimeHours} onChange={e => setManualClusterSettings({ ...manualClusterSettings, epsTimeHours: Number(e.target.value) })} className="w-full bg-slate-800 p-1 rounded text-xs text-white border border-slate-700" />
-                                                </div>
-                                                <div>
-                                                    <div className="text-[9px] text-slate-500">{t("Místo (km)", "Place (km)")}</div>
-                                                    <input type="number" min="0.5" max="50" step="0.5" value={manualClusterSettings.epsSpaceKm} onChange={e => setManualClusterSettings({ ...manualClusterSettings, epsSpaceKm: Number(e.target.value) })} className="w-full bg-slate-800 p-1 rounded text-xs text-white border border-slate-700" />
-                                                </div>
-                                                <div>
-                                                    <div className="text-[9px] text-slate-500">{t("Min. fotek", "Min photos")}</div>
-                                                    <input type="number" min="2" max="20" step="1" value={manualClusterSettings.minPoints} onChange={e => setManualClusterSettings({ ...manualClusterSettings, minPoints: Number(e.target.value) })} className="w-full bg-slate-800 p-1 rounded text-xs text-white border border-slate-700" />
-                                                </div>
-                                            </div>
+                                        {groupingProfile === 'places' && (
+                                            <>
+                                                <select value={clusteringMode} onChange={e => setClusteringMode(e.target.value)} className="w-full bg-slate-800 text-xs p-1 rounded border border-slate-700 text-white">
+                                                    <option value="auto">{t("Citlivost míst: Auto", "Place sensitivity: Auto")}</option>
+                                                    <option value="manual">{t("Citlivost míst: Ruční", "Place sensitivity: Manual")}</option>
+                                                </select>
+
+                                                {clusteringMode === 'manual' && (
+                                                    <div className="grid grid-cols-3 gap-2">
+                                                        <div>
+                                                            <div className="text-[9px] text-slate-500">{t("Čas (h)", "Time (h)")}</div>
+                                                            <input type="number" min="0.5" max="12" step="0.5" value={manualClusterSettings.epsTimeHours} onChange={e => setManualClusterSettings({ ...manualClusterSettings, epsTimeHours: Number(e.target.value) })} className="w-full bg-slate-800 p-1 rounded text-xs text-white border border-slate-700" />
+                                                        </div>
+                                                        <div>
+                                                            <div className="text-[9px] text-slate-500">{t("Místo (km)", "Place (km)")}</div>
+                                                            <input type="number" min="0.5" max="50" step="0.5" value={manualClusterSettings.epsSpaceKm} onChange={e => setManualClusterSettings({ ...manualClusterSettings, epsSpaceKm: Number(e.target.value) })} className="w-full bg-slate-800 p-1 rounded text-xs text-white border border-slate-700" />
+                                                        </div>
+                                                        <div>
+                                                            <div className="text-[9px] text-slate-500">{t("Min. fotek", "Min photos")}</div>
+                                                            <input type="number" min="2" max="20" step="1" value={manualClusterSettings.minPoints} onChange={e => setManualClusterSettings({ ...manualClusterSettings, minPoints: Number(e.target.value) })} className="w-full bg-slate-800 p-1 rounded text-xs text-white border border-slate-700" />
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </>
                                         )}
 
                                         <div className="text-[10px] text-slate-500">
-                                            {clusteringMode === 'manual'
-                                                ? (groupingProfile === 'trips'
-                                                    ? t(`Ruční: mezera ${manualTripSettings.tripGapHours} h / domov ${manualTripSettings.homeRadiusKm} km / sezení ${manualTripSettings.homeSessionGapHours} h`, `Manual: ${manualTripSettings.tripGapHours} h gap / ${manualTripSettings.homeRadiusKm} km home / ${manualTripSettings.homeSessionGapHours} h session`)
-                                                    : t(`Ruční: ${manualClusterSettings.epsTimeHours} h / ${manualClusterSettings.epsSpaceKm} km / min. ${manualClusterSettings.minPoints}`, `Manual: ${manualClusterSettings.epsTimeHours} h / ${manualClusterSettings.epsSpaceKm} km / min ${manualClusterSettings.minPoints}`))
-                                                : (lastClusterSettings && lastClusterSettings.profile === groupingProfile
-                                                    ? (groupingProfile === 'trips'
-                                                        ? t(`Auto: mezera ${lastClusterSettings.tripGapHours.toFixed(0)} h / domov ${lastClusterSettings.homeRadiusKm.toFixed(0)} km / sezení ${lastClusterSettings.homeSessionGapHours.toFixed(1)} h`, `Auto: ${lastClusterSettings.tripGapHours.toFixed(0)} h gap / ${lastClusterSettings.homeRadiusKm.toFixed(0)} km home / ${lastClusterSettings.homeSessionGapHours.toFixed(1)} h session`)
-                                                        : t(`Auto: ${lastClusterSettings.epsTimeHours.toFixed(1)} h / ${lastClusterSettings.epsSpaceKm.toFixed(1)} km / min. ${lastClusterSettings.minPoints}`, `Auto: ${lastClusterSettings.epsTimeHours.toFixed(1)} h / ${lastClusterSettings.epsSpaceKm.toFixed(1)} km / min ${lastClusterSettings.minPoints}`))
+                                            {groupingProfile === 'trips'
+                                                ? (lastClusterSettings && lastClusterSettings.profile === 'trips'
+                                                    ? t(`Cesty ${lastClusterSettings.tripMode === 'manual' ? 'Ruční' : 'Auto'}: ${lastClusterSettings.trip.tripGapHours.toFixed(0)} h / ${lastClusterSettings.trip.homeRadiusKm.toFixed(0)} km · Zastávky: ${lastClusterSettings.stopMode === 'manual' ? 'Ruční' : 'Auto'}`, `Trips ${lastClusterSettings.tripMode === 'manual' ? 'Manual' : 'Auto'}: ${lastClusterSettings.trip.tripGapHours.toFixed(0)} h / ${lastClusterSettings.trip.homeRadiusKm.toFixed(0)} km · Stops: ${lastClusterSettings.stopMode === 'manual' ? 'Manual' : 'Auto'}`)
+                                                    : t("Citlivost se spočítá při spuštění.", "Sensitivity is calculated when you run it."))
+                                                : (lastClusterSettings && lastClusterSettings.profile === 'places'
+                                                    ? t(`Auto: ${lastClusterSettings.epsTimeHours.toFixed(1)} h / ${lastClusterSettings.epsSpaceKm.toFixed(1)} km / min. ${lastClusterSettings.minPoints}`, `Auto: ${lastClusterSettings.epsTimeHours.toFixed(1)} h / ${lastClusterSettings.epsSpaceKm.toFixed(1)} km / min ${lastClusterSettings.minPoints}`)
                                                     : t("Citlivost se spočítá při spuštění.", "Sensitivity is calculated when you run it."))}
                                         </div>
 
@@ -3067,6 +3174,11 @@ DATA: ${JSON.stringify(data)}`;
 
                                     <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 space-y-2">
                                         <div className="text-[10px] text-slate-500 mb-1 uppercase font-bold">{t("3. AI názvy událostí (volitelné)", "3. AI Event Names (optional)")}</div>
+
+                                        <select value={namingLevel} onChange={e => setNamingLevel(e.target.value)} className="w-full bg-slate-800 text-xs p-1 rounded border border-slate-700 text-white">
+                                            <option value="trips">{t("AI názvy: Cesty (hlavní složky)", "AI names: Trips (folders)")}</option>
+                                            <option value="stops">{t("AI názvy: Zastávky (vnořené složky)", "AI names: Stops (subfolders)")}</option>
+                                        </select>
 
                                         <select value={textModel} onChange={e => setTextModel(e.target.value)} className="w-full bg-slate-800 text-xs p-1 rounded border border-slate-700 text-white">
                                             <option value="llama3.2">Ollama: Llama 3.2</option>
@@ -3346,7 +3458,7 @@ DATA: ${JSON.stringify(data)}`;
 
                                     <section>
                                         <h3 className="text-lg font-bold text-white mb-2">{t('2. Fáze 3 – AI názvy', '2. Phase 3 – AI Names')}</h3>
-                                        <p>{t('Fáze 3 pošle AI souhrn každé události (čas, místo, tagy) a přejmenuje dočasné názvy. Ručně přejmenované události zůstanou nedotčené.', 'Phase 3 sends the AI a summary of each event (time, place, tags) and renames the temporary names. Manually renamed events are left untouched.')}</p>
+                                        <p>{t('Fáze 3 pošle AI souhrn a přejmenuje dočasné názvy. Zvolte, zda pojmenovat celé cesty (hlavní složky) nebo zastávky (vnořené složky). Ručně přejmenované složky zůstanou nedotčené.', 'Phase 3 sends the AI a summary and renames temporary names. Choose whether to name whole trips (top-level folders) or stops (subfolders). Manually renamed folders are left untouched.')}</p>
                                     </section>
 
                                     <section>
@@ -3361,7 +3473,7 @@ DATA: ${JSON.stringify(data)}`;
 
                                     <section>
                                         <h3 className="text-lg font-bold text-white mb-2">{t('5. Citlivost clusterů a ruční zásahy', '5. Cluster Sensitivity and Manual Edits')}</h3>
-                                        <p>{t('Auto citlivost se počítá z hustoty fotek. Ručně můžete nastavit časové okno, poloměr místa a minimální počet fotek. Tlačítkem „Oddělit“ vytvoříte novou událost pouze z vybraných fotek; „Událost / sloučení“ přejmenuje celé události a při výběru z více událostí je sloučí.', 'Auto sensitivity is derived from photo density. You can manually set the time window, place radius and minimum photo count. “Split” creates a new event from the selected photos only; “Event / merge” renames whole events and merges them when photos from multiple events are selected.')}</p>
+                                        <p>{t('Auto citlivost se počítá z dat. U profilu Cesty můžete zvlášť nastavit citlivost cest (mezera, domov, sezení) a citlivost zastávek (čas, místo, min. fotek). Tlačítkem „Oddělit“ vytvoříte novou událost pouze z vybraných fotek; „Událost / sloučení“ přejmenuje celé události a při výběru z více událostí je sloučí.', 'Auto sensitivity is data-driven. In the Trips profile you can tune trip sensitivity (gap, home, session) and stop sensitivity (time, place, min photos) separately. “Split” creates a new event from the selected photos only; “Event / merge” renames whole events and merges them when photos from multiple events are selected.')}</p>
                                     </section>
                                 </div>
                             </div>

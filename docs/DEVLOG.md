@@ -31,7 +31,7 @@ The `Places` profile remains available for flat density events when trip folders
   - **Places** profile: flat spatiotemporal DBSCAN.
   - Auto/manual sensitivity, manual split and merge, location inheritance.
   - Placeholder names: `Trip N/Stop M - location`, `Home N`, `Event N`.
-- Phase 3: optional AI naming of leaf events (stops/home/flat events); parent trip folders are preserved.
+- Phase 3: optional AI naming - choose **Trips** (top-level folders) or **Stops** (subfolders); the other level is preserved. Manual names are protected by `tripNameSource` / `stopNameSource`.
 - Phase 4: optional vision tags.
 - Persistence: IndexedDB metadata + normalized Timeline; relink by name/size/modified time. Firestore stores only the Gemini key.
 - PWA: `app/manifest.webmanifest`, `app/sw.js`, icons, `app/vercel.json`.
@@ -69,18 +69,38 @@ Current automated scenarios:
 - Location inheritance: manual location applies to the event and nearby photos without their own location.
 - Timeline normalization against the real 293-entry `Timeline.json`: 109 visits, 85 activities, 99 paths.
 
+### Second pass - reliability, real Timeline, AI naming
+
+Added after the first checkpoint:
+
+- **Real Timeline integration test** (`tools/test-timeline-real.mjs`):
+  - Reads the ignored `Timeline.json` from the repository root when present.
+  - Normalizes 293 entries (109 visits, 85 activities, 99 paths).
+  - Verifies match/resolve coverage, HOME/WORK handling, no-EXIF-GPS extraction and the full trip/stop hierarchy built from Timeline-derived coordinates.
+  - Skips cleanly in CI when the personal file is absent.
+- **Trip/home fuzz test** (`tools/test-trip-fuzz.mjs`):
+  - 12 synthetic six-month datasets with two vacations, weekend trips and home sessions.
+  - Asserts every photo assigned exactly once, no home photo in a trip group, no trip photo in a home group, expected trip/home-session counts and no empty groups.
+- **Trip-level AI naming** (`namingLevel = trips`):
+  - Phase 3 groups by `tripId`, names the top-level `Trip N` folder and preserves stop subfolders.
+  - `namingLevel = stops` names stop leaves/home events and preserves the parent trip folder.
+  - `tripNameSource` / `stopNameSource` track manual vs placeholder vs AI names.
+- **Separate stop sensitivity** inside the Trips profile:
+  - Trip sensitivity (trip gap, home radius, home-session gap) is independent from stop density (time/space/min photos).
+- **Name replacement helper** tested for both levels.
+
 ### Known limitations / next steps
 
-1. **AI trip naming** - Phase 3 currently names leaf stops/home events, not the `Trip N` folder. Either rename `Trip N` manually or add a separate trip-level AI pass.
-2. **Stop sensitivity** - inside trips, stop detection uses Auto density settings. Manual place settings apply only in the Places profile.
-3. **Main-thread processing** - EXIF and geocoding still run on the main thread. Move to a Web Worker pool for large folders.
-4. **Gallery rendering** - no virtualization yet; 2,000+ tiles are heavy.
-5. **Local AI over HTTPS** - Ollama at `http://localhost:11434` may be restricted when the PWA is served from Vercel HTTPS. Use local serving / `vercel dev` for local AI.
-6. **Ollama presets** - default preset names may not be installed; the app lists installed models and preflights the selected one.
+1. **Trips closer than the trip gap merge by design** - two trips without home photos and with less than `tripGapHours` between away photos become one trip. Increase/decrease the gap in manual mode if needed.
+2. **Main-thread processing** - EXIF and geocoding still run on the main thread. Move to a Web Worker pool for large folders.
+3. **Gallery rendering** - no virtualization yet; 2,000+ tiles are heavy.
+4. **Local AI over HTTPS** - Ollama at `http://localhost:11434` may be restricted when the PWA is served from Vercel HTTPS. Use local serving / `vercel dev` for local AI.
+5. **Ollama presets** - default preset names may not be installed; the app lists installed models and preflights the selected one.
 
 ### Continue here
 
 - Repository: https://github.com/Blck-Brd/Clustr
 - Deploy: Vercel Root Directory = `app`; no build command.
 - Local run: `npm run dev` (serves `app/`).
-- Next recommended task: trip-level AI naming + stop sensitivity controls.
+- Tests: `npm run check`, `npm test`.
+- Next recommended task: Web Worker pool + virtualized gallery; optional per-project/per-trip overrides.

@@ -26,14 +26,14 @@ docs/                Architecture, deployment and data-format notes
      - Infer home from Timeline HOME, the explicit home setting, or the location with the most distinct days (only for datasets longer than 30 days).
      - Home photos become home sessions (`Home N`), split by the home-session gap.
      - Away photos become trips, split when the away gap exceeds the trip gap (default 72 h) or the trip exceeds the max duration.
-     - Inside each trip, run density DBSCAN to create stop subfolders: `Trip N/Stop M - location`.
+     - Inside each trip, run density DBSCAN to create stop subfolders: `Trip N/Stop M - location`. Stop sensitivity is Auto per trip or Manual from the UI.
    - **Places profile:** flat spatiotemporal DBSCAN events (`Event N - location`) using Auto or manual time/space/min-photo values.
    - Assign `clusterId`, `tripId`, `tripNumber`, `stopNumber`, `eventKind`, temporary names and auto tags.
    - Fill unknown locations inside a group from its dominant location.
 4. **Phase 3 - AI names**
-   - Group by `clusterId` (stop, home session or flat place event), build one summary per group (date, time, location, tags).
-   - Ask Ollama/Gemini for JSON names in batches, normalize response shapes, retry missing names.
-   - Replace the leaf name, preserving the parent trip folder; manual names are preserved (`eventNameSource === 'manual'`).
+   - Choose naming level: **Trips** groups by `tripId`, or **Stops** groups by `clusterId`.
+   - Build one summary per group (date, time, location, tags), ask Ollama/Gemini for JSON names in batches, normalize response shapes, retry missing names.
+   - Trip naming replaces the first path segment and preserves stops; stop naming replaces the leaf and preserves the trip folder. Manual names are skipped (`tripNameSource` / `stopNameSource`).
 5. **Phase 4 - visual tags** - optional vision-model pass.
 6. **Export** - folder hierarchy + XMP sidecars.
 
@@ -46,8 +46,8 @@ docs/                Architecture, deployment and data-format notes
     dateStr, timeStr, location, locationKey, locationSource, coords, camera
   },
   aiData: {
-    tags, event_name, eventNameSource, clusterId, clusterNumber,
-    eventKind, tripId, tripNumber, stopNumber, category
+    tags, event_name, eventNameSource, tripNameSource, stopNameSource,
+    clusterId, clusterNumber, eventKind, tripId, tripNumber, stopNumber, category
   }
 }
 ```

@@ -32,7 +32,7 @@ const helperNames = [
     'findTimelineMatch', 'resolveTimelineEntry', 'normalizeLocationName',
     'clusterPhotosByDensity', 'computeAutoClusterSettings', 'buildClusterSettings', 'applyDominantClusterLocation',
     'interpolateMissingLocations', 'findLocationInheritanceTargets',
-    'buildPlaceholderEventName', 'buildPlaceholderStopName', 'mergePhotoTags', 'buildAutoTags', 'isLikelyScreenshot',
+    'buildPlaceholderEventName', 'buildPlaceholderStopName', 'buildEventNameForNaming', 'mergePhotoTags', 'buildAutoTags', 'isLikelyScreenshot',
     'roundedCoordKey', 'distanceKm', 'extractPhotoMetadata',
     'buildTripSettings', 'computeAutoTripSettings', 'inferHomeReference', 'isHomePhoto',
     'clusterPhotosIntoTrips', 'buildHierarchicalEvents'
@@ -358,5 +358,17 @@ const coordsOnlyPhotos = [0, 10, 20].map((minute) => {
 const coordsOnlyHierarchy = h.buildHierarchicalEvents(coordsOnlyPhotos, '', h.buildTripSettings());
 assert.equal(coordsOnlyHierarchy.tripCount, 1);
 assert.ok(Array.from(coordsOnlyHierarchy.groups, (group) => group.eventName).every((name) => name.startsWith('Trip 1/')));
+
+// AI naming can replace either the trip folder or the stop leaf.
+assert.equal(
+    h.buildEventNameForNaming('Trip 1/Stop 1 - Praha', 'Dovolená Itálie', 'trips'),
+    'Dovolená Itálie/Stop 1 - Praha'
+);
+assert.equal(
+    h.buildEventNameForNaming('Trip 1/Stop 1 - Praha', 'Staroměstské náměstí', 'stops'),
+    'Trip 1/Staroměstské náměstí'
+);
+assert.equal(h.buildEventNameForNaming('Home 1', 'Oslava narozenin', 'trips'), 'Oslava narozenin');
+assert.equal(h.buildEventNameForNaming('Event 1', 'Výlet', 'stops'), 'Výlet');
 
 console.log('All clustering/Timeline helper tests passed.');

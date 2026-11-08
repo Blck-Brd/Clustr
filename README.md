@@ -28,7 +28,8 @@ It is a single-file React app with no build step and no backend. It can be deplo
 - **Local persistence** - photo metadata and Timeline data are saved to IndexedDB and relinked after a refresh by file name, size and modified time.
 - **Trips + home hierarchy (default)** - away periods become one trip folder each; dense stops inside a trip become subfolders. Home photo shoots and weekend trips stay separate.
 - **Places/density profile** - spatiotemporal DBSCAN (1.5 h / 4 km, minimum 3 photos) for flat place events if you do not want trip folders.
-- **Auto + manual sensitivity** - Auto derives the trip/home or place window from the dataset; manual mode exposes trip gap, home radius and home-session gap (or place time/space/min photos).
+- **Auto + manual sensitivity** - Auto derives the trip/home or place window from the dataset. Trip sensitivity (gap, home radius, session gap) and stop/place sensitivity (time, space, min photos) are separate.
+- **Trip or stop AI naming** - Phase 3 can name the top-level trip folders or the stop subfolders, preserving the other level.
 - **Manual cluster edits** - Split selected photos into a new event, or merge events by renaming them together.
 - **Location inheritance** - a manually added location propagates through the event and to nearby photos that have no location of their own (12 h window).
 - **RAW + HEIC previews** - embedded thumbnails via exifr, HEIC conversion via heic2any, TIFF/RAW decoding via UTIF.
