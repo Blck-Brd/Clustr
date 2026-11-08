@@ -21,7 +21,7 @@ docs/                Architecture, deployment and data-format notes
 3. **Phase 2 - grouping**
    - Read EXIF `DateTimeOriginal` / `CreateDate`. Photos usually have **no GPS**; location is derived from Timeline by photo time.
    - Match Timeline segments by time using a sorted index (`visit`, `activity`, `timelinePath`).
-   - Fall back to GPS + Nominatim reverse geocoding, then interpolate missing locations from the nearest known location within 12 hours.
+   - For unnamed coordinates, search the Timeline itself for the nearest named location (HOME/WORK or a named visit, 8 km), then fall back to GPS + Nominatim reverse geocoding, then interpolate missing locations from the nearest known location within 12 hours.
    - **Default profile: Trips + home.**
      - Infer home from Timeline HOME, the explicit home setting, or the location with the most distinct days (only for datasets longer than 30 days).
      - Home photos become home sessions (`Home N`), split by the home-session gap.
@@ -52,7 +52,7 @@ docs/                Architecture, deployment and data-format notes
 }
 ```
 
-`locationSource`: `manual | inherited | timeline | gps | interpolated | cluster | unknown`
+`locationSource`: `manual | inherited | timeline | timeline-near | gps | interpolated | cluster | unknown`
 
 Manual location edits propagate to the whole event and to photos without their own location within 12 hours. Manual event-name edits propagate to the whole event and block Phase 3 from overwriting it.
 

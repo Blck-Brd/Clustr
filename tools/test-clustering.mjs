@@ -16,20 +16,21 @@ const appStart = script.indexOf('const App = () =>');
 assert.ok(appStart !== -1, 'App component marker not found');
 const preApp = script.slice(0, appStart);
 
+const fetchStats = { calls: 0 };
 const sandbox = {
     console,
     React: {},
     localStorage: { getItem: () => null, setItem: () => {} },
     Image: function Image() {},
     document: { createElement: () => ({ getContext: () => ({}) }) },
-    fetch: async () => ({ ok: false, json: async () => ({}) }),
+    fetch: async () => { fetchStats.calls += 1; return { ok: false, json: async () => ({}) }; },
     exifr: { parse: async () => ({}) }
 };
 vm.createContext(sandbox);
 
 const helperNames = [
     'parseCoords', 'parseTimelinePoint', 'normalizeTimelineData', 'prepareTimeline',
-    'findTimelineMatch', 'resolveTimelineEntry', 'normalizeLocationName',
+    'findTimelineMatch', 'resolveTimelineEntry', 'findNearestNamedTimelineLocation', 'normalizeLocationName',
     'clusterPhotosByDensity', 'computeAutoClusterSettings', 'buildClusterSettings', 'applyDominantClusterLocation',
     'interpolateMissingLocations', 'findLocationInheritanceTargets',
     'buildPlaceholderEventName', 'buildPlaceholderStopName', 'buildEventNameForNaming', 'mergePhotoTags', 'buildAutoTags', 'isLikelyScreenshot',
@@ -370,5 +371,31 @@ assert.equal(
 );
 assert.equal(h.buildEventNameForNaming('Home 1', 'Oslava narozenin', 'trips'), 'Oslava narozenin');
 assert.equal(h.buildEventNameForNaming('Event 1', 'Výlet', 'stops'), 'Výlet');
+
+// Unnamed Timeline coordinates resolve to the nearest named Timeline location.
+const namedTimeline = h.prepareTimeline([
+    { kind: 'visit', name: 'Praha', coords: { lat: 50.08, lon: 14.43 }, start: t0, end: t0 + 3600000, semanticType: 'UNKNOWN' },
+    { kind: 'visit', name: '', coords: { lat: 50.10, lon: 14.45 }, start: t0 + 7200000, end: t0 + 10800000, semanticType: 'UNKNOWN' }
+]);
+const nearestNamed = h.findNearestNamedTimelineLocation(namedTimeline, { lat: 50.10, lon: 14.45 }, '');
+assert.ok(nearestNamed);
+assert.equal(nearestNamed.name, 'Praha');
+assert.equal(h.findNearestNamedTimelineLocation(namedTimeline, { lat: 49.0, lon: 13.0 }, ''), null);
+
+const homeTimeline = h.prepareTimeline([
+    { kind: 'visit', name: '', coords: { lat: 50.08, lon: 14.43 }, start: t0, end: t0 + 3600000, semanticType: 'HOME' }
+]);
+assert.equal(h.findNearestNamedTimelineLocation(homeTimeline, { lat: 50.085, lon: 14.435 }, '').name, 'Doma');
+assert.equal(h.findNearestNamedTimelineLocation(homeTimeline, { lat: 50.085, lon: 14.435 }, 'Praha').name, 'Praha');
+
+const beforeFetch = fetchStats.calls;
+const nearestMeta = await h.extractPhotoMetadata(
+    { id: 'nearest-test', name: 'nearest.jpg', date: new Date(t0 + 9000000), hardData: {}, aiData: {}, file: {} },
+    namedTimeline,
+    ''
+);
+assert.equal(nearestMeta.location, 'Praha');
+assert.equal(nearestMeta.locationSource, 'timeline-near');
+assert.equal(fetchStats.calls, beforeFetch, 'Nearest named Timeline lookup must not call Nominatim');
 
 console.log('All clustering/Timeline helper tests passed.');

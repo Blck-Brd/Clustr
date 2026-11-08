@@ -88,6 +88,10 @@ Added after the first checkpoint:
 - **Separate stop sensitivity** inside the Trips profile:
   - Trip sensitivity (trip gap, home radius, home-session gap) is independent from stop density (time/space/min photos).
 - **Name replacement helper** tested for both levels.
+- **Nearest named Timeline lookup**:
+  - When a Timeline segment has coordinates but no name, the app now finds the nearest named Timeline location (HOME/WORK or an explicitly named visit) within 8 km.
+  - Only if nothing is close does it call Nominatim.
+  - Tested with synthetic near/far coordinates and against the real Timeline HOME segment; the lookup avoids the Nominatim fetch.
 
 ### Known limitations / next steps
 

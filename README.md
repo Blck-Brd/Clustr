@@ -24,7 +24,7 @@ It is a single-file React app with no build step and no backend. It can be deplo
 ## Features
 
 - **EXIF extraction** - capture date, camera, GPS, and automatic season / time-of-day tags.
-- **Timeline matching** - imports visits, activities and timeline paths, then binary-searches by EXIF time with GPS reverse-geocoding fallback.
+- **Timeline matching** - imports visits, activities and timeline paths, binary-searches by EXIF time, and resolves unnamed coordinates to the nearest named Timeline location before falling back to GPS/Nominatim.
 - **Local persistence** - photo metadata and Timeline data are saved to IndexedDB and relinked after a refresh by file name, size and modified time.
 - **Trips + home hierarchy (default)** - away periods become one trip folder each; dense stops inside a trip become subfolders. Home photo shoots and weekend trips stay separate.
 - **Places/density profile** - spatiotemporal DBSCAN (1.5 h / 4 km, minimum 3 photos) for flat place events if you do not want trip folders.

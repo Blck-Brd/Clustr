@@ -683,6 +683,50 @@
             return null;
         };
 
+        const NEAREST_NAMED_TIMELINE_KM = 8;
+        const namedTimelineCache = new WeakMap();
+
+        const getNamedTimelineLocations = (timeline) => {
+            if (!Array.isArray(timeline) || timeline.length === 0) return [];
+            if (namedTimelineCache.has(timeline)) return namedTimelineCache.get(timeline);
+
+            const named = [];
+            timeline.forEach((entry) => {
+                if (!entry?.coords) return;
+                let name = entry.name || '';
+                if (!name && entry.semanticType === 'HOME') name = 'HOME';
+                else if (!name && entry.semanticType === 'WORK') name = 'WORK';
+                if (name) named.push({ name, coords: entry.coords, semanticType: entry.semanticType || '' });
+            });
+
+            namedTimelineCache.set(timeline, named);
+            return named;
+        };
+
+        // When a Timeline segment has coordinates but no name, use the nearest named
+        // Timeline location (HOME/WORK or an explicitly named visit) before calling Nominatim.
+        const findNearestNamedTimelineLocation = (timeline, coords, homeLocation, maxKm = NEAREST_NAMED_TIMELINE_KM) => {
+            if (!coords) return null;
+            const named = getNamedTimelineLocations(timeline);
+            let best = null;
+
+            named.forEach((item) => {
+                const distance = distanceKm(coords, item.coords);
+                if (distance === null || distance > maxKm) return;
+                if (!best || distance < best.distance) {
+                    best = { name: item.name, semanticType: item.semanticType, distance };
+                }
+            });
+
+            if (!best) return null;
+
+            let name = best.name;
+            if (name === 'HOME') name = homeLocation || 'Doma';
+            else if (name === 'WORK') name = 'Práce';
+
+            return { name, distance: best.distance, semanticType: best.semanticType };
+        };
+
         const extractPhotoMetadata = async (photo, timeline, homeLocation) => {
             let date = photo.date instanceof Date ? photo.date : new Date(photo.date || Date.now());
             if (!Number.isFinite(date.getTime())) {
@@ -722,10 +766,16 @@
                     location = resolved.name;
                     locationSource = resolved.semanticType === 'HOME' ? 'home' : 'timeline';
                 } else if (coords) {
-                    const geocoded = await reverseGeocode(coordsForGeocode(coords));
-                    if (geocoded && geocoded !== 'Neznámé místo') {
-                        location = geocoded;
-                        locationSource = 'gps';
+                    const nearest = findNearestNamedTimelineLocation(timeline, coords, homeLocation);
+                    if (nearest?.name) {
+                        location = nearest.name;
+                        locationSource = nearest.semanticType === 'HOME' ? 'home' : 'timeline-near';
+                    } else {
+                        const geocoded = await reverseGeocode(coordsForGeocode(coords));
+                        if (geocoded && geocoded !== 'Neznámé místo') {
+                            location = geocoded;
+                            locationSource = 'gps';
+                        }
                     }
                 }
             }

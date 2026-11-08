@@ -36,7 +36,7 @@ vm.createContext(sandbox);
 
 const helperNames = [
     'normalizeTimelineData', 'prepareTimeline', 'findTimelineMatch', 'resolveTimelineEntry',
-    'extractPhotoMetadata', 'buildTripSettings', 'buildHierarchicalEvents',
+    'findNearestNamedTimelineLocation', 'extractPhotoMetadata', 'buildTripSettings', 'buildHierarchicalEvents',
     'roundedCoordKey', 'normalizeLocationName'
 ];
 vm.runInContext(`${preApp}\n;globalThis.__helpers = { ${helperNames.join(', ')} };`, sandbox);
@@ -79,6 +79,29 @@ if (homeEntry) {
     assert.ok(meta.coords && Number.isFinite(meta.coords.lat));
     assert.ok(meta.locationKey);
     assert.notEqual(meta.locationSource, 'unknown');
+
+    // An unnamed segment near HOME inherits the nearest named Timeline location.
+    const nearbyCoords = { lat: homeEntry.coords.lat + 0.01, lon: homeEntry.coords.lon + 0.01 };
+    const nearest = h.findNearestNamedTimelineLocation(sorted, nearbyCoords, 'Praha');
+    assert.ok(nearest, 'Nearby HOME should provide a nearest named location');
+    assert.equal(nearest.name, 'Praha');
+
+    const unnamedNearHome = {
+        kind: 'visit',
+        name: '',
+        coords: nearbyCoords,
+        start: (homeEntry.end || homeEntry.start) + 3600000,
+        end: (homeEntry.end || homeEntry.start) + 7200000,
+        semanticType: 'UNKNOWN'
+    };
+    const syntheticTimeline = h.prepareTimeline([homeEntry, unnamedNearHome]);
+    const nearestMeta = await h.extractPhotoMetadata(
+        { id: 'nearest-home-test', name: 'no-gps-nearest.jpg', date: new Date(unnamedNearHome.start + 1800000), hardData: {}, aiData: {}, file: {} },
+        syntheticTimeline,
+        'Praha'
+    );
+    assert.equal(nearestMeta.location, 'Praha');
+    assert.ok(['home', 'timeline-near'].includes(nearestMeta.locationSource));
 }
 
 const workEntry = entries.find((entry) => entry.kind === 'visit' && entry.semanticType === 'WORK' && entry.coords);
