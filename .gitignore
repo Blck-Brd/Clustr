@@ -1,0 +1,11 @@
+# Personal data - never commit location history
+Timeline.json
+*.timeline.json
+Location History*.json
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+desktop.ini
+*.log
+node_modules/

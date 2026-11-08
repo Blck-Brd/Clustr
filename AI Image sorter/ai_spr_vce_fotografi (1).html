@@ -1,0 +1,823 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Správce Fotografií (Tinder + Screenshoty)</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    
+    <!-- Babel -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- exifr (pro čtení EXIF a GPS dat) -->
+    <script src="https://cdn.jsdelivr.net/npm/exifr/dist/full.umd.js"></script>
+
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #0f172a; color: #e2e8f0; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #1e293b; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
+        .photo-overlay { background: linear-gradient(to top, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.5) 60%, transparent 100%); }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useRef } = React;
+
+        const App = () => {
+            const [photos, setPhotos] = useState([]);
+            const [deletedPhotos, setDeletedPhotos] = useState(new Set()); // IDs smazaných fotek z Tinder módu
+            
+            const [activeFilter, setActiveFilter] = useState('all');
+            const [searchQuery, setSearchQuery] = useState('');
+            const [tagSearchQuery, setTagSearchQuery] = useState('');
+            
+            // Fázové stavy
+            const [isExtracting, setIsExtracting] = useState(false);
+            const [isAnalyzing, setIsAnalyzing] = useState(false);
+            const [isAnalyzingOllamaBulk, setIsAnalyzingOllamaBulk] = useState(false);
+            const [ollamaBulkProgress, setOllamaBulkProgress] = useState({ current: 0, total: 0 });
+            
+            // Tinder Stavy
+            const [showTinderModal, setShowTinderModal] = useState(false);
+            const [tinderQueue, setTinderQueue] = useState([]);
+            const [tinderIndex, setTinderIndex] = useState(0);
+
+            // API a Modely
+            const [apiKey, setApiKey] = useState('');
+            const [selectedModel, setSelectedModel] = useState('gemini-1.5-flash-latest'); 
+            
+            // Ollama Stavy
+            const [ollamaStatus, setOllamaStatus] = useState('checking');
+            const [ollamaModel, setOllamaModel] = useState('llama3.2-vision');
+            
+            // UI Stavy
+            const [showApiKeyModal, setShowApiKeyModal] = useState(false);
+            const [apiKeyInput, setApiKeyInput] = useState('');
+            const [showOrganizerModal, setShowOrganizerModal] = useState(false);
+            const [messageBox, setMessageBox] = useState(null);
+            
+            const fileInputRef = useRef(null);
+
+            useEffect(() => {
+                const storedKey = localStorage.getItem('gemini_api_key');
+                if (storedKey) setApiKey(storedKey);
+                const storedModel = localStorage.getItem('ai_selected_text_model');
+                if (storedModel) setSelectedModel(storedModel);
+                const storedOllamaModel = localStorage.getItem('ollama_model_name');
+                if (storedOllamaModel) setOllamaModel(storedOllamaModel);
+                
+                checkOllama();
+                const interval = setInterval(checkOllama, 10000);
+                return () => clearInterval(interval);
+            }, []);
+
+            // Klávesové zkratky pro Tinder
+            useEffect(() => {
+                const handleKeyDown = (e) => {
+                    if (!showTinderModal) return;
+                    if (e.key === 'ArrowLeft') {
+                        handleTinderSwipe(false);
+                    } else if (e.key === 'ArrowRight') {
+                        handleTinderSwipe(true);
+                    }
+                };
+                window.addEventListener('keydown', handleKeyDown);
+                return () => window.removeEventListener('keydown', handleKeyDown);
+            }, [showTinderModal, tinderIndex, tinderQueue]);
+
+            const checkOllama = async () => {
+                try {
+                    const res = await fetch('http://localhost:11434/', { method: 'GET' });
+                    setOllamaStatus(res.ok ? 'online' : 'offline');
+                } catch(e) {
+                    setOllamaStatus('offline');
+                }
+            };
+
+            const handleFolderSelect = async (e) => {
+                const files = Array.from(e.target.files).filter(file => file.type.startsWith('image/'));
+                if (files.length === 0) return;
+
+                const loadedPhotos = [];
+                for (let file of files) {
+                    loadedPhotos.push({
+                        id: Math.random().toString(36).substr(2, 9),
+                        file: file,
+                        name: file.name,
+                        url: URL.createObjectURL(file),
+                        date: new Date(file.lastModified),
+                        hardData: null,
+                        aiData: null,
+                        isAnalyzingOllama: false,
+                        error: null
+                    });
+                }
+                
+                loadedPhotos.sort((a, b) => b.date - a.date);
+                setPhotos(loadedPhotos);
+                setDeletedPhotos(new Set()); // Vyresetovat smazané fotky při načtení nové složky
+            };
+
+            const getSeason = (date) => {
+                const month = date.getMonth() + 1;
+                if (month >= 3 && month <= 5) return 'Jaro';
+                if (month >= 6 && month <= 8) return 'Léto';
+                if (month >= 9 && month <= 11) return 'Podzim';
+                return 'Zima';
+            };
+
+            const getTimeOfDay = (date) => {
+                const hour = date.getHours();
+                if (hour >= 5 && hour < 9) return 'Ráno';
+                if (hour >= 9 && hour < 17) return 'Den';
+                if (hour >= 17 && hour < 19) return 'Podvečer (Zlatá hodinka)';
+                if (hour >= 19 && hour < 22) return 'Večer';
+                return 'Noc';
+            };
+
+            const resizeImage = (file, maxSize = 800) => {
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onerror = reject;
+                    reader.onload = (e) => {
+                        const img = new Image();
+                        img.onerror = reject;
+                        img.onload = () => {
+                            const canvas = document.createElement('canvas');
+                            let { width, height } = img;
+                            if (width > height) { if (width > maxSize) { height *= maxSize / width; width = maxSize; } }
+                            else { if (height > maxSize) { width *= maxSize / height; height = maxSize; } }
+                            canvas.width = width; canvas.height = height;
+                            const ctx = canvas.getContext('2d');
+                            ctx.drawImage(img, 0, 0, width, height);
+                            resolve(canvas.toDataURL('image/jpeg', 0.8).split(',')[1]);
+                        };
+                        img.src = e.target.result;
+                    };
+                    reader.readAsDataURL(file);
+                });
+            };
+
+            // FÁZE 1: Lokální extrakce EXIF a detekce Screenshotů
+            const runPhase1 = async () => {
+                setIsExtracting(true);
+                let updatedPhotos = [...photos];
+
+                for (let i = 0; i < updatedPhotos.length; i++) {
+                    const photo = updatedPhotos[i];
+                    if (photo.hardData) continue; 
+
+                    let hardData = {
+                        dateStr: photo.date.toLocaleDateString('cs-CZ'),
+                        season: getSeason(photo.date),
+                        timeOfDay: getTimeOfDay(photo.date),
+                        camera: 'Možný Screenshot / Textura', // Defaultně předpokládáme screenshot, pokud EXIF chybí
+                        location: 'Neznámé místo'
+                    };
+
+                    try {
+                        const exif = await exifr.parse(photo.file, true);
+                        if (exif) {
+                            if (exif.DateTimeOriginal) {
+                                const realDate = new Date(exif.DateTimeOriginal);
+                                photo.date = realDate;
+                                hardData.dateStr = realDate.toLocaleDateString('cs-CZ');
+                                hardData.season = getSeason(realDate);
+                                hardData.timeOfDay = getTimeOfDay(realDate);
+                            }
+                            
+                            // Pokud je zapsán Make nebo Model, je to reálná fotka
+                            if (exif.Make || exif.Model) {
+                                hardData.camera = `${exif.Make || ''} ${exif.Model || ''}`.trim();
+                            }
+
+                            if (exif.latitude && exif.longitude) {
+                                try {
+                                    const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${exif.latitude}&lon=${exif.longitude}&zoom=10`);
+                                    const locData = await response.json();
+                                    if (locData && locData.address) {
+                                        hardData.location = locData.address.city || locData.address.town || locData.address.village || locData.address.county || 'Neznámé místo';
+                                        if (locData.address.country) hardData.location += `, ${locData.address.country}`;
+                                    }
+                                    await new Promise(r => setTimeout(r, 600));
+                                } catch (e) {}
+                            }
+                        }
+                    } catch (e) {}
+
+                    updatedPhotos[i].hardData = hardData;
+                    setPhotos([...updatedPhotos]);
+                }
+                
+                setIsExtracting(false);
+            };
+
+            // FÁZE 2: Hromadná AI Dedukce (Chytré seskupování + Pravidlo pro Screenshoty)
+            const runPhase2 = async () => {
+                if (!apiKey) {
+                    setShowApiKeyModal(true);
+                    return;
+                }
+
+                setIsAnalyzing(true);
+                const cleanApiKey = apiKey.trim();
+                let updatedPhotos = [...photos];
+                
+                const dataForAi = updatedPhotos
+                    .filter(p => p.hardData && !p.aiData && !deletedPhotos.has(p.id)) // Ignorujeme smazané
+                    .map(p => ({
+                        id: p.id,
+                        date: p.hardData.dateStr,
+                        season: p.hardData.season,
+                        time: p.hardData.timeOfDay,
+                        location: p.hardData.location,
+                        camera: p.hardData.camera
+                    }));
+
+                if (dataForAi.length === 0) {
+                    setIsAnalyzing(false);
+                    return;
+                }
+
+                try {
+                    const prompt = `Jsi profesionální správce fotografií a datový architekt. Analyzuješ metadata fotografií.
+Tvé úkoly:
+1. SESKUPOVÁNÍ: Pokud vidíš sérii fotek ze stejného místa v rozmezí několika dnů, dej jim VŠEM stejný 'event_name' (např. 'Dovolená Chorvatsko'). Hledej souvislosti v datech a místech!
+2. SCREENSHOTY A TEXTURY: Zvláštní pravidlo! Pokud má fotka u 'camera' napsáno 'Možný Screenshot / Textura', zařaď ji povinně do category 'Screenshot/Textura' a pojmenuj událost třeba 'Herní assety' nebo 'Pracovní snímky'. U těchto ignoruj časy pro seskupování s reálnými výlety.
+
+Přiřaď každému 'id':
+1. 'category' (Kategorie musí být z těchto: Výlet/Dovolená, Rodina/Přátelé, Příroda, Architektura, Zvířata, Dokument/Práce, Screenshot/Textura, Ostatní)
+2. 'event_name' (společný pro logickou sérii)
+3. 3-5 'tags' (česká slova, např. hory, zima, textura, minecraft)
+
+Odpověz POUZE jako validní JSON pole, nic jiného: [{"id": "...", "category": "...", "event_name": "...", "tags": ["...", "..."]}]
+Data k analýze: ${JSON.stringify(dataForAi)}`;
+
+                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${cleanApiKey}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+                    });
+
+                    const result = await response.json();
+                    if (!response.ok || result.error) throw new Error(result.error?.message);
+                    
+                    let jsonText = result.candidates[0].content.parts[0].text;
+                    jsonText = jsonText.replace(/```json/g, '').replace(/```/g, '').trim();
+                    const parsedData = JSON.parse(jsonText); 
+
+                    parsedData.forEach(aiResult => {
+                        const idx = updatedPhotos.findIndex(p => p.id === aiResult.id);
+                        if (idx !== -1) {
+                            updatedPhotos[idx].aiData = {
+                                category: aiResult.category,
+                                event_name: aiResult.event_name,
+                                tags: aiResult.tags || []
+                            };
+                        }
+                    });
+
+                    setPhotos([...updatedPhotos]);
+                    setMessageBox({ title: "Hotovo! 🎉", text: "AI úspěšně roztřídila události a oddělila screenshoty od fotek z výletů." });
+                } catch (error) {
+                    setMessageBox({ title: "Chyba AI", text: error.message });
+                }
+                setIsAnalyzing(false);
+            };
+
+            // HROMADNÁ OLLAMA ANALÝZA
+            const runBulkOllama = async () => {
+                if (ollamaStatus !== 'online') {
+                    setMessageBox({ title: "Ollama chybí", text: "Ollama neběží na pozadí, nebo blokuje přístup. Ujistěte se, že máte povolené CORS."});
+                    return;
+                }
+
+                setIsAnalyzingOllamaBulk(true);
+                const unanalyzed = photos.filter(p => !p.aiData && !p.error && !deletedPhotos.has(p.id));
+                setOllamaBulkProgress({ current: 0, total: unanalyzed.length });
+
+                for (let i = 0; i < unanalyzed.length; i++) {
+                    const targetPhoto = unanalyzed[i];
+                    
+                    setPhotos(prev => prev.map(p => p.id === targetPhoto.id ? { ...p, isAnalyzingOllama: true, error: null } : p));
+                    
+                    try {
+                        const base64Data = await resizeImage(targetPhoto.file);
+                        const prompt = `Analyzuj tuto fotku. Vrať POUZE validní JSON formát: {"category": "Kategorie", "event_name": "Stručný popis scény", "tags": ["tag1", "tag2"]}. Kategorie musí být jedna z: Výlet, Příroda, Lidé, Zvířata, Screenshot/Textura, Jiné. Odpovídej vždy česky.`;
+                        
+                        const response = await fetch('http://localhost:11434/api/generate', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                model: ollamaModel,
+                                prompt: prompt,
+                                images: [base64Data],
+                                stream: false,
+                                format: "json"
+                            })
+                        });
+                        
+                        if (!response.ok) throw new Error("Model neodpověděl.");
+                        const result = await response.json();
+                        
+                        let jsonText = result.response;
+                        jsonText = jsonText.replace(/```json/g, '').replace(/```/g, '').trim();
+                        const parsed = JSON.parse(jsonText);
+                        
+                        setPhotos(prev => prev.map(p => p.id === targetPhoto.id ? { 
+                            ...p, 
+                            isAnalyzingOllama: false,
+                            aiData: {
+                                category: parsed.category || "Ollama",
+                                event_name: parsed.event_name || "Ollama Vize",
+                                tags: parsed.tags || []
+                            }
+                        } : p));
+                    } catch (err) {
+                        setPhotos(prev => prev.map(p => p.id === targetPhoto.id ? { ...p, isAnalyzingOllama: false, error: "Chyba Ollamy" } : p));
+                        if (err.message === "Failed to fetch") {
+                            setOllamaStatus('offline');
+                            break; 
+                        }
+                    }
+                    
+                    setOllamaBulkProgress({ current: i + 1, total: unanalyzed.length });
+                }
+                
+                setIsAnalyzingOllamaBulk(false);
+                setMessageBox({ title: "Ollama dokončena", text: "Hromadná vizuální analýza přes lokální AI byla dokončena."});
+            };
+
+            // INDIVIDUÁLNÍ OLLAMA ANALÝZA
+            const runSingleOllama = async (id) => {
+                if (ollamaStatus !== 'online') {
+                    setMessageBox({ title: "Ollama chybí", text: "Ollama neběží na pozadí."});
+                    return;
+                }
+
+                setPhotos(prev => prev.map(p => p.id === id ? { ...p, isAnalyzingOllama: true, error: null } : p));
+                try {
+                    const photo = photos.find(p => p.id === id);
+                    const base64Data = await resizeImage(photo.file);
+                    const prompt = `Analyzuj tuto fotku. Vrať POUZE validní JSON formát: {"category": "Kategorie", "event_name": "Stručný popis scény", "tags": ["tag1", "tag2"]}. Kategorie musí být jedna z: Výlet, Příroda, Lidé, Zvířata, Screenshot/Textura, Jiné. Odpovídej vždy česky.`;
+                    
+                    const response = await fetch('http://localhost:11434/api/generate', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            model: ollamaModel,
+                            prompt: prompt,
+                            images: [base64Data],
+                            stream: false,
+                            format: "json"
+                        })
+                    });
+                    
+                    if (!response.ok) throw new Error("Model neodpověděl.");
+                    const result = await response.json();
+                    
+                    let jsonText = result.response;
+                    jsonText = jsonText.replace(/```json/g, '').replace(/```/g, '').trim();
+                    const parsed = JSON.parse(jsonText);
+                    
+                    setPhotos(prev => prev.map(p => p.id === id ? { 
+                        ...p, 
+                        isAnalyzingOllama: false,
+                        aiData: {
+                            category: parsed.category || "Ollama",
+                            event_name: parsed.event_name || "Ollama Vize",
+                            tags: parsed.tags || []
+                        }
+                    } : p));
+                } catch (err) {
+                    setPhotos(prev => prev.map(p => p.id === id ? { ...p, isAnalyzingOllama: false, error: "Chyba Ollamy" } : p));
+                }
+            };
+
+            const organizeToDisk = async () => {
+                if (!window.showDirectoryPicker) {
+                    setMessageBox({ title: "Chyba", text: "Prohlížeč nepodporuje ukládání. Použijte Chrome/Edge." });
+                    return;
+                }
+                try {
+                    const rootDirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+                    for (const photo of photos) {
+                        // Přeskakujeme fotky zahozené v Tinder módu!
+                        if (deletedPhotos.has(photo.id)) continue;
+                        if (!photo.hardData && !photo.aiData) continue; 
+                        
+                        let folderName = photo.aiData ? photo.aiData.event_name : (photo.hardData ? photo.hardData.location : "Ostatní");
+                        if (folderName === 'Neznámé místo' || !folderName) {
+                            folderName = `${photo.date.getFullYear()}-${String(photo.date.getMonth() + 1).padStart(2, '0')}`;
+                        }
+                        
+                        // Speciální složka pro Screenshoty
+                        if (photo.aiData && photo.aiData.category === 'Screenshot/Textura') {
+                             folderName = `Z_Screenshoty_a_Textury/${folderName}`;
+                        }
+
+                        folderName = folderName.replace(/[:*?"<>|]/g, '_'); 
+
+                        // Vytvoření složky (pokud má lomítko pro podsložky, musíme to rozdělit)
+                        let currentHandle = rootDirHandle;
+                        for (const part of folderName.split('/')) {
+                             currentHandle = await currentHandle.getDirectoryHandle(part, { create: true });
+                        }
+
+                        const fileHandle = await currentHandle.getFileHandle(photo.name, { create: true });
+                        const writable = await fileHandle.createWritable();
+                        await writable.write(photo.file);
+                        await writable.close();
+                    }
+                    setShowOrganizerModal(false);
+                    setMessageBox({ title: "Uloženo!", text: "Fotky byly roztříděny. Promazané fotky z Tinder módu byly přeskočeny a vynechány!" });
+                } catch (err) {
+                    if (err.name !== 'AbortError') setMessageBox({ title: "Chyba", text: err.message });
+                }
+            };
+
+            const handleOllamaModelChange = (e) => {
+                const val = e.target.value;
+                setOllamaModel(val);
+                localStorage.setItem('ollama_model_name', val);
+            };
+
+            // Filtr fotek, který rovnou odfiltruje ty "zahozené" z Tinderu
+            const filteredPhotos = useMemo(() => {
+                let result = photos.filter(p => !deletedPhotos.has(p.id));
+
+                if (activeFilter.startsWith('event-')) {
+                    const ev = activeFilter.replace('event-', '');
+                    result = result.filter(p => p.aiData && p.aiData.event_name === ev);
+                } else if (activeFilter.startsWith('loc-')) {
+                    const loc = activeFilter.replace('loc-', '');
+                    result = result.filter(p => p.hardData && p.hardData.location === loc);
+                } else if (activeFilter.startsWith('tag-')) {
+                    const tag = activeFilter.replace('tag-', '');
+                    result = result.filter(p => p.aiData && p.aiData.tags && p.aiData.tags.includes(tag));
+                } else if (activeFilter === 'screenshots') {
+                    result = result.filter(p => p.aiData && p.aiData.category === 'Screenshot/Textura');
+                }
+
+                if (searchQuery.trim() !== '') {
+                    const q = searchQuery.toLowerCase();
+                    result = result.filter(p => {
+                        if (p.name.toLowerCase().includes(q)) return true;
+                        if (p.hardData) {
+                            if (p.hardData.location.toLowerCase().includes(q)) return true;
+                            if (p.hardData.season.toLowerCase().includes(q)) return true;
+                        }
+                        if (p.aiData) {
+                            if (p.aiData.event_name && p.aiData.event_name.toLowerCase().includes(q)) return true;
+                            if (p.aiData.tags && p.aiData.tags.some(t => t.toLowerCase().includes(q))) return true;
+                        }
+                        return false;
+                    });
+                }
+                return result;
+            }, [photos, activeFilter, searchQuery, deletedPhotos]);
+
+            const events = [...new Set(photos.filter(p => p.aiData && p.aiData.category !== 'Screenshot/Textura' && !deletedPhotos.has(p.id)).map(p => p.aiData.event_name))];
+            const locations = [...new Set(photos.filter(p => p.hardData && p.hardData.location !== 'Neznámé místo' && !deletedPhotos.has(p.id)).map(p => p.hardData.location))];
+            const hasScreenshots = photos.some(p => p.aiData && p.aiData.category === 'Screenshot/Textura' && !deletedPhotos.has(p.id));
+
+            const allTags = useMemo(() => {
+                const tagsSet = new Set();
+                photos.filter(p => !deletedPhotos.has(p.id)).forEach(p => {
+                    if (p.aiData && p.aiData.tags) p.aiData.tags.forEach(t => tagsSet.add(t));
+                });
+                return Array.from(tagsSet).sort((a, b) => a.localeCompare(b, 'cs'));
+            }, [photos, deletedPhotos]);
+
+            // --- TINDER MÓD LOGIKA ---
+            const startTinder = () => {
+                if (filteredPhotos.length === 0) return;
+                setTinderQueue(filteredPhotos);
+                setTinderIndex(0);
+                setShowTinderModal(true);
+            };
+
+            const handleTinderSwipe = (keep) => {
+                if (!keep) {
+                    setDeletedPhotos(prev => {
+                        const newSet = new Set(prev);
+                        newSet.add(tinderQueue[tinderIndex].id);
+                        return newSet;
+                    });
+                }
+                
+                if (tinderIndex + 1 < tinderQueue.length) {
+                    setTinderIndex(prev => prev + 1);
+                } else {
+                    setShowTinderModal(false);
+                    setMessageBox({ title: "Tinder dokončen", text: "Prošli jste celou frontu fotek!"});
+                }
+            };
+
+            return (
+                <>
+                    <div className="flex h-screen overflow-hidden">
+                        
+                        {/* BOČNÍ PANEL */}
+                        <div className="w-64 bg-slate-900 border-r border-slate-800 flex flex-col shadow-xl z-10 flex-shrink-0">
+                            <div className="p-5 border-b border-slate-800">
+                                <h1 className="text-xl font-bold bg-gradient-to-r from-orange-400 to-rose-400 bg-clip-text text-transparent flex items-center gap-2">
+                                    <span>⚡</span> AI Sorter
+                                </h1>
+                            </div>
+                            
+                            <div className="flex-1 overflow-y-auto p-4 custom-scrollbar space-y-6">
+                                <div>
+                                    <input type="file" ref={fileInputRef} webkitdirectory="true" directory="true" multiple className="hidden" onChange={handleFolderSelect} />
+                                    <button onClick={() => fileInputRef.current.click()} className="w-full flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 text-sm py-2.5 px-4 rounded-lg transition-colors border border-slate-700 shadow-sm cursor-pointer text-white">
+                                        <span>📂</span> Z lokálního disku
+                                    </button>
+                                </div>
+
+                                {photos.length > 0 && (
+                                    <div className="space-y-3">
+                                        {/* Tlačítko Fáze 1 */}
+                                        <div className="bg-slate-950/50 p-3 rounded-xl border border-slate-800">
+                                            <div className="flex justify-between items-center mb-2">
+                                                <h3 className="text-[10px] font-bold text-slate-400 uppercase">1. Detekce & Metadata</h3>
+                                                <span className="text-[10px] font-mono text-slate-500">{photos.filter(p=>p.hardData).length}/{photos.length}</span>
+                                            </div>
+                                            <button 
+                                                onClick={runPhase1} disabled={isExtracting}
+                                                className={`w-full py-2 px-3 rounded-lg text-xs font-medium transition-all shadow-lg flex justify-center gap-2 items-center ${isExtracting ? 'bg-slate-800 text-slate-400' : 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-900/50 cursor-pointer'}`}
+                                            >
+                                                {isExtracting ? <span className="animate-spin">🌀 Hledám data...</span> : <span>📍 Zjistit EXIF a typ</span>}
+                                            </button>
+                                        </div>
+
+                                        {/* Tlačítko Fáze 2 */}
+                                        <div className="bg-slate-950/50 p-3 rounded-xl border border-slate-800 relative">
+                                            {photos.filter(p=>p.hardData).length === 0 && <div className="absolute inset-0 bg-slate-900/80 z-10 rounded-xl backdrop-blur-[1px]"></div>}
+                                            
+                                            <div className="flex justify-between items-center mb-2">
+                                                <h3 className="text-[10px] font-bold text-rose-400 uppercase">2. AI Seskupování</h3>
+                                                <span className="text-[10px] font-mono text-slate-500">{photos.filter(p=>p.aiData && p.aiData.category !== 'Ollama').length}/{photos.length}</span>
+                                            </div>
+                                            <select value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)} className="w-full bg-slate-900 border border-slate-700 text-[10px] text-slate-300 rounded p-1 mb-2 focus:outline-none focus:border-rose-500 cursor-pointer">
+                                                <option value="gemini-1.5-flash-latest">Gemini 1.5 Flash (Doporučeno)</option>
+                                                <option value="gemini-1.5-pro-latest">Gemini 1.5 Pro</option>
+                                                <option value="gemini-3.8-flash">Gemini 3.8 Flash</option>
+                                            </select>
+                                            <button 
+                                                onClick={runPhase2} disabled={isAnalyzing || isAnalyzingOllamaBulk}
+                                                className={`w-full py-2 px-3 rounded-lg text-xs font-medium transition-all shadow-lg flex justify-center gap-2 items-center ${isAnalyzing || isAnalyzingOllamaBulk ? 'bg-rose-900 text-rose-400' : 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-900/50 cursor-pointer'}`}
+                                            >
+                                                {isAnalyzing ? <span className="animate-spin">🧠 Seskupuji události...</span> : <span>✨ Sloučit události a tagy</span>}
+                                            </button>
+                                        </div>
+
+                                        {/* Ollama Nastavení */}
+                                        <div className="bg-slate-950/50 p-3 rounded-xl border border-slate-800">
+                                            <div className="flex justify-between items-center mb-2">
+                                                <h3 className="text-[10px] font-bold text-teal-400 uppercase flex items-center gap-1">🦙 Ollama Vision</h3>
+                                                <div className={`w-2 h-2 rounded-full ${ollamaStatus === 'online' ? 'bg-teal-500' : 'bg-red-500'}`}></div>
+                                            </div>
+                                            <input 
+                                                type="text" 
+                                                value={ollamaModel} 
+                                                onChange={handleOllamaModelChange}
+                                                className="w-full bg-slate-900 border border-slate-700 text-[10px] text-slate-300 rounded p-1 focus:outline-none focus:border-teal-500"
+                                                placeholder="llama3.2-vision"
+                                            />
+                                            <button 
+                                                onClick={runBulkOllama} disabled={isAnalyzingOllamaBulk || isExtracting || isAnalyzing || ollamaStatus !== 'online'}
+                                                className={`w-full mt-2 py-2 px-3 rounded-lg text-[10px] font-medium transition-all shadow-lg flex justify-center gap-2 items-center ${isAnalyzingOllamaBulk || ollamaStatus !== 'online' ? 'bg-slate-800 text-slate-400' : 'bg-teal-600 hover:bg-teal-500 text-white shadow-teal-900/50 cursor-pointer'}`}
+                                            >
+                                                {isAnalyzingOllamaBulk ? <span className="animate-spin">🦙 {ollamaBulkProgress.current}/{ollamaBulkProgress.total}</span> : <span>🦙 Hromadná Vize</span>}
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* FILTRY */}
+                                {photos.length > 0 && (
+                                    <div className="space-y-4 pt-2">
+                                        <button onClick={() => setActiveFilter('all')} className={`w-full text-left px-3 py-1.5 rounded text-sm transition-colors cursor-pointer ${activeFilter === 'all' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:bg-slate-800'}`}>Všechny zobrazené ({filteredPhotos.length})</button>
+                                        
+                                        {hasScreenshots && (
+                                             <button onClick={() => setActiveFilter('screenshots')} className={`w-full text-left px-3 py-1.5 rounded text-xs transition-colors cursor-pointer font-bold ${activeFilter === 'screenshots' ? 'bg-purple-600 text-white' : 'text-purple-400 hover:bg-slate-800'}`}>🎮 Screenshoty & Textury</button>
+                                        )}
+
+                                        {events.length > 0 && (
+                                            <div>
+                                                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Události (Seskupeno)</h3>
+                                                <div className="space-y-1">
+                                                    {events.map(ev => (
+                                                        <button key={ev} onClick={() => setActiveFilter(`event-${ev}`)} className={`w-full text-left px-3 py-1.5 rounded text-xs transition-colors truncate cursor-pointer ${activeFilter === `event-${ev}` ? 'bg-rose-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}>{ev}</button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {allTags.length > 0 && (
+                                            <div>
+                                                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Tagy</h3>
+                                                <div className="relative mb-2">
+                                                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-500 text-xs">🔍</span>
+                                                    <input 
+                                                        type="text" 
+                                                        placeholder="Vyhledat tag..." 
+                                                        value={tagSearchQuery}
+                                                        onChange={(e) => setTagSearchQuery(e.target.value)}
+                                                        className="w-full bg-slate-950 border border-slate-700 text-xs rounded-lg px-2 py-1.5 pl-7 focus:outline-none focus:border-rose-500 text-slate-200 transition-all"
+                                                    />
+                                                </div>
+                                                <div className="flex flex-wrap gap-1 max-h-48 overflow-y-auto custom-scrollbar pr-1">
+                                                    {allTags
+                                                        .filter(t => t.toLowerCase().includes(tagSearchQuery.toLowerCase()))
+                                                        .map(tag => (
+                                                        <button 
+                                                            key={tag}
+                                                            onClick={() => setActiveFilter(`tag-${tag}`)}
+                                                            className={`text-[10px] px-2 py-1 rounded transition-colors cursor-pointer border ${activeFilter === `tag-${tag}` ? 'bg-rose-600 border-rose-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'}`}
+                                                        >
+                                                            #{tag}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* HLAVNÍ MŘÍŽKA FOTEK */}
+                        <div className="flex-1 bg-slate-950 flex flex-col relative">
+                            <div className="h-16 border-b border-slate-800 flex items-center justify-between px-6 bg-slate-900/50 backdrop-blur z-20">
+                                <div className="flex-1 max-w-xl relative">
+                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">🔍</span>
+                                    <input type="text" placeholder="Hledat cokoliv..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full bg-slate-800 border border-slate-700 text-sm rounded-full py-2 pl-10 pr-4 focus:outline-none focus:border-rose-500 text-slate-100 transition-all" />
+                                </div>
+                                <div className="ml-4 flex gap-3">
+                                    {filteredPhotos.length > 0 && (
+                                        <button onClick={startTinder} className="bg-gradient-to-r from-orange-500 to-rose-500 hover:from-orange-400 hover:to-rose-400 text-white text-sm py-2 px-4 rounded-full font-bold transition-all shadow-lg shadow-rose-900/30 cursor-pointer flex items-center gap-2">
+                                            <span>🔥</span> Tinder Mód
+                                        </button>
+                                    )}
+                                    {(photos.filter(p => !deletedPhotos.has(p.id) && (p.aiData || p.hardData)).length > 0) && (
+                                        <button onClick={() => setShowOrganizerModal(true)} className="bg-emerald-600 hover:bg-emerald-500 text-white text-sm py-2 px-4 rounded-full font-medium transition-colors shadow-lg cursor-pointer flex items-center gap-2">
+                                            <span>💾</span> Exportovat
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
+                                {filteredPhotos.length === 0 ? (
+                                    <div className="h-full flex flex-col items-center justify-center text-slate-500">
+                                        <div className="text-6xl mb-4 opacity-50">📷</div>
+                                        <h2 className="text-xl font-medium text-slate-400 mb-2">Žádné fotky ve výběru</h2>
+                                    </div>
+                                ) : (
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                                        {filteredPhotos.map(photo => (
+                                            <div key={photo.id} className="group relative aspect-square rounded-xl overflow-hidden bg-slate-800 border border-slate-700/50 shadow-sm hover:shadow-xl hover:border-slate-600 transition-all">
+                                                <img src={photo.url} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy" />
+                                                
+                                                {/* Tlačítko pro Ollamu na hover */}
+                                                <div className="absolute top-2 right-2 z-30 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <button 
+                                                        onClick={(e) => { e.stopPropagation(); runSingleOllama(photo.id); }}
+                                                        disabled={photo.isAnalyzingOllama || ollamaStatus !== 'online'}
+                                                        className={`backdrop-blur border text-[10px] px-2 py-1.5 rounded shadow transition-colors ${ollamaStatus === 'online' ? 'bg-slate-900/80 border-slate-700 text-white hover:bg-teal-600 hover:border-teal-500 cursor-pointer' : 'bg-red-900/80 border-red-500 text-red-200 cursor-not-allowed'}`}
+                                                    >
+                                                        {photo.isAnalyzingOllama ? <span className="animate-pulse">🦙 Vize...</span> : '🦙 Zkusit Ollamu'}
+                                                    </button>
+                                                </div>
+
+                                                <div className="photo-overlay absolute bottom-0 left-0 right-0 p-3 pt-12 flex flex-col justify-end z-10 pointer-events-none">
+                                                    
+                                                    {photo.aiData && (
+                                                        <div className="mb-2">
+                                                            <span className={`text-[11px] font-bold text-white px-1.5 py-0.5 rounded shadow inline-block mb-1 ${photo.aiData.category === 'Screenshot/Textura' ? 'bg-purple-600' : (photo.aiData.category === 'Ollama' ? 'bg-teal-600' : 'bg-rose-600')}`}>
+                                                                {photo.aiData.event_name}
+                                                            </span>
+                                                            <div className="flex gap-1 flex-wrap mt-1">
+                                                                {photo.aiData.tags.map((tag, idx) => (
+                                                                    <span 
+                                                                        key={idx} 
+                                                                        onClick={(e) => { e.stopPropagation(); setActiveFilter(`tag-${tag}`); }}
+                                                                        className={`text-[9px] text-slate-200 bg-black/60 px-1.5 py-0.5 rounded-full border border-slate-700/50 pointer-events-auto cursor-pointer ${photo.aiData.category === 'Ollama' ? 'hover:bg-teal-600 hover:border-teal-500' : 'hover:bg-rose-600 hover:border-rose-500'}`}
+                                                                    >
+                                                                        #{tag}
+                                                                    </span>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    {photo.hardData ? (
+                                                        <div className="flex gap-1 flex-wrap mt-1">
+                                                            {photo.hardData.location !== 'Neznámé místo' && <span className="text-[9px] font-medium text-blue-100 bg-blue-800/80 px-1.5 py-0.5 rounded shadow">📍 {photo.hardData.location.split(',')[0]}</span>}
+                                                            <span className="text-[9px] text-slate-200 bg-black/60 px-1 py-0.5 rounded border border-slate-700/50">⏱ {photo.hardData.timeOfDay}</span>
+                                                            {photo.hardData.camera.includes('Screenshot') && <span className="text-[9px] text-purple-200 bg-purple-900/80 px-1 py-0.5 rounded border border-purple-700/50">🎮 Možný Screenshot</span>}
+                                                        </div>
+                                                    ) : (
+                                                        <span className="text-xs text-slate-400">Čeká na Fázi 1</span>
+                                                    )}
+                                                    
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* MODAL: TINDER MÓD */}
+                    {showTinderModal && tinderQueue.length > 0 && (
+                        <div className="fixed inset-0 bg-black/95 z-[70] flex flex-col">
+                             <div className="flex justify-between items-center p-6 text-white absolute top-0 left-0 right-0 z-10 bg-gradient-to-b from-black/80 to-transparent">
+                                 <div>
+                                     <h2 className="text-2xl font-bold bg-gradient-to-r from-orange-400 to-rose-400 bg-clip-text text-transparent flex items-center gap-2">🔥 Tinder Mód</h2>
+                                     <p className="text-slate-400 text-sm mt-1">Fotka {tinderIndex + 1} z {tinderQueue.length}</p>
+                                 </div>
+                                 <button onClick={() => setShowTinderModal(false)} className="px-6 py-2 bg-slate-800 hover:bg-slate-700 rounded-full font-medium transition-colors border border-slate-700">Zavřít</button>
+                             </div>
+                             
+                             <div className="flex-1 flex items-center justify-center p-8 overflow-hidden relative mt-16 mb-24">
+                                 <img src={tinderQueue[tinderIndex].url} className="max-h-full max-w-full object-contain drop-shadow-2xl rounded-lg" />
+                             </div>
+                             
+                             <div className="absolute bottom-0 left-0 right-0 p-8 flex justify-center gap-8 bg-gradient-to-t from-black/90 to-transparent">
+                                 <button 
+                                    onClick={() => handleTinderSwipe(false)} 
+                                    className="bg-slate-800 border-2 border-rose-600 hover:bg-rose-600 px-8 py-4 w-48 rounded-full text-white font-bold text-xl transition-all flex items-center justify-center gap-2 shadow-[0_0_30px_rgba(225,29,72,0.3)] hover:scale-105"
+                                >
+                                    <span>🗑️</span> Zahodit
+                                 </button>
+                                 <button 
+                                    onClick={() => handleTinderSwipe(true)} 
+                                    className="bg-slate-800 border-2 border-emerald-500 hover:bg-emerald-500 px-8 py-4 w-48 rounded-full text-white font-bold text-xl transition-all flex items-center justify-center gap-2 shadow-[0_0_30px_rgba(16,185,129,0.3)] hover:scale-105"
+                                >
+                                    <span>💚</span> Ponechat
+                                 </button>
+                             </div>
+                             <div className="absolute bottom-3 left-1/2 -translate-x-1/2 text-slate-500 text-xs">
+                                 Tip: Můžete používat i šipky na klávesnici (Vlevo = Zahodit, Vpravo = Ponechat)
+                             </div>
+                        </div>
+                    )}
+
+                    {/* MODAL: API KLÍČ */}
+                    {showApiKeyModal && (
+                        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                            <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 max-w-md w-full shadow-2xl">
+                                <h2 className="text-xl font-bold mb-2">API Klíč Google Gemini</h2>
+                                <p className="text-sm text-slate-400 mb-4">Pro Fázi 2 (Hromadná dedukce událostí a tagů) vložte svůj klíč.</p>
+                                <input type="password" value={apiKeyInput} onChange={(e) => setApiKeyInput(e.target.value)} className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-sm mb-4 focus:ring-2 focus:ring-rose-500 focus:outline-none text-white" />
+                                <div className="flex justify-end gap-3">
+                                    <button onClick={() => setShowApiKeyModal(false)} className="px-4 py-2 text-sm text-slate-400 hover:text-white cursor-pointer">Zrušit</button>
+                                    <button onClick={() => { setApiKey(apiKeyInput.trim()); setShowApiKeyModal(false); }} className="px-4 py-2 bg-rose-600 hover:bg-rose-500 rounded-lg text-sm font-medium text-white shadow-lg cursor-pointer">Uložit</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* MODAL: EXPORT */}
+                    {showOrganizerModal && (
+                        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                            <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 max-w-md w-full shadow-2xl">
+                                <h2 className="text-xl font-bold mb-2 flex items-center gap-2"><span>💾</span> Export na disk</h2>
+                                <p className="text-sm text-slate-400 mb-6">Zkopíruje fotky do nových složek podle AI událostí. <br/><br/><b className="text-rose-400">Promazané fotky z Tinder módu budou ignorovány a zahozeny!</b> Všechny Screenshoty půjdou automaticky do vlastní složky.</p>
+                                <button onClick={organizeToDisk} className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 rounded-xl text-white font-bold shadow-lg transition-colors cursor-pointer">Zkopírovat na disk</button>
+                                <div className="mt-4 flex justify-end"><button onClick={() => setShowOrganizerModal(false)} className="text-sm text-slate-500 hover:text-white cursor-pointer">Zrušit</button></div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* MESSAGE BOX */}
+                    {messageBox && (
+                        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+                            <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 max-w-sm w-full shadow-2xl text-center">
+                                <h2 className="text-lg font-bold mb-3 text-slate-100">{messageBox.title}</h2>
+                                <p className="text-sm text-slate-400 mb-6">{messageBox.text}</p>
+                                <button onClick={() => setMessageBox(null)} className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-medium text-white cursor-pointer">Rozumím</button>
+                            </div>
+                        </div>
+                    )}
+                </>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>

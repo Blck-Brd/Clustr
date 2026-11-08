@@ -1,0 +1,1200 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Sorter - Ultimate Final s RAW/HEIC Konvertorem</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- EXIFR full umí číst i zabudované náhledy v RAWu -->
+    <script src="https://cdn.jsdelivr.net/npm/exifr/dist/full.umd.js"></script>
+    <!-- HEIC to JPEG konvertor -->
+    <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
+    <!-- UTIF dekodér pro složité TIFF/RAW (NEF, CR2, DNG) -->
+    <script src="https://cdn.jsdelivr.net/npm/utif@3.1.0/UTIF.js"></script>
+
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #0f172a; color: #e2e8f0; margin: 0; overflow: hidden; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #1e293b; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
+        .photo-overlay { background: linear-gradient(to top, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.5) 60%, transparent 100%); }
+    </style>
+</head>
+<body class="bg-slate-950">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useRef } = React;
+
+        // --- HELPERS (Mimo komponentu pro stabilitu) ---
+        const geocodeCache = new Map();
+
+        // Agresivnější záchrana poškozeného JSONu
+        const safeJsonParse = (str) => {
+            if (!str) return null;
+            try {
+                return JSON.parse(str);
+            } catch (e) {
+                console.error("JSON Parse Error. Pokus o opravu a vyčištění řetězce...");
+                try {
+                    let cleaned = str.replace(/```json|```/g, '').trim();
+                    // Záchrana, pokud model vyčerpal token limit a usekl pole v půlce objektu
+                    if (cleaned.endsWith(',')) cleaned = cleaned.slice(0, -1);
+                    if (!cleaned.endsWith(']')) {
+                        const lastBrace = cleaned.lastIndexOf('}');
+                        if (lastBrace !== -1) {
+                            cleaned = cleaned.substring(0, lastBrace + 1) + ']';
+                        } else {
+                            cleaned += ']';
+                        }
+                    }
+                    return JSON.parse(cleaned);
+                } catch (e2) {
+                    console.error("Kritické selhání zpracování JSON dat.");
+                    return null; 
+                }
+            }
+        };
+
+        const getSeason = (date) => {
+            const month = date.getMonth() + 1;
+            if (month >= 3 && month <= 5) return 'Jaro';
+            if (month >= 6 && month <= 8) return 'Léto';
+            if (month >= 9 && month <= 11) return 'Podzim';
+            return 'Zima';
+        };
+
+        const getTimeOfDay = (date) => {
+            const hour = date.getHours();
+            if (hour >= 5 && hour < 9) return 'Ráno';
+            if (hour >= 9 && hour < 17) return 'Den';
+            if (hour >= 17 && hour < 19) return 'Podvečer';
+            if (hour >= 19 && hour < 22) return 'Večer';
+            return 'Noc';
+        };
+
+        const reverseGeocode = async (latLon) => {
+            if (!latLon) return null;
+            if (geocodeCache.has(latLon)) return geocodeCache.get(latLon);
+            try {
+                const [lat, lon] = latLon.split(',');
+                await new Promise(r => setTimeout(r, 1100));
+                const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=10`, {
+                    headers: { 'User-Agent': 'AI-Photo-Sorter-Pro/6.0' }
+                });
+                if (!res.ok) return null;
+                const data = await res.json();
+                const addr = data.address;
+                if (!addr) return null;
+                const place = addr.city || addr.town || addr.village || addr.county || addr.state || addr.country || 'Neznámé místo';
+                geocodeCache.set(latLon, place); 
+                return place;
+            } catch (e) { return null; }
+        };
+
+        const generatePreview = async (file) => {
+            const ext = file.name.split('.').pop().toLowerCase();
+            try {
+                const thumbUrl = await exifr.thumbnailUrl(file);
+                if (thumbUrl) return thumbUrl;
+            } catch (e) {}
+
+            if (ext === 'heic' || ext === 'heif') {
+                try {
+                    const convertedBlob = await heic2any({ blob: file, toType: "image/jpeg", quality: 0.7 });
+                    const blob = Array.isArray(convertedBlob) ? convertedBlob[0] : convertedBlob;
+                    return URL.createObjectURL(blob);
+                } catch (e) { console.warn("HEIC konverze selhala"); }
+            }
+
+            if (['nef', 'cr2', 'dng', 'arw', 'tif', 'tiff'].includes(ext)) {
+                try {
+                    const buffer = await file.arrayBuffer();
+                    const ifds = UTIF.decode(buffer);
+                    if (ifds && ifds.length > 0) {
+                        let ifd = ifds[0];
+                        if (ifds.length > 1 && ifds[1].width && ifds[1].height) {
+                            ifd = ifds[1]; 
+                        }
+                        UTIF.decodeImage(buffer, ifd);
+                        const rgba = UTIF.toRGBA8(ifd);
+                        const canvas = document.createElement('canvas');
+                        canvas.width = ifd.width;
+                        canvas.height = ifd.height;
+                        const ctx = canvas.getContext('2d');
+                        const imgData = new ImageData(new Uint8ClampedArray(rgba), ifd.width, ifd.height);
+                        ctx.putImageData(imgData, 0, 0);
+                        return canvas.toDataURL('image/jpeg', 0.8);
+                    }
+                } catch (e) {
+                    console.warn("RAW UTIF konverze selhala", e);
+                }
+            }
+            return null;
+        };
+
+        const App = () => {
+            const [photos, setPhotos] = useState([]);
+            const [timelineData, setTimelineData] = useState(null);
+            const [activeFilters, setActiveFilters] = useState([]); 
+            const [searchQuery, setSearchQuery] = useState('');
+            const [tagSearchQuery, setTagSearchQuery] = useState('');
+            const [isExtracting, setIsExtracting] = useState(false);
+            const [isAnalyzing, setIsAnalyzing] = useState(false);
+            const [isMoondreaming, setIsMoondreaming] = useState(false);
+            const [progress, setProgress] = useState('');
+            const [ollamaStatus, setOllamaStatus] = useState('checking');
+            const [message, setMessage] = useState(null);
+            const [showTinder, setShowTinder] = useState(false);
+            const [tinderIndex, setTinderIndex] = useState(0);
+            const [tinderQueue, setTinderQueue] = useState([]);
+            const [renameModal, setRenameModal] = useState({ isOpen: false, oldName: '', newName: '', type: 'tag' });
+            const [showExportModal, setShowExportModal] = useState(false);
+            const [showHelpModal, setShowHelpModal] = useState(false);
+            
+            const [cloudDb, setCloudDb] = useState(null);
+            const [cloudMetadata, setCloudMetadata] = useState(null);
+            const [needsRelink, setNeedsRelink] = useState(false);
+            const [isCloudSyncing, setIsCloudSyncing] = useState(false);
+            
+            const [selectedPhotos, setSelectedPhotos] = useState(new Set());
+            const [bulkModal, setBulkModal] = useState({ isOpen: false, type: '', value: '' });
+            
+            const [lang, setLang] = useState('cs');
+            const [analyzingPhotoId, setAnalyzingPhotoId] = useState(null);
+            const t = (cs, en) => lang === 'cs' ? cs : en;
+
+            const [textModel, setTextModel] = useState('llama3.2');
+            const [textModelCustom, setTextModelCustom] = useState('');
+            const [chunkSize, setChunkSize] = useState(150);
+            const [geminiApiKey, setGeminiApiKey] = useState('');
+            
+            const [visionModel, setVisionModel] = useState('moondream');
+            const [visionModelCustom, setVisionModelCustom] = useState('');
+            
+            const fileInputRef = useRef(null);
+            const timelineInputRef = useRef(null);
+
+            useEffect(() => {
+                checkOllama();
+                setInterval(checkOllama, 10000);
+                const handleKeyDown = (e) => {
+                    if (!showTinder) return;
+                    if (e.key === 'ArrowLeft') handleTinderSwipe(false);
+                    else if (e.key === 'ArrowRight') handleTinderSwipe(true);
+                };
+                window.addEventListener('keydown', handleKeyDown);
+                return () => window.removeEventListener('keydown', handleKeyDown);
+            }, [showTinder, tinderIndex, tinderQueue]);
+
+            useEffect(() => {
+                const initCloud = async () => {
+                    try {
+                        const { initializeApp } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js");
+                        const { getAuth, signInAnonymously, signInWithCustomToken } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js");
+                        const { getFirestore, doc, getDoc, setDoc } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
+
+                        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+                        
+                        if (!firebaseConfig || Object.keys(firebaseConfig).length === 0) return;
+
+                        const app = initializeApp(firebaseConfig);
+                        const auth = getAuth(app);
+                        const db = getFirestore(app);
+                        
+                        const token = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+                        let user;
+                        if (token) {
+                            const cred = await signInWithCustomToken(auth, token);
+                            user = cred.user;
+                        } else {
+                            const cred = await signInAnonymously(auth);
+                            user = cred.user;
+                        }
+
+                        setCloudDb({ db, appId, uid: user.uid, doc, setDoc });
+
+                        const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'workspace', 'current');
+                        const snap = await getDoc(docRef);
+                        if (snap.exists()) {
+                            const data = snap.data();
+                            if (data.geminiApiKey) setGeminiApiKey(data.geminiApiKey);
+                            if (data.metadata) {
+                                setCloudMetadata(data.metadata);
+                                setNeedsRelink(true);
+                            }
+                        }
+                    } catch (e) { console.error("Cloud init error", e); }
+                };
+                initCloud();
+            }, []);
+
+            useEffect(() => {
+                if (!cloudDb) return;
+                if (photos.length === 0 && !geminiApiKey) return;
+                
+                const timer = setTimeout(async () => {
+                    setIsCloudSyncing(true);
+                    try {
+                        const { db, appId, uid, doc, setDoc } = cloudDb;
+                        const simplifiedPhotos = photos.map(p => ({
+                            name: p.name,
+                            date: p.date.getTime(),
+                            hardData: p.hardData || null,
+                            aiData: p.aiData || null
+                        }));
+                        
+                        const payload = { metadata: JSON.stringify(simplifiedPhotos) };
+                        if (geminiApiKey) payload.geminiApiKey = geminiApiKey;
+                        
+                        await setDoc(doc(db, 'artifacts', appId, 'users', uid, 'workspace', 'current'), payload);
+                    } catch(e) { console.error("Save error", e); }
+                    setTimeout(() => setIsCloudSyncing(false), 800);
+                }, 2000);
+                return () => clearTimeout(timer);
+            }, [photos, geminiApiKey, cloudDb]);
+
+            const checkOllama = async () => {
+                try {
+                    const res = await fetch('http://localhost:11434/');
+                    setOllamaStatus(res.ok ? 'online' : 'offline');
+                } catch(e) { setOllamaStatus('offline'); }
+            };
+
+            const processThumbnails = async (loadedFiles) => {
+                const CONCURRENCY_LIMIT = 6; 
+                const queue = [...loadedFiles];
+                
+                const worker = async () => {
+                    while (queue.length > 0) {
+                        const p = queue.shift();
+                        if (!p || !p.isRaw) continue;
+                        
+                        try {
+                            const thumbUrl = await generatePreview(p.file);
+                            setPhotos(prev => prev.map(item => 
+                                item.id === p.id ? { ...item, url: thumbUrl, thumbLoading: false } : item
+                            ));
+                        } catch (err) {
+                            console.warn(`Náhled selhal pro ${p.name}`);
+                            setPhotos(prev => prev.map(item => 
+                                item.id === p.id ? { ...item, thumbLoading: false } : item
+                            ));
+                        }
+                    }
+                };
+
+                const workers = Array(CONCURRENCY_LIMIT).fill(null).map(() => worker());
+                await Promise.all(workers);
+            };
+
+            const handleFolder = (e) => {
+                const allowedExts = ['jpg','jpeg','png','webp','heic','heif','nef','cr2','arw','dng','orf','raf', 'tif', 'tiff'];
+                const files = Array.from(e.target.files).filter(f => {
+                    const ext = f.name.split('.').pop().toLowerCase();
+                    return f.type.startsWith('image/') || allowedExts.includes(ext);
+                });
+                
+                let parsedMeta = [];
+                if (cloudMetadata) {
+                    parsedMeta = safeJsonParse(cloudMetadata) || [];
+                }
+
+                const loaded = files.map(f => {
+                    const existing = parsedMeta.find(m => m.name === f.name);
+                    const ext = f.name.split('.').pop().toLowerCase();
+                    const isRaw = ['nef', 'cr2', 'arw', 'dng', 'raf', 'orf', 'heic', 'heif', 'tif', 'tiff'].includes(ext);
+                    
+                    return {
+                        id: Math.random().toString(36).substr(2, 9),
+                        file: f, 
+                        name: f.name, 
+                        url: isRaw ? null : URL.createObjectURL(f), 
+                        isRaw: isRaw,
+                        thumbLoading: isRaw,
+                        date: existing ? new Date(existing.date) : new Date(f.lastModified), 
+                        hardData: existing?.hardData || null, 
+                        aiData: existing?.aiData || null
+                    };
+                }).sort((a, b) => b.date - a.date);
+                
+                setPhotos(loaded);
+                setNeedsRelink(false);
+                processThumbnails(loaded);
+            };
+
+            const handleTimeline = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                
+                // Ukážeme uživateli, že se na tom pracuje (Timeline může být velký JSON)
+                setMessage({ title: "Načítám...", text: "Zpracovávám Timeline JSON, to může chvíli trvat..." });
+
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    try {
+                        // Pro lokální soubory Timeline použijeme čistý, rychlý JSON.parse (safeJsonParse je jen pro nespolehlivá AI data)
+                        const raw = JSON.parse(ev.target.result);
+                        
+                        const items = Array.isArray(raw) ? raw : (raw.timelineObjects || raw.semanticSegments || []);
+                        const places = items.map(item => {
+                            const v = item.visit || item.placeVisit;
+                            if (!v) return null;
+                            let coords = null;
+                            if (v.topCandidate?.placeLocation) coords = v.topCandidate.placeLocation.replace('geo:', '');
+                            else if (v.location?.coordinates) coords = v.location.coordinates.join(',');
+                            
+                            // Někdy je textový název uložen hlouběji
+                            let placeName = v.location?.name || v.topCandidate?.semanticType || "Timeline Lokace";
+                            
+                            return {
+                                name: placeName,
+                                coords: coords,
+                                start: (v.duration?.startTimestamp || item.startTime) ? new Date(v.duration?.startTimestamp || item.startTime).getTime() : 0,
+                                end: (v.duration?.endTimestamp || item.endTime) ? new Date(v.duration?.endTimestamp || item.endTime).getTime() : 0
+                            };
+                        }).filter(Boolean);
+                        
+                        setTimelineData(places);
+                        setMessage({ title: "OK", text: `Timeline úspěšně načteno: nalezli jsme ${places.length} záznamů o lokacích.` });
+                    } catch(err) { 
+                        console.error("Timeline Parse Error:", err);
+                        setMessage({ title: "Chyba", text: "Chyba při zpracování Timeline dat. Ujistěte se, že jde o platný JSON exportovaný z Google Maps." }); 
+                    }
+                };
+                reader.readAsText(file);
+            };
+
+            const runPhase1 = async () => {
+                setIsExtracting(true);
+                // Vytvoříme si pouze referenční seznam pro iteraci, nebudeme ho přímo upravovat
+                const photosToProcess = [...photos]; 
+                
+                for (let i = 0; i < photosToProcess.length; i++) {
+                    const p = photosToProcess[i];
+                    
+                    // ODSTRANĚNO: `if (p.hardData) continue;` 
+                    // Nyní to Fázi 1 projede znova u všech a můžeš ji volat opakovaně (např. když dodatečně nahraješ Timeline)
+
+                    let date = p.date;
+                    let tags = [];
+                    let location = p.hardData?.location || 'Neznámé místo';
+                    let camera = p.hardData?.camera || 'Možný Screenshot / Textura';
+                    let coordsToGeocode = null;
+                    let semanticLocation = null;
+
+                    try {
+                        const exif = await exifr.parse(p.file, true);
+                        if (exif?.DateTimeOriginal) {
+                            date = new Date(exif.DateTimeOriginal);
+                        }
+                        if (exif?.Make || exif?.Model) {
+                            camera = `${exif.Make || ''} ${exif.Model || ''}`.trim();
+                        }
+                        if (exif?.latitude && exif?.longitude) {
+                            coordsToGeocode = `${exif.latitude},${exif.longitude}`;
+                        }
+
+                        if (timelineData) {
+                            const t = date.getTime();
+                            // Rozšířeno na 4 hodiny tolerance (14400000 ms) pro lepší shodu
+                            const match = timelineData.find(m => t >= (m.start - 14400000) && t <= (m.end + 14400000));
+                            if (match) {
+                                if (match.name && match.name !== "Timeline Lokace" && match.name !== "Neznámé místo") {
+                                    semanticLocation = match.name;
+                                } else if (match.coords && !coordsToGeocode) {
+                                    coordsToGeocode = match.coords;
+                                }
+                            }
+                        }
+
+                        if (!semanticLocation && coordsToGeocode) {
+                            const resLoc = await reverseGeocode(coordsToGeocode);
+                            if (resLoc) semanticLocation = resLoc;
+                        }
+
+                        if (semanticLocation) location = semanticLocation;
+
+                        tags = [getSeason(date), getTimeOfDay(date)];
+                        if (location !== 'Neznámé místo') tags.push(location);
+                        if (camera === 'Možný Screenshot / Textura') tags.push('Screenshot');
+                    } catch(e) { console.error("Chyba analýzy metadat fotky:", e) }
+
+                    // BEZPEČNÝ FUNKCIONÁLNÍ UPDATE: 
+                    // Tímto nepřepíšeme 'url' a 'thumbLoading' z funkce generující náhledy na pozadí
+                    setPhotos(prev => prev.map(item => {
+                        if (item.id === p.id) {
+                            return {
+                                ...item, 
+                                date: date,
+                                hardData: { dateStr: date.toLocaleDateString('cs-CZ'), location, camera },
+                                // Spojí existující AI tagy (z předchozích běhů nebo od uživatele/moondream) s těmi novými
+                                aiData: { ...item.aiData, tags: [...new Set([...(item.aiData?.tags || []), ...tags])] }
+                            };
+                        }
+                        return item;
+                    }));
+
+                    if (i % 5 === 0) { 
+                        setProgress(`Zpracovávám ${i+1}/${photosToProcess.length}...`); 
+                    }
+                }
+                
+                setIsExtracting(false);
+                setProgress('');
+            };
+
+            const runPhase2 = async () => {
+                setIsAnalyzing(true);
+                setProgress(t('Příprava dat...', 'Preparing data...'));
+                let updated = [...photos];
+                const metadata = updated.filter(p => p.hardData).map(p => ({
+                    id: p.id, timestamp: p.date.getTime(), dateStr: p.hardData.dateStr, loc: p.hardData.location, camera: p.hardData.camera, tags: p.aiData?.tags || []
+                }));
+
+                const modelToUse = textModel === 'custom' ? textModelCustom : textModel;
+                if (!modelToUse) { setMessage({ title: t("Chyba", "Error"), text: t("Vyberte model.", "Select a model.") }); setIsAnalyzing(false); return; }
+
+                try {
+                    // DÁVKOVÁNÍ: Zvětšíme dávku na 500, abychom dramaticky snížili počet API dotazů (kvůli Free Tier limitům)
+                    const BATCH_SIZE = parseInt(chunkSize, 10);
+                    let allParsedEvents = [];
+
+                    for (let i = 0; i < metadata.length; i += BATCH_SIZE) {
+                        const chunk = metadata.slice(i, i + BATCH_SIZE);
+                        const progressText = t(`⏳ AI analyzuje shluky (${i+1} až ${Math.min(i+BATCH_SIZE, metadata.length)} z ${metadata.length})...`, `⏳ AI analyzing clusters (${i+1} to ${Math.min(i+BATCH_SIZE, metadata.length)} of ${metadata.length})...`);
+                        setProgress(progressText);
+
+                        const prompt = `Jsi profesionální archivář fotografií. Seskupuj fotky do logických událostí (event_name).
+                        LOGIKA: 
+                        1. Časové shluky (1-14 dní) v podobných lokacích -> "Dovolená [Místo] [Měsíc/Rok]".
+                        2. Denní aktivity (vysoká hustota fotek za den) -> "Výlet [Místo] [Datum]".
+                        3. Fallback: Pokud nenajdeš téma, vytvoř složku podle dat, např. "Složka [Datum od] - [Datum do]".
+                        4. Screenshoty: category = 'Snímky obrazovky / Různé'.
+                        Vrať POUZE čistý JSON pole: [{"id":"...", "event_name":"...", "category":"..."}]. ID musí být přesně stejné jako v zadání.
+                        Data: ${JSON.stringify(chunk)}`;
+
+                        let parsedChunk = null;
+                        
+                        if (modelToUse.startsWith('gemini')) {
+                            if (!geminiApiKey) throw new Error("Chybí Gemini API klíč!");
+                            
+                            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelToUse}:generateContent?key=${geminiApiKey}`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    contents: [{ parts: [{ text: prompt }] }],
+                                    generationConfig: { response_mime_type: "application/json", maxOutputTokens: 8192 }
+                                })
+                            });
+                            const result = await res.json();
+                            if (result.error) throw new Error(result.error.message);
+                            
+                            let aiTextResponse = result.candidates[0].content.parts[0].text;
+                            const match = aiTextResponse.match(/\[[\s\S]*\]/);
+                            const jsonString = match ? match[0] : aiTextResponse;
+                            parsedChunk = safeJsonParse(jsonString);
+                        } else {
+                            if (ollamaStatus !== 'online') throw new Error("Ollama není online.");
+                            const res = await fetch('http://localhost:11434/api/generate', {
+                                method: 'POST', headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify({ model: modelToUse, prompt, stream: false, format: 'json', options: { num_predict: -1 } })
+                            });
+                            const result = await res.json();
+                            
+                            let aiTextResponse = result.response;
+                            const match = aiTextResponse.match(/\[[\s\S]*\]/);
+                            const jsonString = match ? match[0] : aiTextResponse;
+                            parsedChunk = safeJsonParse(jsonString);
+                        }
+
+                        if (!parsedChunk) {
+                            throw new Error(`Kritická chyba: AI nedokázala zpracovat dávku fotek (${i+1}-${i+BATCH_SIZE}). Neplatný formát odpovědi.`);
+                        }
+
+                        // Akumulace dat ze všech dávek
+                        if (Array.isArray(parsedChunk)) {
+                            allParsedEvents = allParsedEvents.concat(parsedChunk);
+                        } else if (parsedChunk.results || parsedChunk.events) {
+                            allParsedEvents = allParsedEvents.concat(parsedChunk.results || parsedChunk.events);
+                        } else {
+                            allParsedEvents.push(parsedChunk);
+                        }
+
+                        // Zpomalení: Počkáme 2 vteřiny před odesláním další dávky, abychom nenarazili na RPM (Requests per Minute) limit
+                        if (i + BATCH_SIZE < metadata.length) {
+                            await new Promise(resolve => setTimeout(resolve, 2000));
+                        }
+                    }
+
+                    setProgress(t('Slučuji podobné události...', 'Merging similar events...'));
+                    
+                    // POST-PROCESSING: Kontrola a sloučení duplicitních událostí
+                    let uniqueEvents = [...new Set(allParsedEvents.map(e => e.event_name).filter(Boolean))];
+                    let mergedEventsMapping = {};
+                    
+                    if (uniqueEvents.length > 1) {
+                        const mergePrompt = `Jsi profesionální archivář. Zkontroluj tento seznam událostí a najdi ty, které zjevně patří k sobě a měly by být ve stejné složce (např. "Výlet Praha 1", "Výlet Praha 2" sloučíš pod "Výlet Praha"). 
+                        Vrať POUZE čistý JSON objekt (key-value pair), kde klíč je starý název a hodnota je nový sloučený název. Pokud událost nepotřebuje sloučit, neuváděj ji.
+                        Seznam: ${JSON.stringify(uniqueEvents)}`;
+                        
+                        try {
+                            let mergeResponseStr = "";
+                            if (modelToUse.startsWith('gemini')) {
+                                const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelToUse}:generateContent?key=${geminiApiKey}`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        contents: [{ parts: [{ text: mergePrompt }] }],
+                                        generationConfig: { response_mime_type: "application/json", maxOutputTokens: 2048 }
+                                    })
+                                });
+                                const result = await res.json();
+                                mergeResponseStr = result.candidates[0].content.parts[0].text;
+                            } else {
+                                const res = await fetch('http://localhost:11434/api/generate', {
+                                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                                    body: JSON.stringify({ model: modelToUse, prompt: mergePrompt, stream: false, format: 'json' })
+                                });
+                                const result = await res.json();
+                                mergeResponseStr = result.response;
+                            }
+                            
+                            const match = mergeResponseStr.match(/\{[\s\S]*\}/);
+                            const jsonString = match ? match[0] : mergeResponseStr;
+                            mergedEventsMapping = safeJsonParse(jsonString) || {};
+                        } catch (e) {
+                            console.warn("Chyba při slučování událostí, přeskočeno.", e);
+                        }
+                    }
+
+                    setProgress(t('Zpracovávám výsledky...', 'Processing results...'));
+
+                    let changesCount = 0;
+                    allParsedEvents.forEach(item => {
+                        const idx = updated.findIndex(p => p.id === item.id);
+                        if (idx !== -1) {
+                            let finalEventName = item.event_name;
+                            
+                            // Aplikace slučovací mapy
+                            if (mergedEventsMapping[finalEventName]) {
+                                finalEventName = mergedEventsMapping[finalEventName];
+                            }
+                            
+                            let finalCategory = item.category;
+                            
+                            if (finalCategory === 'Snímky obrazovky / Různé' || updated[idx].aiData?.tags?.includes('Screenshot') || updated[idx].hardData?.camera === 'Možný Screenshot / Textura') {
+                                finalEventName = 'Snímky obrazovky';
+                                finalCategory = 'Snímky obrazovky / Různé';
+                            }
+
+                            updated[idx].aiData = { ...updated[idx].aiData, event_name: finalEventName, category: finalCategory };
+                            changesCount++;
+                        }
+                    });
+
+                    if (changesCount === 0 && updated.length > 0) {
+                        updated = updated.map(p => {
+                            if (!p.aiData?.event_name) {
+                                let fallbackEvent = `Archiv ${p.date.getFullYear()}-${p.date.getMonth()+1}`;
+                                if (p.aiData?.tags?.includes('Screenshot') || p.hardData?.camera === 'Možný Screenshot / Textura') {
+                                    fallbackEvent = 'Snímky obrazovky';
+                                }
+                                return { ...p, aiData: { ...p.aiData, event_name: fallbackEvent } };
+                            }
+                            return p;
+                        });
+                        changesCount = updated.length;
+                    }
+
+                    setPhotos([...updated]);
+                    setMessage({ title: t("Fáze 2 hotovo", "Phase 2 Done"), text: t(`AI zorganizovala ${changesCount} fotek do událostí.`, `AI organized ${changesCount} photos into events.`) });
+                } catch (e) { setMessage({ title: t("Chyba AI", "AI Error"), text: e.message }); }
+                
+                setIsAnalyzing(false);
+                setProgress(''); 
+            };
+
+            const runPhase3 = async () => {
+                if (ollamaStatus !== 'online') { setMessage({ title: t("Chyba", "Error"), text: t("Ollama není online.", "Ollama is not online.") }); return; }
+                setIsMoondreaming(true);
+                let updated = [...photos];
+                const modelToUse = visionModel === 'custom' ? visionModelCustom : visionModel;
+                if (!modelToUse) { setMessage({ title: t("Chyba", "Error"), text: t("Vyberte model.", "Select a model.") }); setIsMoondreaming(false); return; }
+
+                const prompt = t(
+                    "What are the 5 main visual subjects in this image? Return ONLY 5 single-word keywords separated by commas, translated to Czech.", 
+                    "What are the 5 main visual subjects in this image? Return ONLY 5 single-word keywords separated by commas."
+                );
+
+                for (let i = 0; i < updated.length; i++) {
+                    const p = updated[i];
+                    if (!p.url) continue;
+
+                    try {
+                        const imgRes = await fetch(p.url);
+                        const imgBlob = await imgRes.blob();
+                        const base64 = await new Promise(res => {
+                            const reader = new FileReader();
+                            reader.onload = () => res(reader.result.split(',')[1]);
+                            reader.readAsDataURL(imgBlob);
+                        });
+
+                        const res = await fetch('http://localhost:11434/api/generate', {
+                            method: 'POST', headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({ model: modelToUse, prompt, images: [base64], stream: false })
+                        });
+                        const result = await res.json();
+                        const tags = result.response.split(',').map(tg => tg.replace(/[^a-zA-Z0-9ěščřžýáíéúůťďňĚŠČŘŽÝÁÍÉÚŮŤĎŇ -]/g, '').trim()).filter(Boolean);
+                        updated[i].aiData = { ...updated[i].aiData, tags: [...new Set([...(updated[i].aiData?.tags || []), ...tags])] };
+                        if (i % 5 === 0) { setProgress(t(`Moondream ${i+1}/${updated.length}...`, `Moondream ${i+1}/${updated.length}...`)); setPhotos([...updated]); }
+                    } catch(e) {}
+                }
+                setPhotos([...updated]);
+                setIsMoondreaming(false);
+                setProgress('');
+            };
+
+            const runSingleMoondream = async (e, photoId) => {
+                e.stopPropagation(); 
+                if (ollamaStatus !== 'online') { setMessage({ title: t("Chyba", "Error"), text: t("Ollama není online.", "Ollama is not online.") }); return; }
+                
+                const modelToUse = visionModel === 'custom' ? visionModelCustom : visionModel;
+                if (!modelToUse) { setMessage({ title: t("Chyba", "Error"), text: t("Vyberte model pro vizi.", "Select a vision model.") }); return; }
+
+                const p = photos.find(x => x.id === photoId);
+                if (!p || !p.url) { setMessage({ title: t("Chyba", "Error"), text: t("Pro tuto fotku zatím nemáme náhled.", "Preview not available for this photo yet.") }); return; }
+
+                setAnalyzingPhotoId(photoId);
+                const prompt = t(
+                    "What are the 5 main visual subjects in this image? Return ONLY 5 single-word keywords separated by commas, translated to Czech.", 
+                    "What are the 5 main visual subjects in this image? Return ONLY 5 single-word keywords separated by commas."
+                );
+                
+                try {
+                    const imgRes = await fetch(p.url);
+                    const imgBlob = await imgRes.blob();
+                    const base64 = await new Promise(res => {
+                        const reader = new FileReader();
+                        reader.onload = () => res(reader.result.split(',')[1]);
+                        reader.readAsDataURL(imgBlob);
+                    });
+
+                    const res = await fetch('http://localhost:11434/api/generate', {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ model: modelToUse, prompt, images: [base64], stream: false })
+                    });
+                    const result = await res.json();
+                    const tags = result.response.split(',').map(tg => tg.replace(/[^a-zA-Z0-9ěščřžýáíéúůťďňĚŠČŘŽÝÁÍÉÚŮŤĎŇ -]/g, '').trim()).filter(Boolean);
+                    
+                    setPhotos(prev => prev.map(item => {
+                        if (item.id === photoId) {
+                            return { ...item, aiData: { ...item.aiData, tags: [...new Set([...(item.aiData?.tags || []), ...tags])] } };
+                        }
+                        return item;
+                    }));
+                } catch(err) { console.error(err); }
+                setAnalyzingPhotoId(null);
+            };
+
+            const startTinder = () => {
+                const queue = filteredPhotos;
+                if (queue.length === 0) return;
+                setTinderQueue(queue);
+                setTinderIndex(0);
+                setShowTinder(true);
+            };
+
+            const handleTinderSwipe = (keep) => {
+                if (!keep) {
+                    setPhotos(prev => prev.map(p => p.id === tinderQueue[tinderIndex].id ? { 
+                        ...p, aiData: { ...p.aiData, category: '🗑️ K vymazání', event_name: 'Vyřazeno' } 
+                    } : p));
+                }
+                if (tinderIndex + 1 < tinderQueue.length) setTinderIndex(tinderIndex + 1);
+                else setShowTinder(false);
+            };
+
+            const exportToDisk = async () => {
+                if (!window.showDirectoryPicker) { setMessage({ title: "Chyba", text: " prohlížeč nepodporuje export." }); return; }
+                try {
+                    const rootHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+                    for (const p of photos) {
+                        if (p.aiData?.category === '🗑️ K vymazání') continue;
+                        
+                        let folderPath = p.aiData?.event_name || p.hardData?.location || "Ostatní";
+                        if (p.aiData?.category === 'Snímky obrazovky / Různé' || p.aiData?.tags?.includes('Screenshot') || p.hardData?.camera === 'Možný Screenshot / Textura') {
+                            folderPath = "Snímky obrazovky";
+                        }
+                        folderPath = folderPath.replace(/[:*?"<>|]/g, '_');
+                        let currentHandle = rootHandle;
+                        const parts = folderPath.split('/');
+                        for (const part of parts) {
+                            currentHandle = await currentHandle.getDirectoryHandle(part, { create: true });
+                        }
+                        const safeFileName = p.name.replace(/[:*?"<>|]/g, '_');
+                        const fileHandle = await currentHandle.getFileHandle(safeFileName, { create: true });
+                        const writable = await fileHandle.createWritable();
+                        await writable.write(p.file);
+                        await writable.close();
+                    }
+                    setShowExportModal(false);
+                    setMessage({ title: "Export hotov!", text: "Originální fotky byly roztříděny a uloženy." });
+                } catch (e) { setMessage({ title: "Chyba exportu", text: e.message }); }
+            };
+
+            const handleRename = () => {
+                const { oldName, newName, type } = renameModal;
+                if (!newName.trim()) return;
+                setPhotos(prev => prev.map(p => {
+                    if (type === 'tag' && p.aiData?.tags?.includes(oldName)) {
+                        return { ...p, aiData: { ...p.aiData, tags: p.aiData.tags.map(t => t === oldName ? newName : t) } };
+                    } else if (type === 'event' && p.aiData?.event_name === oldName) {
+                        return { ...p, aiData: { ...p.aiData, event_name: newName } };
+                    }
+                    return p;
+                }));
+                setActiveFilters(prev => prev.map(f => {
+                    if (type === 'tag' && f === `tag-${oldName}`) return `tag-${newName}`;
+                    if (type === 'event' && f === `event-${oldName}`) return `event-${newName}`;
+                    return f;
+                }));
+                setRenameModal({ isOpen: false, oldName: '', newName: '', type: 'tag' });
+            };
+
+            const toggleSelection = (id) => {
+                const newSel = new Set(selectedPhotos);
+                if (newSel.has(id)) newSel.delete(id);
+                else newSel.add(id);
+                setSelectedPhotos(newSel);
+            };
+
+            const toggleSelectAll = () => {
+                if (selectedPhotos.size === filteredPhotos.length) {
+                    setSelectedPhotos(new Set()); 
+                } else {
+                    setSelectedPhotos(new Set(filteredPhotos.map(p => p.id))); 
+                }
+            };
+
+            const handleBulkEdit = () => {
+                if (!bulkModal.value.trim()) return;
+                const val = bulkModal.value.trim();
+                let count = selectedPhotos.size;
+
+                setPhotos(prev => prev.map(p => {
+                    if (!selectedPhotos.has(p.id)) return p;
+                    let updated = { ...p };
+                    if (!updated.aiData) updated.aiData = {};
+                    if (!updated.hardData) updated.hardData = { location: 'Neznámé místo' };
+
+                    if (bulkModal.type === 'event') {
+                        updated.aiData.event_name = val;
+                    } else if (bulkModal.type === 'location') {
+                        updated.hardData.location = val;
+                    } else if (bulkModal.type === 'tag') {
+                        updated.aiData.tags = [...new Set([...(updated.aiData.tags || []), val])];
+                    }
+                    return updated;
+                }));
+
+                setSelectedPhotos(new Set());
+                setBulkModal({ isOpen: false, type: '', value: '' });
+                setMessage({ title: "Hotovo", text: `Hromadná úprava úspěšně aplikována na ${count} fotek.`});
+            };
+
+            const filteredPhotos = useMemo(() => {
+                let res = photos;
+                if (activeFilters.length > 0) {
+                    res = res.filter(p => activeFilters.every(f => {
+                        if (f === 'screenshots') return p.aiData?.category === 'Snímky obrazovky / Různé';
+                        if (f.startsWith('event-')) {
+                            const event = f.replace('event-', '');
+                            return p.aiData?.event_name === event;
+                        }
+                        if (f.startsWith('tag-')) {
+                            const t = f.replace('tag-', '');
+                            return (p.aiData?.tags?.includes(t)) || (p.hardData?.timelineLoc === t);
+                        }
+                        return true;
+                    }));
+                }
+                if (searchQuery.trim()) {
+                    const q = searchQuery.toLowerCase();
+                    res = res.filter(p => p.name.toLowerCase().includes(q) || p.hardData?.location?.toLowerCase().includes(q) || p.aiData?.event_name?.toLowerCase().includes(q));
+                }
+                return res;
+            }, [photos, activeFilters, searchQuery]);
+
+            const allTags = useMemo(() => {
+                const s = new Set();
+                photos.forEach(p => {
+                    if (p.aiData?.tags) p.aiData.tags.forEach(t => s.add(t));
+                    if (p.hardData?.timelineLoc) s.add(p.hardData.timelineLoc);
+                });
+                return Array.from(s).sort();
+            }, [photos]);
+
+            const allEvents = useMemo(() => {
+                const s = new Set();
+                photos.forEach(p => {
+                    if (p.aiData?.event_name) s.add(p.aiData.event_name);
+                });
+                return Array.from(s).sort();
+            }, [photos]);
+
+            return (
+                <div className="flex h-screen overflow-hidden">
+                    <div className="w-80 bg-slate-900 border-r border-slate-800 flex flex-col">
+                        <div className="p-6 border-b border-slate-800">
+                            <h1 className="text-xl font-bold text-orange-400">⚡ AI Sorter</h1>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar">
+                            <div className="space-y-2">
+                                <input type="file" ref={fileInputRef} webkitdirectory="" directory="" multiple className="hidden" onChange={handleFolder} />
+                                <button onClick={() => fileInputRef.current.click()} className="w-full bg-slate-800 p-2 rounded text-sm text-white hover:bg-slate-700">{t("📂 Nahrát složku", "📂 Upload Folder")}</button>
+                                <input type="file" ref={timelineInputRef} accept=".json" className="hidden" onChange={handleTimeline} />
+                                <button onClick={() => timelineInputRef.current.click()} className="w-full bg-emerald-900/40 p-2 rounded text-sm text-emerald-200 hover:bg-emerald-800/50">{t("🌍 Timeline JSON", "🌍 Timeline JSON")}</button>
+                            </div>
+                            
+                            {photos.length > 0 && (
+                                <div className="space-y-4">
+                                    <div className="p-3 bg-slate-950 rounded-lg border border-slate-800">
+                                        <div className="text-[10px] text-slate-500 mb-2 uppercase font-bold">{t("1. Metadata & Tagy", "1. Metadata & Tags")}</div>
+                                        <button onClick={runPhase1} disabled={isExtracting} className="w-full bg-blue-600 p-2 rounded text-xs text-white hover:bg-blue-500 disabled:bg-slate-700">
+                                            {isExtracting ? (progress || t('Zpracovávám...', 'Processing...')) : t('📍 Zjistit EXIF', '📍 Extract EXIF')}
+                                        </button>
+                                    </div>
+
+                                    <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 space-y-2">
+                                        <div className="text-[10px] text-slate-500 mb-1 uppercase font-bold">{t("2. AI Události (Clustering)", "2. AI Events (Clustering)")}</div>
+                                        <select value={textModel} onChange={e => setTextModel(e.target.value)} className="w-full bg-slate-800 text-xs p-1 rounded border border-slate-700 text-white">
+                                            <option value="llama3.2">Ollama: Llama 3.2</option>
+                                            <option value="phi3">Ollama: Phi-3</option>
+                                            <option value="qwen2.5">Ollama: Qwen 2.5</option>
+                                            <option value="custom">{t("Ollama: Vlastní model...", "Ollama: Custom model...")}</option>
+                                            <option value="gemini-3.8-flash">Google Gemini API (3.8 Flash)</option>
+                                            <option value="gemini-3.8-pro">Google Gemini API (3.8 Pro)</option>
+                                        </select>
+                                        
+                                        <div className="flex gap-2">
+                                            <div className="text-[10px] text-slate-500 flex items-center">{t("Dávka:", "Chunk:")}</div>
+                                            <select value={chunkSize} onChange={e => setChunkSize(e.target.value)} className="flex-1 bg-slate-800 text-xs p-1 rounded border border-slate-700 text-white">
+                                                <option value="50">50 fotek</option>
+                                                <option value="100">100 fotek</option>
+                                                <option value="150">150 fotek</option>
+                                                <option value="200">200 fotek</option>
+                                                <option value="500">500 fotek</option>
+                                            </select>
+                                        </div>
+                                        
+                                        {textModel === 'custom' && (
+                                            <input type="text" value={textModelCustom} onChange={e => setTextModelCustom(e.target.value)} placeholder={t("Název Ollama modelu...", "Ollama model name...")} className="w-full bg-slate-800 p-1 rounded text-xs text-white border border-slate-700" />
+                                        )}
+                                        
+                                        {textModel.startsWith('gemini') && (
+                                            <input type="password" value={geminiApiKey} onChange={e => setGeminiApiKey(e.target.value)} placeholder={t("Zadejte Gemini API klíč...", "Enter Gemini API key...")} className="w-full bg-slate-800 p-1 rounded text-xs text-white border border-slate-700" />
+                                        )}
+                                        
+                                        <button onClick={runPhase2} disabled={isAnalyzing} className="relative w-full bg-rose-600 p-2 rounded text-xs text-white hover:bg-rose-500 disabled:bg-slate-700 disabled:cursor-wait group overflow-hidden">
+                                            {isAnalyzing && (
+                                                <div className="absolute inset-0 w-full h-full bg-rose-500/50 animate-pulse"></div>
+                                            )}
+                                            <span className="relative z-10 flex items-center justify-center font-medium">
+                                                {isAnalyzing ? (progress || t('⏳ AI analyzuje shluky...', '⏳ AI analyzing clusters...')) : t('✨ Vytvořit události', '✨ Create Events')}
+                                            </span>
+                                        </button>
+                                    </div>
+
+                                    <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 space-y-2">
+                                        <div className="text-[10px] text-slate-500 mb-1 uppercase font-bold">{t("3. Moondream Vize", "3. Moondream Vision")}</div>
+                                        <select value={visionModel} onChange={e => setVisionModel(e.target.value)} className="w-full bg-slate-800 text-xs p-1 rounded border border-slate-700 text-white">
+                                            <option value="moondream">Moondream</option>
+                                            <option value="llama3.2-vision">Llama 3.2 Vision</option>
+                                            <option value="custom">{t("Vlastní model...", "Custom model...")}</option>
+                                        </select>
+                                        {visionModel === 'custom' && (
+                                            <input type="text" value={visionModelCustom} onChange={e => setVisionModelCustom(e.target.value)} placeholder={t("Název modelu...", "Model name...")} className="w-full bg-slate-800 p-1 rounded text-xs text-white border border-slate-700" />
+                                        )}
+                                        <button onClick={runPhase3} disabled={isMoondreaming} className="w-full bg-amber-600 p-2 rounded text-xs text-white hover:bg-amber-500 disabled:bg-slate-700">
+                                            {isMoondreaming ? (progress || t('Analyzuji...', 'Analyzing...')) : t('🌙 Vizuální tagy', '🌙 Visual Tags')}
+                                        </button>
+                                    </div>
+
+                                    <div className="flex gap-2">
+                                        <button onClick={startTinder} className="flex-1 bg-orange-600 p-2 rounded text-xs text-white font-bold hover:bg-orange-500">{t("🔥 Tinder", "🔥 Tinder")}</button>
+                                        <button onClick={() => setShowExportModal(true)} className="flex-1 bg-emerald-600 p-2 rounded text-xs text-white font-bold hover:bg-emerald-500">{t("💾 Export", "💾 Export")}</button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {photos.length > 0 && (
+                                <div className="space-y-6 pt-4 border-t border-slate-800">
+                                    <div className="space-y-2">
+                                        <div className="flex justify-between items-center">
+                                            <h3 className="text-xs font-bold text-slate-500 uppercase">{t("📁 Složky / Události", "📁 Folders / Events")}</h3>
+                                            <button onClick={() => setActiveFilters(p => p.filter(f => !f.startsWith('event-')))} className="text-[10px] text-blue-400 hover:underline">{t("Reset", "Reset")}</button>
+                                        </div>
+                                        <div className="space-y-1 max-h-48 overflow-y-auto custom-scrollbar">
+                                            {allEvents.length === 0 && <div className="text-[10px] text-slate-600 italic">{t("Žádné události...", "No events...")}</div>}
+                                            {allEvents.map(ev => (
+                                                <div key={ev} className="group flex items-center">
+                                                    <button onClick={() => {
+                                                        setActiveFilters(p => p.includes(`event-${ev}`) ? p.filter(f => f !== `event-${ev}`) : [...p, `event-${ev}`]);
+                                                    }} className={`flex-1 text-left px-3 py-1.5 rounded-l text-xs truncate ${activeFilters.includes(`event-${ev}`) ? 'bg-rose-600 text-white' : 'bg-slate-800 text-slate-400 group-hover:bg-slate-700'}`}>📁 {ev}</button>
+                                                    <button onClick={() => setRenameModal({ isOpen: true, oldName: ev, newName: ev, type: 'event' })} className={`px-2 py-1.5 rounded-r text-xs opacity-0 group-hover:opacity-100 transition-opacity ${activeFilters.includes(`event-${ev}`) ? 'bg-rose-700 text-white' : 'bg-slate-700 text-slate-400 hover:text-white hover:bg-slate-600'}`}>✏️</button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <div className="flex justify-between items-center">
+                                            <h3 className="text-xs font-bold text-slate-500 uppercase">{t("🏷️ Tagy", "🏷️ Tags")}</h3>
+                                            <button onClick={() => setActiveFilters(p => p.filter(f => !f.startsWith('tag-')))} className="text-[10px] text-blue-400 hover:underline">{t("Reset", "Reset")}</button>
+                                        </div>
+                                        <input type="text" placeholder={t("Hledat tag...", "Search tag...")} value={tagSearchQuery} onChange={e => setTagSearchQuery(e.target.value)} className="w-full bg-slate-950 border border-slate-800 p-2 rounded text-xs text-white" />
+                                        <div className="flex flex-wrap gap-1 max-h-64 overflow-y-auto custom-scrollbar">
+                                            {allTags.filter(t => t.toLowerCase().includes(tagSearchQuery.toLowerCase())).map(tg => (
+                                                <div key={tg} className="group flex items-center">
+                                                    <button onClick={() => {
+                                                        setActiveFilters(p => p.includes(`tag-${tg}`) ? p.filter(f => f !== `tag-${tg}`) : [...p, `tag-${tg}`]);
+                                                    }} className={`text-[10px] px-2 py-1 rounded-l border-y border-l ${activeFilters.includes(`tag-${tg}`) ? 'bg-rose-600 border-rose-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-400'}`}>#{tg}</button>
+                                                    <button onClick={() => setRenameModal({ isOpen: true, oldName: tg, newName: tg, type: 'tag' })} className="text-[10px] px-1 py-1 rounded-r border-y border-r bg-slate-800 border-slate-700 text-slate-500 opacity-0 group-hover:opacity-100 hover:text-white">✏️</button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                            <div className="text-[10px] text-slate-500 text-center">Ollama: {ollamaStatus}</div>
+                        </div>
+                    </div>
+
+                    <div className="flex-1 bg-slate-950 flex flex-col relative">
+                        {needsRelink && (
+                            <div className="bg-blue-900 text-blue-100 p-2 text-center text-xs font-bold shadow-md animate-pulse">
+                                ☁️ {t("Byla nalezena data z předchozí relace. Klikněte vlevo na 'Nahrát složku' a vyberte původní složku pro obnovení.", "Previous session data found. Click 'Upload Folder' on the left and select the original folder to restore.")}
+                            </div>
+                        )}
+                        <div className="h-16 border-b border-slate-800 flex items-center justify-between px-6 bg-slate-900/50">
+                            <input type="text" placeholder={t("Hledat v událostech a fotkách...", "Search events and photos...")} value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full max-w-md bg-slate-800 border border-slate-700 rounded-full py-2 px-4 text-sm text-white" />
+                            
+                            <div className="flex items-center gap-3">
+                                {(photos.length > 0 || geminiApiKey) && !needsRelink && (
+                                    <div className={`text-xs mr-2 flex items-center gap-1 font-bold ${isCloudSyncing ? 'text-amber-400 animate-pulse' : 'text-slate-600'}`}>
+                                        ☁️ {isCloudSyncing ? t("Ukládání...", "Saving...") : t("Uloženo", "Saved")}
+                                    </div>
+                                )}
+                                <button onClick={() => setShowHelpModal(true)} title={t("Nápověda k aplikaci", "Application Help")} className="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-bold w-9 h-9 rounded-full transition-colors flex items-center justify-center shadow-md text-sm">
+                                    ❓
+                                </button>
+                                <button onClick={() => setLang(lang === 'cs' ? 'en' : 'cs')} className="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-bold px-4 py-2 rounded-full transition-colors flex items-center gap-2 text-sm shadow-md">
+                                    {lang === 'cs' ? '🇬🇧 EN' : '🇨🇿 CS'}
+                                </button>
+                                {filteredPhotos.length > 0 && (
+                                    <button onClick={toggleSelectAll} className="text-sm bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 px-4 py-2 rounded-full transition-colors">
+                                        {selectedPhotos.size === filteredPhotos.length ? t('Zrušit výběr', 'Deselect all') : t('Vybrat vše viditelné', 'Select all visible')}
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-6 custom-scrollbar pb-32">
+                            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                                {filteredPhotos.map(p => {
+                                    const isSelected = selectedPhotos.has(p.id);
+                                    return (
+                                        <div key={p.id} onClick={() => toggleSelection(p.id)} className={`relative aspect-square bg-slate-800 rounded-lg overflow-hidden group cursor-pointer transition-all ${isSelected ? 'ring-4 ring-orange-500 scale-[0.98]' : 'hover:ring-2 hover:ring-slate-500'}`}>
+                                            <div className={`absolute top-2 left-2 z-10 w-6 h-6 flex items-center justify-center rounded-full border-2 transition-colors ${isSelected ? 'bg-orange-500 border-orange-500' : 'border-white/50 bg-black/30 opacity-0 group-hover:opacity-100'}`}>
+                                                {isSelected && <span className="text-white text-sm font-bold block mt-[-2px]">✓</span>}
+                                            </div>
+                                            
+                                            {p.url ? (
+                                                <img src={p.url} className="w-full h-full object-cover" />
+                                            ) : (
+                                                <div className="w-full h-full bg-slate-700 flex flex-col items-center justify-center text-slate-400 text-xs text-center p-2">
+                                                    {p.thumbLoading ? (
+                                                        <><span className="animate-spin text-xl mb-1">⏳</span>Načítám náhled...</>
+                                                    ) : (
+                                                        <><span className="text-2xl mb-1">📷</span>RAW/HEIC<br/>{p.name.split('.').pop().toUpperCase()}</>
+                                                    )}
+                                                </div>
+                                            )}
+                                            
+                                            <div className="photo-overlay absolute bottom-0 left-0 right-0 p-2 text-[9px] text-white opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <div className="flex justify-between items-start">
+                                                    <div>
+                                                        <div className="font-bold text-orange-400">{p.aiData?.event_name || t('Bez události', 'No event')}</div>
+                                                        <div className="text-emerald-400">{p.hardData?.location || ''}</div>
+                                                    </div>
+                                                    <button 
+                                                        onClick={(e) => runSingleMoondream(e, p.id)} 
+                                                        disabled={analyzingPhotoId === p.id || !p.url}
+                                                        title={t("Generovat tagy pro tuto fotku", "Generate tags for this photo")}
+                                                        className="p-1.5 bg-amber-600/80 hover:bg-amber-500 rounded text-white transition-colors flex-shrink-0 disabled:bg-slate-600"
+                                                    >
+                                                        {analyzingPhotoId === p.id ? '⏳' : '🌙'}
+                                                    </button>
+                                                </div>
+                                                <div className="flex flex-wrap gap-1 mt-1">
+                                                    {p.aiData?.tags?.map(tg => <span key={tg} className="bg-slate-700 px-1 rounded">#{tg}</span>)}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </div>
+
+                    {selectedPhotos.size > 0 && (
+                        <div className="fixed bottom-8 left-[calc(50%+10rem)] -translate-x-1/2 bg-slate-800 border border-slate-700 shadow-2xl shadow-black rounded-full px-4 py-3 flex items-center gap-3 z-[60] animate-bounce-short">
+                            <span className="text-white font-bold text-sm bg-slate-950 border border-slate-700 px-4 py-1.5 rounded-full">{selectedPhotos.size} {t("vybráno", "selected")}</span>
+                            <div className="w-px h-6 bg-slate-600 mx-1"></div>
+                            <button onClick={() => setBulkModal({isOpen: true, type: 'event', value: ''})} className="text-sm font-medium text-slate-300 hover:text-white hover:bg-slate-700 px-4 py-1.5 rounded-full transition-colors">📁 {t("Událost", "Event")}</button>
+                            <button onClick={() => setBulkModal({isOpen: true, type: 'location', value: ''})} className="text-sm font-medium text-slate-300 hover:text-white hover:bg-slate-700 px-4 py-1.5 rounded-full transition-colors">📍 {t("Lokace", "Location")}</button>
+                            <button onClick={() => setBulkModal({isOpen: true, type: 'tag', value: ''})} className="text-sm font-medium text-slate-300 hover:text-white hover:bg-slate-700 px-4 py-1.5 rounded-full transition-colors">🏷️ {t("Přidat Tag", "Add Tag")}</button>
+                            <div className="w-px h-6 bg-slate-600 mx-1"></div>
+                            <button onClick={() => setSelectedPhotos(new Set())} className="text-sm font-medium text-rose-400 hover:text-rose-300 px-4 py-1.5 rounded-full hover:bg-rose-950 transition-colors">{t("Zrušit výběr", "Deselect")}</button>
+                        </div>
+                    )}
+
+                    {bulkModal.isOpen && (
+                        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[70] p-4">
+                            <div className="bg-slate-900 p-6 rounded-xl border border-slate-700 w-full max-w-sm shadow-2xl">
+                                <div className="font-bold mb-4 text-lg">
+                                    {t("Hromadná úprava:", "Bulk Edit:")} {bulkModal.type === 'event' ? t('Událost', 'Event') : bulkModal.type === 'location' ? t('Lokace', 'Location') : t('Nový Tag', 'New Tag')}
+                                </div>
+                                <div className="text-xs text-slate-400 mb-4">{t(`Aplikuje se na ${selectedPhotos.size} vybraných fotek.`, `Applies to ${selectedPhotos.size} selected photos.`)}</div>
+                                <input list={bulkModal.type === 'event' ? "existing-events" : ""} type="text" value={bulkModal.value} onChange={e => setBulkModal({...bulkModal, value: e.target.value})} placeholder={bulkModal.type === 'event' ? t('Zadejte název události...', 'Enter event name...') : bulkModal.type === 'location' ? t('Zadejte novou lokaci...', 'Enter new location...') : t('Zadejte nový tag...', 'Enter new tag...')} className="w-full bg-slate-800 p-3 rounded text-white mb-6 border border-slate-600 focus:border-orange-500 outline-none" autoFocus />
+                                
+                                {bulkModal.type === 'event' && (
+                                    <datalist id="existing-events">
+                                        {allEvents.map(ev => <option key={ev} value={ev} />)}
+                                    </datalist>
+                                )}
+                                
+                                <div className="flex justify-end gap-3">
+                                    <button onClick={() => setBulkModal({ isOpen: false, type: '', value: '' })} className="px-4 py-2 text-sm text-slate-400 hover:text-white">{t("Zrušit", "Cancel")}</button>
+                                    <button onClick={handleBulkEdit} className="px-6 py-2 bg-orange-600 hover:bg-orange-500 rounded font-bold text-sm text-white shadow-lg transition-colors">{t("Aplikovat úpravu", "Apply edit")}</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {showTinder && (
+                        <div className="fixed inset-0 bg-black/95 z-[100] flex flex-col">
+                            <div className="p-6 text-white flex justify-between items-center bg-gradient-to-b from-black to-transparent">
+                                <div><h2 className="text-2xl font-bold text-orange-400">🔥 Tinder Mode</h2><p className="text-xs text-slate-400">{t("Šipky vlevo/vpravo pro rychlé třídění", "Left/Right arrows for quick sorting")}</p></div>
+                                <button onClick={() => setShowTinder(false)} className="bg-slate-800 px-4 py-2 rounded-full text-sm">{t("Zavřít", "Close")}</button>
+                            </div>
+                            <div className="flex-1 flex items-center justify-center p-8">
+                                {/* Ochrana pro Tinder mód, pokud chybí náhled */}
+                                {tinderQueue[tinderIndex]?.url ? (
+                                    <img src={tinderQueue[tinderIndex]?.url} className="max-h-full max-w-full object-contain rounded-xl shadow-2xl" />
+                                ) : (
+                                    <div className="w-96 h-96 bg-slate-800 rounded-xl flex flex-col items-center justify-center text-slate-400 border border-slate-700 shadow-2xl">
+                                        <span className="text-6xl mb-4">📷</span>
+                                        <span className="text-xl font-bold">RAW Formát</span>
+                                        <span className="text-sm mt-2">{tinderQueue[tinderIndex]?.name}</span>
+                                    </div>
+                                )}
+                            </div>
+                            <div className="p-12 flex justify-center gap-12 bg-gradient-to-t from-black to-transparent">
+                                <button onClick={() => handleTinderSwipe(false)} className="w-32 h-32 rounded-full bg-rose-600 text-white font-bold text-xl shadow-lg hover:scale-110 transition-transform">🗑️ {t("Zahodit", "Discard")}</button>
+                                <button onClick={() => handleTinderSwipe(true)} className="w-32 h-32 rounded-full bg-emerald-600 text-white font-bold text-xl shadow-lg hover:scale-110 transition-transform">💚 {t("Ponechat", "Keep")}</button>
+                            </div>
+                        </div>
+                    )}
+
+                    {showExportModal && (
+                        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+                            <div className="bg-slate-900 p-6 rounded-xl border border-slate-700 w-full max-w-xs text-center">
+                                <div className="text-2xl mb-2">💾</div>
+                                <div className="font-bold mb-2">{t("Export na disk", "Export to Disk")}</div>
+                                <div className="text-sm text-slate-400 mb-6">{t("Fotky budou uloženy do složek podle událostí a lokací. Vyřazené fotky budou vynechány.", "Photos will be saved into folders based on events and locations. Discarded photos will be skipped.")}</div>
+                                <div className="flex flex-col gap-2">
+                                    <button onClick={exportToDisk} className="bg-emerald-600 py-2 rounded text-white font-bold hover:bg-emerald-500">{t("Vybrat složku a spustit", "Select folder and run")}</button>
+                                    <button onClick={() => setShowExportModal(false)} className="text-slate-500 text-sm">{t("Zrušit", "Cancel")}</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {showHelpModal && (
+                        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[110] p-4" onClick={(e) => { if(e.target === e.currentTarget) setShowHelpModal(false); }}>
+                            <div className="bg-slate-900 p-8 rounded-xl border border-slate-700 w-full max-w-2xl max-h-[85vh] overflow-y-auto custom-scrollbar shadow-2xl relative text-slate-300">
+                                <button onClick={() => setShowHelpModal(false)} className="absolute top-4 right-4 text-slate-500 hover:text-white text-2xl leading-none">&times;</button>
+                                <h2 className="text-2xl font-bold text-orange-400 mb-6 flex items-center gap-2"><span>📖</span> {t('Nápověda k aplikaci AI Sorter', 'AI Sorter User Guide')}</h2>
+                                
+                                <div className="space-y-6 text-sm">
+                                    <section>
+                                        <h3 className="text-lg font-bold text-white mb-2">{t('1. Nahrání dat (Včetně RAW)', '1. Uploading Data (Including RAW)')}</h3>
+                                        <p>{t('Začněte nahráním složky s fotkami. Můžete nahrát JPG, PNG, a dokonce i surové RAW (NEF, CR2) a HEIC soubory ze zrcadlovky. Volitelně můžete přidat i Timeline JSON z Google Map pro lepší lokace.', 'Start by uploading a folder. JPG, PNG, RAW (NEF, CR2) and HEIC are supported. Optionally, add a Timeline JSON from Google Maps for better location detection.')}</p>
+                                    </section>
+                                    
+                                    <section>
+                                        <h3 className="text-lg font-bold text-white mb-2">{t('2. Fáze 1: Zjištění EXIF (Metadata)', '2. Phase 1: EXIF Extraction')}</h3>
+                                        <p>{t('Aplikace přečte datum a souřadnice z fotek. Následně souřadnice (nebo Timeline) převede na textový název lokace.', 'The app reads the date and coordinates from photos. It then converts coordinates (or Timeline data) into a text location name.')}</p>
+                                    </section>
+
+                                    <section>
+                                        <h3 className="text-lg font-bold text-white mb-2">{t('3. Fáze 2: Vytvoření Událostí (AI Clustering)', '3. Phase 2: Create Events (AI Clustering)')}</h3>
+                                        <p>{t('AI (Ollama nebo Gemini) analyzuje data a lokace fotek a logicky je seskupí do složek (např. "Dovolená Chorvatsko"). Screenshoty jdou do vlastní složky.', 'AI (Ollama or Gemini) analyzes dates and locations, logically grouping them into folders (e.g., "Holiday Croatia"). Screenshots go to their own folder.')}</p>
+                                    </section>
+
+                                    <section>
+                                        <h3 className="text-lg font-bold text-white mb-2">{t('4. Fáze 3: Vizuální tagy (Moondream)', '4. Phase 3: Visual Tags (Moondream)')}</h3>
+                                        <p>{t('Model zkoumá přímo obrazový obsah fotek a přidá k nim tagy (např. #pes, #moře). Můžete to spustit hromadně, nebo u jednotlivých fotek kliknutím na 🌙.', 'The model examines the actual visual content of photos and adds tags (e.g., #dog, #sea). You can run this in bulk, or for individual photos by clicking 🌙.')}</p>
+                                    </section>
+
+                                    <section>
+                                        <h3 className="text-lg font-bold text-white mb-2">{t('🔥 Nástroje', '🔥 Tools')}</h3>
+                                        <ul className="list-disc pl-5 space-y-1">
+                                            <li><strong>{t('Tinder mód:', 'Tinder Mode:')}</strong> {t('Rychlé třídění pomocí šipek (Doleva = zahodit, Doprava = nechat).', 'Fast sorting using arrows (Left = discard, Right = keep).')}</li>
+                                            <li><strong>{t('Hromadné úpravy:', 'Bulk Edits:')}</strong> {t('Vyberte fotky kliknutím a přes spodní lištu upravte lokaci, tagy nebo událost.', 'Select photos by clicking them and use the bottom bar to edit locations, tags, or events.')}</li>
+                                            <li><strong>{t('Export:', 'Export:')}</strong> {t('Uloží roztříděné fotky do složek na váš disk. Zachovává 100% původní formát a kvalitu (tzv. non-destructive workflow).', 'Saves the sorted photos into folders on your drive. Preserves 100% of original format and quality (non-destructive workflow).')}</li>
+                                            <li><strong>{t('Cloud Auto-save:', 'Cloud Auto-save:')}</strong> {t('Práce se sama ukládá do cloudu. Až se zítra vrátíte, stačí vybrat stejnou složku z disku a vše se obnoví!', 'Your work is auto-saved to the cloud. When you return, just select the same local folder and everything is restored!')}</li>
+                                        </ul>
+                                    </section>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {renameModal.isOpen && (
+                        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+                            <div className="bg-slate-900 p-6 rounded-xl border border-slate-700 w-full max-w-xs">
+                                <div className="font-bold mb-4">{t("Přejmenovat", "Rename")} {renameModal.type === 'event' ? t('událost / složku', 'event / folder') : t('tag', 'tag')}</div>
+                                <input type="text" value={renameModal.newName} onChange={e => setRenameModal({...renameModal, newName: e.target.value})} className="w-full bg-slate-800 p-2 rounded text-white mb-4 border border-slate-700" autoFocus />
+                                <div className="flex justify-end gap-2">
+                                    <button onClick={() => setRenameModal({ isOpen: false })} className="px-3 py-1 text-sm text-slate-400">{t("Zrušit", "Cancel")}</button>
+                                    <button onClick={handleRename} className="px-3 py-1 bg-blue-600 rounded text-sm text-white">{t("Uložit", "Save")}</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {message && (
+                        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 z-[200]">
+                            <div className="bg-slate-900 p-6 rounded-xl border border-slate-700 text-center max-w-sm whitespace-pre-wrap">
+                                <div className="font-bold mb-2">{message.title}</div>
+                                <div className="text-sm text-slate-400 mb-4">{message.text}</div>
+                                <button onClick={() => setMessage(null)} className="bg-blue-600 px-4 py-2 rounded text-white font-bold hover:bg-blue-500">OK</button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
