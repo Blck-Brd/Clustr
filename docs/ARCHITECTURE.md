@@ -23,7 +23,7 @@ docs/                Architecture, deployment and data-format notes
    - Match Timeline segments by time using a sorted index (`visit`, `activity`, `timelinePath`).
    - Fall back to GPS + Nominatim reverse geocoding.
    - Interpolate missing locations from the nearest known location within 12 hours.
-   - Group with spatiotemporal DBSCAN (1.5 h / 4 km, minimum 3 photos). Long chains are split, same-place bursts within 4 h / 2 km are merged, and sparse driving photos are attached to the nearest event or grouped by time gaps.
+   - Group with spatiotemporal DBSCAN. **Auto** derives the time/space window from the 60th percentile of consecutive gaps (time clamped 0.75-3 h, space 2-10 km, min 3 photos); **Manual** exposes time, space and minimum photos. Long chains are split, same-place bursts within the merge gap/distance are merged, and sparse driving photos are attached to the nearest event or grouped by time gaps.
    - Assign `clusterId`, `clusterNumber`, temporary `Event N - location` names and auto tags.
    - Fill unknown locations inside a cluster from its dominant location.
 4. **Phase 3 - AI names**
@@ -50,6 +50,10 @@ docs/                Architecture, deployment and data-format notes
 `locationSource`: `manual | inherited | timeline | gps | interpolated | cluster | unknown`
 
 Manual location edits propagate to the whole event and to photos without their own location within 12 hours. Manual event-name edits propagate to the whole event and block Phase 3 from overwriting it.
+
+Manual event actions:
+- **Split** gives the selected photos a new `clusterId` and event name without touching the rest of the original event.
+- **Event / merge** renames whole events; selecting photos from multiple events assigns them a shared `clusterId` and merges the events.
 
 `eventNameSource`: `manual | placeholder | ai`
 

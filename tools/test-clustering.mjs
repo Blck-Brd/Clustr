@@ -29,7 +29,7 @@ vm.createContext(sandbox);
 const helperNames = [
     'parseCoords', 'parseTimelinePoint', 'normalizeTimelineData', 'prepareTimeline',
     'findTimelineMatch', 'resolveTimelineEntry', 'normalizeLocationName',
-    'clusterPhotosByDensity', 'applyDominantClusterLocation',
+    'clusterPhotosByDensity', 'computeAutoClusterSettings', 'buildClusterSettings', 'applyDominantClusterLocation',
     'interpolateMissingLocations', 'findLocationInheritanceTargets',
     'buildPlaceholderEventName', 'mergePhotoTags', 'buildAutoTags', 'isLikelyScreenshot',
     'roundedCoordKey', 'distanceKm'
@@ -162,6 +162,23 @@ const overnightClusters = h.clusterPhotosByDensity(overnightPhotos);
 assert.equal(overnightClusters.length, 2, 'overnight gap should split density clusters');
 
 // Same place, short break: merge. Same time gap but a different place: keep separate.
+// Auto sensitivity adapts to the dataset, manual settings are clamped.
+const denseForAuto = [0, 10, 20, 30, 40, 50].map((minute) => at(t0 + minute * 60000, 'Praha', 'prague', 50.08, 14.43));
+const sparseForAuto = [0, 120, 240, 360].map((minute) => at(t0 + minute * 60000, 'Praha', 'prague', 50.08, 14.43));
+const denseAuto = h.computeAutoClusterSettings(denseForAuto);
+const sparseAuto = h.computeAutoClusterSettings(sparseForAuto);
+assert.ok(denseAuto.epsTimeHours >= 0.75 && denseAuto.epsTimeHours <= 3);
+assert.ok(denseAuto.epsSpaceKm >= 2 && denseAuto.epsSpaceKm <= 10);
+assert.ok(sparseAuto.epsTimeHours >= denseAuto.epsTimeHours);
+assert.equal(denseAuto.minPoints, 3);
+
+const manualSettings = h.buildClusterSettings({ epsTimeHours: 0.5, epsSpaceKm: 2, minPoints: 2 });
+assert.equal(manualSettings.epsTimeHours, 0.5);
+assert.equal(manualSettings.epsSpaceKm, 2);
+assert.equal(manualSettings.minPoints, 2);
+assert.ok(manualSettings.splitGapHours >= 2);
+assert.ok(manualSettings.splitJumpKm >= 2);
+
 const morningAtSamePlace = [0, 10, 20].map((minute) => at(t0 + minute * 60000, 'Praha', 'prague', 50.08, 14.43));
 const afternoonAtSamePlace = [130, 140, 150].map((minute) => at(t0 + minute * 60000, 'Praha', 'prague', 50.0805, 14.4305));
 assert.equal(h.clusterPhotosByDensity([...morningAtSamePlace, ...afternoonAtSamePlace]).length, 1);

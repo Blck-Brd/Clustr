@@ -8,7 +8,7 @@ It is a single-file React app with no build step and no backend. It can be deplo
 
 1. **Upload Folder** - select a photo directory.
 2. **Timeline JSON (optional)** - import Google Timeline so locations can be assigned by photo time.
-3. **Phase 2 - Grouping** - reads EXIF date/time, assigns a location from Timeline (falling back to GPS), interpolates missing locations, groups photos by time and location, applies automatic tags, and sets temporary names such as `Event 1 - Kutná Hora`.
+3. **Phase 2 - Grouping** - reads EXIF date/time, assigns a location from Timeline (falling back to GPS), interpolates missing locations, groups photos by density in time and space, applies automatic tags, and sets temporary names such as `Event 1 - Kutná Hora`. Sensitivity is Auto by default; manual time/space/min-photo values are available.
 4. **Phase 3 - AI Names** - sends each event summary (date, time, location, tags) to Ollama or Gemini and replaces the temporary names. Manually named events are left untouched.
 5. **Phase 4 - Visual Tags** - optional batch or single-image tagging with Moondream / Llama Vision through Ollama.
 6. **Review and Export** - use Tinder mode, edit folders/tags, then export photos and XMP sidecars.
@@ -26,6 +26,8 @@ It is a single-file React app with no build step and no backend. It can be deplo
 - **Timeline matching** - imports visits, activities and timeline paths, then binary-searches by EXIF time with GPS reverse-geocoding fallback.
 - **Local persistence** - photo metadata and Timeline data are saved to IndexedDB and relinked after a refresh by file name, size and modified time.
 - **Density-based clustering** - spatiotemporal DBSCAN (1.5 h / 4 km, minimum 3 photos). Dense photo bursts become events; sparse driving photos attach to the nearest event; same-place bursts separated by short breaks merge.
+- **Auto + manual sensitivity** - Auto derives the time/space window from the dataset density; manual mode exposes time window, place radius and minimum photo count.
+- **Manual cluster edits** - Split selected photos into a new event, or merge events by renaming them together.
 - **Location inheritance** - a manually added location propagates through the event and to nearby photos that have no location of their own (12 h window).
 - **RAW + HEIC previews** - embedded thumbnails via exifr, HEIC conversion via heic2any, TIFF/RAW decoding via UTIF.
 - **AI event names** - strict JSON prompts, output-shape normalization, retries, and clear model errors.

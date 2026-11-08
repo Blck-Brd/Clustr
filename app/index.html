@@ -409,16 +409,73 @@
         const TIMELINE_TOLERANCE_MS = 2 * 3600000;
         const INTERPOLATION_WINDOW_MS = 12 * 3600000;
         // Density-based (DBSCAN) spatiotemporal clustering.
-        const CLUSTER_EPS_TIME_HOURS = 1.5;
-        const CLUSTER_EPS_SPACE_KM = 4;
-        const CLUSTER_MIN_POINTS = 3;
-        const CLUSTER_SPLIT_GAP_HOURS = 6;
-        const CLUSTER_SPLIT_JUMP_KM = 10;
-        const CLUSTER_MAX_SPAN_HOURS = 24;
-        const MERGE_CLUSTER_GAP_MS = 4 * 3600000;
-        const MERGE_CLUSTER_DISTANCE_KM = 2;
-        const NOISE_ATTACH_WINDOW_MS = 6 * 3600000;
-        const NOISE_GROUP_GAP_MS = 4 * 3600000;
+        const DEFAULT_CLUSTER_SETTINGS = {
+            epsTimeHours: 1.5,
+            epsSpaceKm: 4,
+            minPoints: 3,
+            splitGapHours: 6,
+            splitJumpKm: 10,
+            maxSpanHours: 24,
+            mergeGapMs: 4 * 3600000,
+            mergeDistanceKm: 2,
+            noiseAttachWindowMs: 6 * 3600000,
+            noiseGroupGapMs: 4 * 3600000
+        };
+
+        const clampNumber = (value, min, max) => Math.min(max, Math.max(min, value));
+
+        const buildClusterSettings = (overrides = {}) => {
+            const epsTimeHours = clampNumber(Number(overrides.epsTimeHours) || DEFAULT_CLUSTER_SETTINGS.epsTimeHours, 0.5, 12);
+            const epsSpaceKm = clampNumber(Number(overrides.epsSpaceKm) || DEFAULT_CLUSTER_SETTINGS.epsSpaceKm, 0.5, 50);
+            const minPoints = Math.round(clampNumber(Number(overrides.minPoints) || DEFAULT_CLUSTER_SETTINGS.minPoints, 2, 20));
+
+            return {
+                epsTimeHours,
+                epsSpaceKm,
+                minPoints,
+                splitGapHours: clampNumber(Number(overrides.splitGapHours) || Math.max(4, epsTimeHours * 4), 2, 48),
+                splitJumpKm: clampNumber(Number(overrides.splitJumpKm) || Math.max(8, epsSpaceKm * 2.5), 2, 100),
+                maxSpanHours: clampNumber(Number(overrides.maxSpanHours) || 24, 4, 72),
+                mergeGapMs: Number(overrides.mergeGapMs) || clampNumber(epsTimeHours * 2.5, 2, 6) * 3600000,
+                mergeDistanceKm: Number(overrides.mergeDistanceKm) || clampNumber(epsSpaceKm * 0.5, 1, 3),
+                noiseAttachWindowMs: Number(overrides.noiseAttachWindowMs) || 6 * 3600000,
+                noiseGroupGapMs: Number(overrides.noiseGroupGapMs) || 4 * 3600000
+            };
+        };
+
+        // Auto mode derives sensitivity from the dataset: dense bursts tighten it,
+        // sparse road-trip photos loosen it.
+        const computeAutoClusterSettings = (photos) => {
+            const withCoords = (photos || [])
+                .filter((photo) => photo.hardData?.coords && Number.isFinite(photo.hardData.coords.lat) && Number.isFinite(photo.hardData.coords.lon))
+                .sort((a, b) => a.date - b.date);
+
+            if (withCoords.length < 4) return buildClusterSettings();
+
+            const timeGaps = [];
+            const spaceGaps = [];
+            for (let i = 1; i < withCoords.length; i += 1) {
+                const gap = withCoords[i].date.getTime() - withCoords[i - 1].date.getTime();
+                if (gap > 0 && gap <= 12 * 3600000) timeGaps.push(gap);
+                const distance = distanceKm(withCoords[i - 1].hardData.coords, withCoords[i].hardData.coords);
+                if (distance !== null && distance > 0 && distance <= 100) spaceGaps.push(distance);
+            }
+
+            const percentile = (values, ratio) => {
+                if (values.length === 0) return null;
+                const sorted = [...values].sort((a, b) => a - b);
+                return sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * ratio))];
+            };
+
+            const timeGap = percentile(timeGaps, 0.6);
+            const spaceGap = percentile(spaceGaps, 0.6);
+
+            return buildClusterSettings({
+                epsTimeHours: timeGap ? clampNumber((timeGap * 3) / 3600000, 0.75, 3) : 1.5,
+                epsSpaceKm: spaceGap ? clampNumber(spaceGap * 2.5, 2, 10) : 4,
+                minPoints: 3
+            });
+        };
         const AUTO_TAG_VALUES = new Set([
             'Jaro', 'Léto', 'Podzim', 'Zima', 'Ráno', 'Den', 'Podvečer', 'Večer', 'Noc',
             'Neznámé místo', '#Neznámé místo', 'Bez EXIFu', 'Screenshot', 'Snímky obrazovky'
@@ -699,7 +756,7 @@
             return /screenshot|screen[\s_-]?shot|snipaste/i.test(name);
         };
 
-        const groupPhotosByTimeGaps = (items, gapMs = NOISE_GROUP_GAP_MS) => {
+        const groupPhotosByTimeGaps = (items, gapMs = DEFAULT_CLUSTER_SETTINGS.noiseGroupGapMs) => {
             const sorted = [...items].sort((a, b) => a.date - b.date);
             if (sorted.length === 0) return [];
 
@@ -720,7 +777,7 @@
             return groups;
         };
 
-        const splitDenseCluster = (cluster) => {
+        const splitDenseCluster = (cluster, settings = DEFAULT_CLUSTER_SETTINGS) => {
             const sorted = [...cluster].sort((a, b) => a.date - b.date);
             if (sorted.length === 0) return [];
 
@@ -735,10 +792,10 @@
                     ? distanceKm(previous.hardData.coords, photo.hardData.coords)
                     : 0;
                 const spanHours = (photo.date.getTime() - current[0].date.getTime()) / 3600000;
-                const shouldSplit = gapHours > CLUSTER_SPLIT_GAP_HOURS
-                    || (jumpKm !== null && jumpKm > CLUSTER_SPLIT_JUMP_KM)
+                const shouldSplit = gapHours > settings.splitGapHours
+                    || (jumpKm !== null && jumpKm > settings.splitJumpKm)
                     || (jumpKm !== null && jumpKm > 2 && gapHours > 2)
-                    || spanHours > CLUSTER_MAX_SPAN_HOURS;
+                    || spanHours > settings.maxSpanHours;
 
                 if (shouldSplit) {
                     parts.push(current);
@@ -752,9 +809,9 @@
             return parts;
         };
 
-        const attachNoisePhotos = (clusters, noisePhotos) => {
+        const attachNoisePhotos = (clusters, noisePhotos, settings = DEFAULT_CLUSTER_SETTINGS) => {
             if (noisePhotos.length === 0) return clusters;
-            if (clusters.length === 0) return groupPhotosByTimeGaps(noisePhotos);
+            if (clusters.length === 0) return groupPhotosByTimeGaps(noisePhotos, settings.noiseGroupGapMs);
 
             const ranges = clusters.map((cluster) => {
                 const times = cluster.map((photo) => photo.date.getTime());
@@ -768,7 +825,7 @@
 
                 ranges.forEach((range) => {
                     const distance = time < range.start ? range.start - time : time > range.end ? time - range.end : 0;
-                    if (distance <= NOISE_ATTACH_WINDOW_MS && (!best || distance < best.distance)) {
+                    if (distance <= settings.noiseAttachWindowMs && (!best || distance < best.distance)) {
                         best = { range, distance };
                     }
                 });
@@ -780,7 +837,7 @@
                 }
             });
 
-            return [...clusters, ...groupPhotosByTimeGaps(remaining)];
+            return [...clusters, ...groupPhotosByTimeGaps(remaining, settings.noiseGroupGapMs)];
         };
 
         const clusterFocus = (cluster) => {
@@ -798,7 +855,7 @@
         };
 
         // Merge same-place bursts separated by a short break (e.g. lunch, ceremony + reception).
-        const mergeNearbyClusters = (clusters) => {
+        const mergeNearbyClusters = (clusters, settings = DEFAULT_CLUSTER_SETTINGS) => {
             if (clusters.length <= 1) return clusters;
 
             const sorted = [...clusters].sort((a, b) => a[0].date - b[0].date);
@@ -822,10 +879,10 @@
                     ? distanceKm(previousFocus.coords, currentFocus.coords)
                     : null;
                 const samePlace = distance !== null
-                    ? distance <= MERGE_CLUSTER_DISTANCE_KM
+                    ? distance <= settings.mergeDistanceKm
                     : (previousFocus.name && previousFocus.name === currentFocus.name);
 
-                if (gap <= MERGE_CLUSTER_GAP_MS && samePlace) {
+                if (gap <= settings.mergeGapMs && samePlace) {
                     previous.push(...current);
                     previous.sort((a, b) => a.date - b.date);
                 } else {
@@ -838,7 +895,7 @@
 
         // DBSCAN in time + projected space. Dense photo bursts become events;
         // sparse driving photos are attached to the nearest event or grouped by time gaps.
-        const clusterPhotosByDensity = (photos) => {
+        const clusterPhotosByDensity = (photos, settings = DEFAULT_CLUSTER_SETTINGS) => {
             const withCoords = [];
             const withoutCoords = [];
 
@@ -864,8 +921,8 @@
                     ys[index] = photo.hardData.coords.lat * 110.57;
                 });
 
-                const epsTimeMs = CLUSTER_EPS_TIME_HOURS * 3600000;
-                const epsSpaceSq = CLUSTER_EPS_SPACE_KM ** 2;
+                const epsTimeMs = settings.epsTimeHours * 3600000;
+                const epsSpaceSq = settings.epsSpaceKm ** 2;
                 const left = new Int32Array(count);
                 const right = new Int32Array(count);
                 let leftCursor = 0;
@@ -899,7 +956,7 @@
                     visited[i] = 1;
                     const neighbors = regionQuery(i);
 
-                    if (neighbors.length < CLUSTER_MIN_POINTS) continue;
+                    if (neighbors.length < settings.minPoints) continue;
 
                     clusterId += 1;
                     const inSeeds = new Uint8Array(count);
@@ -920,7 +977,7 @@
                         if (!visited[index]) {
                             visited[index] = 1;
                             const indexNeighbors = regionQuery(index);
-                            if (indexNeighbors.length >= CLUSTER_MIN_POINTS) {
+                            if (indexNeighbors.length >= settings.minPoints) {
                                 indexNeighbors.forEach((k) => {
                                     if (!inSeeds[k]) {
                                         inSeeds[k] = 1;
@@ -941,21 +998,21 @@
                 }
 
                 groups.forEach((cluster) => {
-                    clusters.push(...splitDenseCluster(cluster));
+                    clusters.push(...splitDenseCluster(cluster, settings));
                 });
 
                 const noise = [];
                 for (let i = 0; i < count; i += 1) {
                     if (assignment[i] < 0) noise.push(sorted[i]);
                 }
-                clusters = attachNoisePhotos(clusters, noise);
+                clusters = attachNoisePhotos(clusters, noise, settings);
             }
 
             if (withoutCoords.length > 0) {
-                clusters = attachNoisePhotos(clusters, withoutCoords);
+                clusters = attachNoisePhotos(clusters, withoutCoords, settings);
             }
 
-            return mergeNearbyClusters(clusters)
+            return mergeNearbyClusters(clusters, settings)
                 .filter((cluster) => cluster.length > 0)
                 .map((cluster) => [...cluster].sort((a, b) => a.date - b.date))
                 .sort((a, b) => a[0].date - b[0].date);
@@ -1201,6 +1258,13 @@
             
             const [visionModel, setVisionModel] = useState(initialSettings.visionModel || 'moondream');
             const [visionModelCustom, setVisionModelCustom] = useState(initialSettings.visionModelCustom || '');
+            const [clusteringMode, setClusteringMode] = useState(initialSettings.clusteringMode || 'auto');
+            const [manualClusterSettings, setManualClusterSettings] = useState({
+                epsTimeHours: initialSettings.clusterEpsTimeHours ?? 1.5,
+                epsSpaceKm: initialSettings.clusterEpsSpaceKm ?? 4,
+                minPoints: initialSettings.clusterMinPoints ?? 3
+            });
+            const [lastClusterSettings, setLastClusterSettings] = useState(null);
             
             const fileInputRef = useRef(null);
             const timelineInputRef = useRef(null);
@@ -1253,10 +1317,14 @@
                 try {
                     localStorage.setItem(SETTINGS_KEY, JSON.stringify({
                         lang, textModel, textModelCustom, geminiModelCustom, homeLocation,
-                        visionModel, visionModelCustom, customFolders
+                        visionModel, visionModelCustom, customFolders,
+                        clusteringMode,
+                        clusterEpsTimeHours: manualClusterSettings.epsTimeHours,
+                        clusterEpsSpaceKm: manualClusterSettings.epsSpaceKm,
+                        clusterMinPoints: manualClusterSettings.minPoints
                     }));
                 } catch (e) {}
-            }, [lang, textModel, textModelCustom, geminiModelCustom, homeLocation, visionModel, visionModelCustom, customFolders]);
+            }, [lang, textModel, textModelCustom, geminiModelCustom, homeLocation, visionModel, visionModelCustom, customFolders, clusteringMode, manualClusterSettings]);
 
             useEffect(() => {
                 if (modelAutoFixRef.current || ollamaModels.length === 0) return;
@@ -1740,8 +1808,16 @@
                     const screenshots = work.filter(isLikelyScreenshot);
                     const normalPhotos = work.filter((photo) => !isLikelyScreenshot(photo));
 
-                    setProgress(t('Seskupuji podle času a místa...', 'Grouping by time and location...'));
-                    const clusters = clusterPhotosByDensity(normalPhotos);
+                    const effectiveClusterSettings = clusteringMode === 'auto'
+                        ? computeAutoClusterSettings(normalPhotos)
+                        : buildClusterSettings(manualClusterSettings);
+                    setLastClusterSettings(effectiveClusterSettings);
+
+                    setProgress(t(
+                        `Seskupuji podle hustoty (${effectiveClusterSettings.epsTimeHours.toFixed(1)} h / ${effectiveClusterSettings.epsSpaceKm.toFixed(1)} km)...`,
+                        `Grouping by density (${effectiveClusterSettings.epsTimeHours.toFixed(1)} h / ${effectiveClusterSettings.epsSpaceKm.toFixed(1)} km)...`
+                    ));
+                    const clusters = clusterPhotosByDensity(normalPhotos, effectiveClusterSettings);
 
                     clusters.forEach((cluster, index) => {
                         const dominant = applyDominantClusterLocation(cluster);
@@ -1783,11 +1859,12 @@
                     setPhotos([...work]);
 
                     const knownLocations = new Set(work.map((p) => p.hardData.location).filter((location) => location && location !== 'Neznámé místo'));
+                    const modeLabel = clusteringMode === 'auto' ? t('Auto', 'Auto') : t('Ruční', 'Manual');
                     setMessage({
                         title: t("Seskupeno", "Grouped"),
                         text: t(
-                            `Vytvořeno ${clusters.length} událostí z ${normalPhotos.length} fotek (${knownLocations.size} lokací). Každá fotka má čas, místo a dočasný název. Ve fázi 3 je může AI pojmenovat.`,
-                            `Created ${clusters.length} events from ${normalPhotos.length} photos (${knownLocations.size} locations). Every photo has a time, location and temporary name. Phase 3 can name them with AI.`
+                            `Vytvořeno ${clusters.length} událostí z ${normalPhotos.length} fotek (${knownLocations.size} lokací). Režim ${modeLabel}: ${effectiveClusterSettings.epsTimeHours.toFixed(1)} h / ${effectiveClusterSettings.epsSpaceKm.toFixed(1)} km, min. ${effectiveClusterSettings.minPoints} fotky. Každá fotka má čas, místo a dočasný název.`,
+                            `Created ${clusters.length} events from ${normalPhotos.length} photos (${knownLocations.size} locations). ${modeLabel} mode: ${effectiveClusterSettings.epsTimeHours.toFixed(1)} h / ${effectiveClusterSettings.epsSpaceKm.toFixed(1)} km, min ${effectiveClusterSettings.minPoints} photos. Every photo has a time, location and temporary name.`
                         )
                     });
                 } catch (e) {
@@ -2356,6 +2433,8 @@ DATA: ${JSON.stringify(data)}`;
                     });
                 }
                 const count = idsToUpdate.size;
+                const mergedClusterId = type === 'event' && targetClusterIds.size > 1 ? `evt-merged-${Date.now()}` : null;
+                const splitClusterId = type === 'split' ? `evt-split-${Date.now()}` : null;
 
                 setPhotos(prev => prev.map(p => {
                     if (!idsToUpdate.has(p.id)) return p;
@@ -2366,6 +2445,15 @@ DATA: ${JSON.stringify(data)}`;
                     if (type === 'event') {
                         updated.aiData.event_name = val;
                         updated.aiData.eventNameSource = 'manual';
+                        if (mergedClusterId) {
+                            updated.aiData.clusterId = mergedClusterId;
+                            updated.aiData.clusterNumber = 0;
+                        }
+                    } else if (type === 'split') {
+                        updated.aiData.event_name = val;
+                        updated.aiData.eventNameSource = 'manual';
+                        updated.aiData.clusterId = splitClusterId;
+                        updated.aiData.clusterNumber = 0;
                     } else if (type === 'parent-event') {
                         const current = updated.aiData.event_name || 'Nezařazeno';
                         const base = current.includes('/') ? current.split('/').pop() : current;
@@ -2399,12 +2487,15 @@ DATA: ${JSON.stringify(data)}`;
                 const inheritedNote = type === 'location' && inheritedIds.size > 0
                     ? t(`, z toho ${inheritedIds.size} blízkých fotek bez vlastní lokace`, `, including ${inheritedIds.size} nearby photos without their own location`)
                     : '';
+                const mergeNote = mergedClusterId ? t(" Události byly sloučeny.", " Events were merged.") : '';
                 setMessage({
                     title: t("Hotovo", "Done"),
-                    text: t(
-                        `Hromadná úprava aplikována na ${count} fotek (včetně celých událostí)${inheritedNote}.`,
-                        `Bulk edit applied to ${count} photos (including whole events)${inheritedNote}.`
-                    )
+                    text: type === 'split'
+                        ? t(`Odděleno ${count} fotek do nové události „${val}“.`, `Split ${count} photos into new event "${val}".`)
+                        : t(
+                            `Hromadná úprava aplikována na ${count} fotek (včetně celých událostí)${inheritedNote}.${mergeNote}`,
+                            `Bulk edit applied to ${count} photos (including whole events)${inheritedNote}.${mergeNote}`
+                        )
                 });
             };
 
@@ -2546,6 +2637,37 @@ DATA: ${JSON.stringify(data)}`;
                                         <div className="text-[10px] text-slate-500 leading-relaxed">
                                             {t("Načte EXIF, přiřadí lokaci z Timeline, najde hustá fotografická místa a vytvoří složky událostí s dočasnými názvy. Fáze 3 je volitelná – složky můžete přejmenovat ručně.", "Reads EXIF, assigns a location from Timeline, finds dense photo bursts and creates event folders with temporary names. Phase 3 is optional – you can rename folders manually.")}
                                         </div>
+
+                                        <select value={clusteringMode} onChange={e => setClusteringMode(e.target.value)} className="w-full bg-slate-800 text-xs p-1 rounded border border-slate-700 text-white">
+                                            <option value="auto">{t("Citlivost: Auto (podle hustoty fotek)", "Sensitivity: Auto (photo density)")}</option>
+                                            <option value="manual">{t("Citlivost: Ruční", "Sensitivity: Manual")}</option>
+                                        </select>
+
+                                        {clusteringMode === 'manual' && (
+                                            <div className="grid grid-cols-3 gap-2">
+                                                <div>
+                                                    <div className="text-[9px] text-slate-500">{t("Čas (h)", "Time (h)")}</div>
+                                                    <input type="number" min="0.5" max="12" step="0.5" value={manualClusterSettings.epsTimeHours} onChange={e => setManualClusterSettings({ ...manualClusterSettings, epsTimeHours: Number(e.target.value) })} className="w-full bg-slate-800 p-1 rounded text-xs text-white border border-slate-700" />
+                                                </div>
+                                                <div>
+                                                    <div className="text-[9px] text-slate-500">{t("Místo (km)", "Place (km)")}</div>
+                                                    <input type="number" min="0.5" max="50" step="0.5" value={manualClusterSettings.epsSpaceKm} onChange={e => setManualClusterSettings({ ...manualClusterSettings, epsSpaceKm: Number(e.target.value) })} className="w-full bg-slate-800 p-1 rounded text-xs text-white border border-slate-700" />
+                                                </div>
+                                                <div>
+                                                    <div className="text-[9px] text-slate-500">{t("Min. fotek", "Min photos")}</div>
+                                                    <input type="number" min="2" max="20" step="1" value={manualClusterSettings.minPoints} onChange={e => setManualClusterSettings({ ...manualClusterSettings, minPoints: Number(e.target.value) })} className="w-full bg-slate-800 p-1 rounded text-xs text-white border border-slate-700" />
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        <div className="text-[10px] text-slate-500">
+                                            {clusteringMode === 'auto'
+                                                ? (lastClusterSettings
+                                                    ? t(`Auto: ${lastClusterSettings.epsTimeHours.toFixed(1)} h / ${lastClusterSettings.epsSpaceKm.toFixed(1)} km / min. ${lastClusterSettings.minPoints}`, `Auto: ${lastClusterSettings.epsTimeHours.toFixed(1)} h / ${lastClusterSettings.epsSpaceKm.toFixed(1)} km / min ${lastClusterSettings.minPoints}`)
+                                                    : t("Automaticky podle hustoty fotek", "Automatic by photo density"))
+                                                : t("Použije se ruční citlivost.", "Manual sensitivity will be used.")}
+                                        </div>
+
                                         <button onClick={runPhase2} disabled={isGrouping} className="w-full bg-rose-600 p-2 rounded text-xs text-white hover:bg-rose-500 disabled:bg-slate-700 disabled:cursor-wait">
                                             {isGrouping ? (progress || t('⏳ Seskupuji...', '⏳ Grouping...')) : t('📸 Seskupit fotky', '📸 Group Photos')}
                                         </button>
@@ -2749,6 +2871,7 @@ DATA: ${JSON.stringify(data)}`;
                             <button onClick={() => setBulkModal({isOpen: true, type: 'event', value: ''})} className="text-sm font-medium text-slate-300 hover:text-white hover:bg-slate-700 px-4 py-1.5 rounded-full transition-colors">📁 {t("Událost", "Event")}</button>
                             <button onClick={() => setBulkModal({isOpen: true, type: 'location', value: ''})} className="text-sm font-medium text-slate-300 hover:text-white hover:bg-slate-700 px-4 py-1.5 rounded-full transition-colors">📍 {t("Lokace", "Location")}</button>
                             <button onClick={() => setBulkModal({isOpen: true, type: 'tag', value: ''})} className="text-sm font-medium text-slate-300 hover:text-white hover:bg-slate-700 px-4 py-1.5 rounded-full transition-colors">🏷️ {t("Přidat Tag", "Add Tag")}</button>
+                            <button onClick={() => setBulkModal({isOpen: true, type: 'split', value: ''})} className="text-sm font-medium text-slate-300 hover:text-white hover:bg-slate-700 px-4 py-1.5 rounded-full transition-colors" title={t("Vytvoří novou událost pouze z vybraných fotek.", "Creates a new event from the selected photos only.")}>✂️ {t("Oddělit", "Split")}</button>
                             <div className="w-px h-6 bg-slate-600 mx-1"></div>
                             <button onClick={() => setSelectedPhotos(new Set())} className="text-sm font-medium text-rose-400 hover:text-rose-300 px-4 py-1.5 rounded-full hover:bg-rose-950 transition-colors">{t("Zrušit výběr", "Deselect")}</button>
                         </div>
@@ -2758,10 +2881,10 @@ DATA: ${JSON.stringify(data)}`;
                         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[70] p-4">
                             <div className="bg-slate-900 p-6 rounded-xl border border-slate-700 w-full max-w-sm shadow-2xl">
                                 <div className="font-bold mb-4 text-lg">
-                                    {t("Hromadná úprava:", "Bulk Edit:")} {bulkModal.type === 'event' ? t('Událost', 'Event') : bulkModal.type === 'parent-event' ? t('Nadřazená složka (Zabalení)', 'Parent Folder') : bulkModal.type === 'location' ? t('Lokace', 'Location') : t('Nový Tag', 'New Tag')}
+                                    {t("Hromadná úprava:", "Bulk Edit:")} {bulkModal.type === 'event' ? t('Událost / sloučení', 'Event / merge') : bulkModal.type === 'parent-event' ? t('Nadřazená složka (Zabalení)', 'Parent Folder') : bulkModal.type === 'location' ? t('Lokace', 'Location') : bulkModal.type === 'split' ? t('Oddělit do nové události', 'Split into new event') : t('Nový Tag', 'New Tag')}
                                 </div>
                                 <div className="text-xs text-slate-400 mb-4">{t(`Aplikuje se na ${selectedPhotos.size} vybraných fotek.`, `Applies to ${selectedPhotos.size} selected photos.`)}</div>
-                                <input list={bulkModal.type === 'event' || bulkModal.type === 'parent-event' ? "existing-events" : ""} type="text" value={bulkModal.value} onChange={e => setBulkModal({...bulkModal, value: e.target.value})} placeholder={bulkModal.type === 'event' ? t('Zadejte název události...', 'Enter event name...') : bulkModal.type === 'parent-event' ? t('Název hlavní složky (např. Dovolená)...', 'Main folder name...') : bulkModal.type === 'location' ? t('Zadejte novou lokaci...', 'Enter new location...') : t('Zadejte nový tag...', 'Enter new tag...')} className="w-full bg-slate-800 p-3 rounded text-white mb-6 border border-slate-600 focus:border-orange-500 outline-none" autoFocus />
+                                <input list={bulkModal.type === 'event' || bulkModal.type === 'parent-event' ? "existing-events" : ""} type="text" value={bulkModal.value} onChange={e => setBulkModal({...bulkModal, value: e.target.value})} placeholder={bulkModal.type === 'event' ? t('Zadejte název události...', 'Enter event name...') : bulkModal.type === 'parent-event' ? t('Název hlavní složky (např. Dovolená)...', 'Main folder name...') : bulkModal.type === 'location' ? t('Zadejte novou lokaci...', 'Enter new location...') : bulkModal.type === 'split' ? t('Název nové události...', 'New event name...') : t('Zadejte nový tag...', 'Enter new tag...')} className="w-full bg-slate-800 p-3 rounded text-white mb-6 border border-slate-600 focus:border-orange-500 outline-none" autoFocus />
                                 
                                 {(bulkModal.type === 'event' || bulkModal.type === 'parent-event') && (
                                     <datalist id="existing-events">
@@ -2842,6 +2965,11 @@ DATA: ${JSON.stringify(data)}`;
                                     <section>
                                         <h3 className="text-lg font-bold text-white mb-2">{t('4. Timeline a export do Lightroomu', '4. Timeline and Lightroom Export')}</h3>
                                         <p>{t('Timeline JSON přiřadí lokace podle času z EXIF. Export uloží složky a XMP soubory; v Lightroomu použijte Import → Include Subfolders → Add.', 'Timeline JSON assigns locations based on EXIF time. Export writes folders and XMP files; in Lightroom use Import → Include Subfolders → Add.')}</p>
+                                    </section>
+
+                                    <section>
+                                        <h3 className="text-lg font-bold text-white mb-2">{t('5. Citlivost clusterů a ruční zásahy', '5. Cluster Sensitivity and Manual Edits')}</h3>
+                                        <p>{t('Auto citlivost se počítá z hustoty fotek. Ručně můžete nastavit časové okno, poloměr místa a minimální počet fotek. Tlačítkem „Oddělit“ vytvoříte novou událost pouze z vybraných fotek; „Událost / sloučení“ přejmenuje celé události a při výběru z více událostí je sloučí.', 'Auto sensitivity is derived from photo density. You can manually set the time window, place radius and minimum photo count. “Split” creates a new event from the selected photos only; “Event / merge” renames whole events and merges them when photos from multiple events are selected.')}</p>
                                     </section>
                                 </div>
                             </div>
