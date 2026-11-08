@@ -408,9 +408,17 @@
 
         const TIMELINE_TOLERANCE_MS = 2 * 3600000;
         const INTERPOLATION_WINDOW_MS = 12 * 3600000;
-        const CLUSTER_MAX_GAP_HOURS = 24;
-        const CLUSTER_MAX_DURATION_HOURS = 72;
-        const LOCATION_MERGE_RADIUS_KM = 15;
+        // Density-based (DBSCAN) spatiotemporal clustering.
+        const CLUSTER_EPS_TIME_HOURS = 1.5;
+        const CLUSTER_EPS_SPACE_KM = 4;
+        const CLUSTER_MIN_POINTS = 3;
+        const CLUSTER_SPLIT_GAP_HOURS = 6;
+        const CLUSTER_SPLIT_JUMP_KM = 10;
+        const CLUSTER_MAX_SPAN_HOURS = 24;
+        const MERGE_CLUSTER_GAP_MS = 4 * 3600000;
+        const MERGE_CLUSTER_DISTANCE_KM = 2;
+        const NOISE_ATTACH_WINDOW_MS = 6 * 3600000;
+        const NOISE_GROUP_GAP_MS = 4 * 3600000;
         const AUTO_TAG_VALUES = new Set([
             'Jaro', 'Léto', 'Podzim', 'Zima', 'Ráno', 'Den', 'Podvečer', 'Večer', 'Noc',
             'Neznámé místo', '#Neznámé místo', 'Bez EXIFu', 'Screenshot', 'Snímky obrazovky'
@@ -691,46 +699,266 @@
             return /screenshot|screen[\s_-]?shot|snipaste/i.test(name);
         };
 
-        const clusterPhotosByTimeAndLocation = (photos) => {
-            const sorted = [...photos].sort((a, b) => a.date - b.date);
-            const clusters = [];
-            let current = [];
+        const groupPhotosByTimeGaps = (items, gapMs = NOISE_GROUP_GAP_MS) => {
+            const sorted = [...items].sort((a, b) => a.date - b.date);
+            if (sorted.length === 0) return [];
 
-            sorted.forEach((photo) => {
-                if (current.length === 0) {
-                    current.push(photo);
-                    return;
+            const groups = [];
+            let current = [sorted[0]];
+
+            for (let i = 1; i < sorted.length; i += 1) {
+                const gap = sorted[i].date.getTime() - sorted[i - 1].date.getTime();
+                if (gap > gapMs) {
+                    groups.push(current);
+                    current = [sorted[i]];
+                } else {
+                    current.push(sorted[i]);
                 }
+            }
 
-                const first = current[0];
-                const last = current[current.length - 1];
-                const gapHours = (photo.date - last.date) / 3600000;
-                const durationHours = (last.date - first.date) / 3600000;
-                const lastKey = last.hardData?.locationKey || '';
-                const nextKey = photo.hardData?.locationKey || '';
-                const bothKnown = Boolean(lastKey && nextKey);
-                const sameName = normalizeLocationName(last.hardData?.location) === normalizeLocationName(photo.hardData?.location);
-                const coordsDistance = last.hardData?.coords && photo.hardData?.coords
-                    ? distanceKm(last.hardData.coords, photo.hardData.coords)
-                    : null;
-                const sameArea = coordsDistance !== null
-                    ? coordsDistance <= LOCATION_MERGE_RADIUS_KM
-                    : (lastKey === nextKey || sameName);
+            groups.push(current);
+            return groups;
+        };
 
-                let startNew = gapHours > CLUSTER_MAX_GAP_HOURS;
-                if (!startNew && bothKnown && !sameArea) startNew = true;
-                if (!startNew && durationHours > CLUSTER_MAX_DURATION_HOURS && gapHours > 6) startNew = true;
+        const splitDenseCluster = (cluster) => {
+            const sorted = [...cluster].sort((a, b) => a.date - b.date);
+            if (sorted.length === 0) return [];
 
-                if (startNew) {
-                    clusters.push(current);
+            const parts = [];
+            let current = [sorted[0]];
+
+            for (let i = 1; i < sorted.length; i += 1) {
+                const previous = sorted[i - 1];
+                const photo = sorted[i];
+                const gapHours = (photo.date.getTime() - previous.date.getTime()) / 3600000;
+                const jumpKm = previous.hardData?.coords && photo.hardData?.coords
+                    ? distanceKm(previous.hardData.coords, photo.hardData.coords)
+                    : 0;
+                const spanHours = (photo.date.getTime() - current[0].date.getTime()) / 3600000;
+                const shouldSplit = gapHours > CLUSTER_SPLIT_GAP_HOURS
+                    || (jumpKm !== null && jumpKm > CLUSTER_SPLIT_JUMP_KM)
+                    || (jumpKm !== null && jumpKm > 2 && gapHours > 2)
+                    || spanHours > CLUSTER_MAX_SPAN_HOURS;
+
+                if (shouldSplit) {
+                    parts.push(current);
                     current = [photo];
                 } else {
                     current.push(photo);
                 }
+            }
+
+            parts.push(current);
+            return parts;
+        };
+
+        const attachNoisePhotos = (clusters, noisePhotos) => {
+            if (noisePhotos.length === 0) return clusters;
+            if (clusters.length === 0) return groupPhotosByTimeGaps(noisePhotos);
+
+            const ranges = clusters.map((cluster) => {
+                const times = cluster.map((photo) => photo.date.getTime());
+                return { cluster, start: Math.min(...times), end: Math.max(...times) };
+            });
+            const remaining = [];
+
+            noisePhotos.forEach((photo) => {
+                const time = photo.date.getTime();
+                let best = null;
+
+                ranges.forEach((range) => {
+                    const distance = time < range.start ? range.start - time : time > range.end ? time - range.end : 0;
+                    if (distance <= NOISE_ATTACH_WINDOW_MS && (!best || distance < best.distance)) {
+                        best = { range, distance };
+                    }
+                });
+
+                if (best) {
+                    best.range.cluster.push(photo);
+                } else {
+                    remaining.push(photo);
+                }
             });
 
-            if (current.length > 0) clusters.push(current);
-            return clusters;
+            return [...clusters, ...groupPhotosByTimeGaps(remaining)];
+        };
+
+        const clusterFocus = (cluster) => {
+            const counts = new Map();
+            cluster.forEach((photo) => {
+                const location = photo.hardData?.location;
+                if (!location || location === 'Neznámé místo') return;
+                const key = photo.hardData?.locationKey || normalizeLocationName(location);
+                const entry = counts.get(key) || { count: 0, name: normalizeLocationName(location), coords: photo.hardData?.coords || null };
+                entry.count += 1;
+                entry.coords = entry.coords || photo.hardData?.coords || null;
+                counts.set(key, entry);
+            });
+            return [...counts.values()].sort((a, b) => b.count - a.count)[0] || { name: '', coords: null };
+        };
+
+        // Merge same-place bursts separated by a short break (e.g. lunch, ceremony + reception).
+        const mergeNearbyClusters = (clusters) => {
+            if (clusters.length <= 1) return clusters;
+
+            const sorted = [...clusters].sort((a, b) => a[0].date - b[0].date);
+            const merged = [];
+
+            sorted.forEach((cluster) => {
+                const current = [...cluster].sort((a, b) => a.date - b.date);
+                const previous = merged[merged.length - 1];
+
+                if (!previous) {
+                    merged.push(current);
+                    return;
+                }
+
+                const previousEnd = previous[previous.length - 1].date.getTime();
+                const currentStart = current[0].date.getTime();
+                const gap = currentStart - previousEnd;
+                const previousFocus = clusterFocus(previous);
+                const currentFocus = clusterFocus(current);
+                const distance = previousFocus.coords && currentFocus.coords
+                    ? distanceKm(previousFocus.coords, currentFocus.coords)
+                    : null;
+                const samePlace = distance !== null
+                    ? distance <= MERGE_CLUSTER_DISTANCE_KM
+                    : (previousFocus.name && previousFocus.name === currentFocus.name);
+
+                if (gap <= MERGE_CLUSTER_GAP_MS && samePlace) {
+                    previous.push(...current);
+                    previous.sort((a, b) => a.date - b.date);
+                } else {
+                    merged.push(current);
+                }
+            });
+
+            return merged;
+        };
+
+        // DBSCAN in time + projected space. Dense photo bursts become events;
+        // sparse driving photos are attached to the nearest event or grouped by time gaps.
+        const clusterPhotosByDensity = (photos) => {
+            const withCoords = [];
+            const withoutCoords = [];
+
+            photos.forEach((photo) => {
+                const coords = photo.hardData?.coords;
+                if (coords && Number.isFinite(coords.lat) && Number.isFinite(coords.lon)) withCoords.push(photo);
+                else withoutCoords.push(photo);
+            });
+
+            let clusters = [];
+
+            if (withCoords.length > 0) {
+                const sorted = [...withCoords].sort((a, b) => a.date - b.date);
+                const count = sorted.length;
+                const times = sorted.map((photo) => photo.date.getTime());
+                const meanLat = sorted.reduce((sum, photo) => sum + photo.hardData.coords.lat, 0) / count;
+                const cosLat = Math.cos((meanLat * Math.PI) / 180);
+                const xs = new Float64Array(count);
+                const ys = new Float64Array(count);
+
+                sorted.forEach((photo, index) => {
+                    xs[index] = photo.hardData.coords.lon * 111.32 * cosLat;
+                    ys[index] = photo.hardData.coords.lat * 110.57;
+                });
+
+                const epsTimeMs = CLUSTER_EPS_TIME_HOURS * 3600000;
+                const epsSpaceSq = CLUSTER_EPS_SPACE_KM ** 2;
+                const left = new Int32Array(count);
+                const right = new Int32Array(count);
+                let leftCursor = 0;
+                let rightCursor = 0;
+
+                for (let i = 0; i < count; i += 1) {
+                    while (times[i] - times[leftCursor] > epsTimeMs) leftCursor += 1;
+                    if (rightCursor < i) rightCursor = i;
+                    while (rightCursor < count && times[rightCursor] - times[i] <= epsTimeMs) rightCursor += 1;
+                    left[i] = leftCursor;
+                    right[i] = rightCursor;
+                }
+
+                const regionQuery = (index) => {
+                    const neighbors = [];
+                    for (let j = left[index]; j < right[index]; j += 1) {
+                        const dx = xs[index] - xs[j];
+                        const dy = ys[index] - ys[j];
+                        if (dx * dx + dy * dy <= epsSpaceSq) neighbors.push(j);
+                    }
+                    return neighbors;
+                };
+
+                const visited = new Uint8Array(count);
+                const assignment = new Int32Array(count);
+                assignment.fill(-1);
+                let clusterId = -1;
+
+                for (let i = 0; i < count; i += 1) {
+                    if (visited[i]) continue;
+                    visited[i] = 1;
+                    const neighbors = regionQuery(i);
+
+                    if (neighbors.length < CLUSTER_MIN_POINTS) continue;
+
+                    clusterId += 1;
+                    const inSeeds = new Uint8Array(count);
+                    const seeds = [];
+
+                    neighbors.forEach((index) => {
+                        if (!inSeeds[index]) {
+                            inSeeds[index] = 1;
+                            seeds.push(index);
+                        }
+                    });
+
+                    for (let s = 0; s < seeds.length; s += 1) {
+                        const index = seeds[s];
+                        if (assignment[index] >= 0 && assignment[index] !== clusterId) continue;
+                        assignment[index] = clusterId;
+
+                        if (!visited[index]) {
+                            visited[index] = 1;
+                            const indexNeighbors = regionQuery(index);
+                            if (indexNeighbors.length >= CLUSTER_MIN_POINTS) {
+                                indexNeighbors.forEach((k) => {
+                                    if (!inSeeds[k]) {
+                                        inSeeds[k] = 1;
+                                        seeds.push(k);
+                                    }
+                                });
+                            }
+                        }
+                    }
+                }
+
+                const groups = new Map();
+                for (let i = 0; i < count; i += 1) {
+                    const id = assignment[i];
+                    if (id < 0) continue;
+                    if (!groups.has(id)) groups.set(id, []);
+                    groups.get(id).push(sorted[i]);
+                }
+
+                groups.forEach((cluster) => {
+                    clusters.push(...splitDenseCluster(cluster));
+                });
+
+                const noise = [];
+                for (let i = 0; i < count; i += 1) {
+                    if (assignment[i] < 0) noise.push(sorted[i]);
+                }
+                clusters = attachNoisePhotos(clusters, noise);
+            }
+
+            if (withoutCoords.length > 0) {
+                clusters = attachNoisePhotos(clusters, withoutCoords);
+            }
+
+            return mergeNearbyClusters(clusters)
+                .filter((cluster) => cluster.length > 0)
+                .map((cluster) => [...cluster].sort((a, b) => a.date - b.date))
+                .sort((a, b) => a[0].date - b[0].date);
         };
 
         const applyDominantClusterLocation = (cluster) => {
@@ -1513,7 +1741,7 @@
                     const normalPhotos = work.filter((photo) => !isLikelyScreenshot(photo));
 
                     setProgress(t('Seskupuji podle času a místa...', 'Grouping by time and location...'));
-                    const clusters = clusterPhotosByTimeAndLocation(normalPhotos);
+                    const clusters = clusterPhotosByDensity(normalPhotos);
 
                     clusters.forEach((cluster, index) => {
                         const dominant = applyDominantClusterLocation(cluster);
@@ -2316,7 +2544,7 @@ DATA: ${JSON.stringify(data)}`;
                                     <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 space-y-2">
                                         <div className="text-[10px] text-slate-500 mb-1 uppercase font-bold">{t("2. Seskupení podle času a místa", "2. Group by Time & Location")}</div>
                                         <div className="text-[10px] text-slate-500 leading-relaxed">
-                                            {t("Načte EXIF, přiřadí lokaci z Timeline podle času, vytvoří složky událostí a dočasné názvy. Fáze 3 je volitelná – složky můžete přejmenovat ručně.", "Reads EXIF, assigns a location from Timeline by time, creates event folders and temporary names. Phase 3 is optional – you can rename folders manually.")}
+                                            {t("Načte EXIF, přiřadí lokaci z Timeline, najde hustá fotografická místa a vytvoří složky událostí s dočasnými názvy. Fáze 3 je volitelná – složky můžete přejmenovat ručně.", "Reads EXIF, assigns a location from Timeline, finds dense photo bursts and creates event folders with temporary names. Phase 3 is optional – you can rename folders manually.")}
                                         </div>
                                         <button onClick={runPhase2} disabled={isGrouping} className="w-full bg-rose-600 p-2 rounded text-xs text-white hover:bg-rose-500 disabled:bg-slate-700 disabled:cursor-wait">
                                             {isGrouping ? (progress || t('⏳ Seskupuji...', '⏳ Grouping...')) : t('📸 Seskupit fotky', '📸 Group Photos')}

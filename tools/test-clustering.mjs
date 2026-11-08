@@ -29,7 +29,7 @@ vm.createContext(sandbox);
 const helperNames = [
     'parseCoords', 'parseTimelinePoint', 'normalizeTimelineData', 'prepareTimeline',
     'findTimelineMatch', 'resolveTimelineEntry', 'normalizeLocationName',
-    'clusterPhotosByTimeAndLocation', 'applyDominantClusterLocation',
+    'clusterPhotosByDensity', 'applyDominantClusterLocation',
     'interpolateMissingLocations', 'findLocationInheritanceTargets',
     'buildPlaceholderEventName', 'mergePhotoTags', 'buildAutoTags', 'isLikelyScreenshot',
     'roundedCoordKey', 'distanceKm'
@@ -113,43 +113,64 @@ const match = h.findTimelineMatch(h.prepareTimeline(entries), t0 + 1200000);
 assert.ok(match, 'Timeline match should exist');
 assert.equal(match.kind, 'visit');
 
-// Clustering by time and location
-const photos = [
-    photo(t0, 'Praha', 'geo:50.1,14.4'),
-    photo(t0 + 3600000, 'Praha', 'geo:50.1,14.4'),
-    photo(t0 + 3 * 3600000, 'Kutná Hora', 'geo:50.0,15.3'),
-    photo(t0 + 4 * 3600000, 'Kutná Hora', 'geo:50.0,15.3'),
-    photo(t0 + 10 * 3600000, 'Kutná Hora', 'geo:50.0,15.3'),
-    photo(t0 + 40 * 3600000, 'Kutná Hora', 'geo:50.0,15.3'),
-    photo(t0 + 41 * 3600000, 'Neznámé místo', '')
-];
-
-const clusters = h.clusterPhotosByTimeAndLocation(photos);
-assert.equal(clusters.length, 3);
-assert.deepEqual(Array.from(clusters, (cluster) => cluster.length), [2, 3, 2]);
-
-const dominant = h.applyDominantClusterLocation(clusters[2]);
-assert.equal(dominant.location, 'Kutná Hora');
-assert.equal(clusters[2][1].hardData.location, 'Kutná Hora');
-assert.equal(clusters[2][1].hardData.locationSource, 'cluster');
-
-assert.equal(h.buildPlaceholderEventName(0, 'Praha'), 'Event 1 - Praha');
-assert.equal(h.buildPlaceholderEventName(2, 'Neznámé místo'), 'Event 3');
-
-// Distance-based location grouping (same rounded key/name but far apart must split)
+// Density-based clustering: two dense bursts separated by a drive must stay separate.
 const withCoords = (time, location, locationKey, coords) => {
     const item = photo(time, location, locationKey);
     item.hardData.coords = coords;
     return item;
 };
-const distancePhotos = [
-    withCoords(t0, 'Praha', 'geo:50.1,14.4', { lat: 50.08, lon: 14.43 }),
-    withCoords(t0 + 3600000, 'Praha', 'geo:50.1,14.4', { lat: 50.12, lon: 14.50 }),
-    withCoords(t0 + 7200000, 'Praha', 'geo:50.1,14.4', { lat: 49.95, lon: 15.27 })
+const at = (time, location, key, lat, lon) => withCoords(time, location, key, { lat, lon });
+
+const pragueBurst = [0, 20, 40, 60, 80, 100].map((minute) => at(
+    t0 + minute * 60000,
+    'Praha',
+    'prague',
+    50.080 + (minute % 3) * 0.002,
+    14.430 + (minute % 2) * 0.002
+));
+// Sparse photos taken during the drive. Only two, so they are noise and must attach to
+// the nearest dense event instead of forming their own cluster.
+const drivePhotos = [
+    at(t0 + 150 * 60000, 'Neznámé místo', '', 50.030, 14.600),
+    at(t0 + 210 * 60000, 'Neznámé místo', '', 50.010, 14.900)
 ];
-const distanceClusters = h.clusterPhotosByTimeAndLocation(distancePhotos);
-assert.equal(distanceClusters.length, 2);
-assert.deepEqual(Array.from(distanceClusters, (cluster) => cluster.length), [2, 1]);
+const kutnaBurst = [0, 20, 40, 60, 80, 100].map((minute) => at(
+    t0 + 260 * 60000 + minute * 60000,
+    'Kutná Hora',
+    'kutna',
+    49.950 + (minute % 3) * 0.002,
+    15.270 + (minute % 2) * 0.002
+));
+
+const vacationPhotos = [...pragueBurst, ...drivePhotos, ...kutnaBurst];
+const vacationClusters = h.clusterPhotosByDensity(vacationPhotos);
+
+assert.equal(vacationClusters.length, 2, 'dense stops should not merge across a drive');
+assert.deepEqual(Array.from(vacationClusters, (cluster) => cluster.length).sort((a, b) => a - b), [7, 7]);
+assert.equal(vacationClusters.reduce((sum, cluster) => sum + cluster.length, 0), vacationPhotos.length);
+
+vacationClusters.forEach((cluster) => h.applyDominantClusterLocation(cluster));
+const vacationLocations = Array.from(vacationClusters, (cluster) => cluster[0].hardData.location).sort();
+assert.deepEqual(vacationLocations, ['Kutná Hora', 'Praha']);
+
+// Two days at the same place with an overnight gap are separate events.
+const overnightPhotos = [
+    ... [0, 20, 40].map((minute) => at(t0 + minute * 60000, 'Praha', 'prague', 50.08, 14.43)),
+    ... [0, 20, 40].map((minute) => at(t0 + 12 * 3600000 + minute * 60000, 'Praha', 'prague', 50.08, 14.43))
+];
+const overnightClusters = h.clusterPhotosByDensity(overnightPhotos);
+assert.equal(overnightClusters.length, 2, 'overnight gap should split density clusters');
+
+// Same place, short break: merge. Same time gap but a different place: keep separate.
+const morningAtSamePlace = [0, 10, 20].map((minute) => at(t0 + minute * 60000, 'Praha', 'prague', 50.08, 14.43));
+const afternoonAtSamePlace = [130, 140, 150].map((minute) => at(t0 + minute * 60000, 'Praha', 'prague', 50.0805, 14.4305));
+assert.equal(h.clusterPhotosByDensity([...morningAtSamePlace, ...afternoonAtSamePlace]).length, 1);
+
+const afternoonElsewhere = [130, 140, 150].map((minute) => at(t0 + minute * 60000, 'Kutná Hora', 'kutna', 49.95, 15.27));
+assert.equal(h.clusterPhotosByDensity([...morningAtSamePlace, ...afternoonElsewhere]).length, 2);
+
+assert.equal(h.buildPlaceholderEventName(0, 'Praha'), 'Event 1 - Praha');
+assert.equal(h.buildPlaceholderEventName(2, 'Neznámé místo'), 'Event 3');
 assert.ok(h.distanceKm({ lat: 50.08, lon: 14.43 }, { lat: 49.95, lon: 15.27 }) > 15);
 
 // Missing-location interpolation (nearest known location within the window)

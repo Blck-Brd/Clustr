@@ -25,7 +25,7 @@ It is a single-file React app with no build step and no backend. It can be deplo
 - **EXIF extraction** - capture date, camera, GPS, and automatic season / time-of-day tags.
 - **Timeline matching** - imports visits, activities and timeline paths, then binary-searches by EXIF time with GPS reverse-geocoding fallback.
 - **Local persistence** - photo metadata and Timeline data are saved to IndexedDB and relinked after a refresh by file name, size and modified time.
-- **Time + location clustering** - 15 km location radius, 24 h maximum gap and 72 h maximum cluster duration; nearby photos are grouped without turning a holiday into one folder per photo.
+- **Density-based clustering** - spatiotemporal DBSCAN (1.5 h / 4 km, minimum 3 photos). Dense photo bursts become events; sparse driving photos attach to the nearest event; same-place bursts separated by short breaks merge.
 - **Location inheritance** - a manually added location propagates through the event and to nearby photos that have no location of their own (12 h window).
 - **RAW + HEIC previews** - embedded thumbnails via exifr, HEIC conversion via heic2any, TIFF/RAW decoding via UTIF.
 - **AI event names** - strict JSON prompts, output-shape normalization, retries, and clear model errors.
