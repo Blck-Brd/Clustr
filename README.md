@@ -26,7 +26,7 @@ It is a single-file React app with no build step and no backend. It can be deplo
 - **EXIF extraction** - capture date, camera, GPS, and automatic season / time-of-day tags.
 - **Timeline matching** - imports visits, activities and timeline paths, binary-searches by EXIF time, and resolves unnamed coordinates to the nearest named Timeline location before falling back to GPS/Nominatim.
 - **Local persistence** - photo metadata and Timeline data are saved to IndexedDB and relinked after a refresh by file name, size and modified time.
-- **Trips + home hierarchy (default)** - a smoothed **daily photo-density heatmap** finds active days and rest valleys, so one vacation becomes one trip folder. Stops inside a trip use a spatiotemporal **grid heatmap**.
+- **Trips + home hierarchy (default)** - a smoothed **daily photo-density heatmap** finds active days and rest valleys, so one vacation becomes one trip folder. Nearby density episodes are merged into one parent trip; internal segments become stop subfolders only when there are enough located photos. Stops use a spatiotemporal **grid heatmap**.
 - **Places/density profile** - the same grid heatmap used as flat place events if you do not want trip folders.
 - **Screenshot / Clutter folder** - Czech/English screenshots, lossless images without camera/location, Downloads/meme paths and similar clutter go to `Screenshot-Clutter`, outside the clustering.
 - **Clean state** - the 🧹 button clears IndexedDB, local settings and cloud metadata.

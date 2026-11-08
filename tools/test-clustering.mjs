@@ -421,4 +421,27 @@ assert.equal(noLocationHierarchy.groups.length, 1);
 assert.equal(noLocationHierarchy.groups[0].eventName, 'Trip 1');
 assert.equal(noLocationHierarchy.groups[0].photos.length, noLocationVacation.length);
 
+// A long event split into density episodes still becomes one parent trip.
+const parentTripPhotos = [];
+for (let day = 0; day < 3; day += 1) {
+    for (let i = 0; i < 10; i += 1) parentTripPhotos.push(photo(vacationStart + day * 86400000 + 10 * 3600000 + i * 60000, 'Neznámé místo', ''));
+}
+for (let day = 6; day < 9; day += 1) {
+    for (let i = 0; i < 10; i += 1) parentTripPhotos.push(photo(vacationStart + day * 86400000 + 10 * 3600000 + i * 60000, 'Neznámé místo', ''));
+}
+const parentTripHierarchy = h.buildHierarchicalEvents(parentTripPhotos, '', h.buildTripSettings());
+assert.equal(parentTripHierarchy.tripCount, 1, 'Nearby density episodes should share one parent trip');
+assert.equal(parentTripHierarchy.groups.length, 1);
+
+// A long gap separates two parent trips.
+const splitTripPhotos = [];
+for (let day = 0; day < 3; day += 1) {
+    for (let i = 0; i < 10; i += 1) splitTripPhotos.push(photo(vacationStart + day * 86400000 + 10 * 3600000 + i * 60000, 'Neznámé místo', ''));
+}
+for (let day = 14; day < 17; day += 1) {
+    for (let i = 0; i < 10; i += 1) splitTripPhotos.push(photo(vacationStart + day * 86400000 + 10 * 3600000 + i * 60000, 'Neznámé místo', ''));
+}
+const splitHierarchy = h.buildHierarchicalEvents(splitTripPhotos, '', h.buildTripSettings());
+assert.equal(splitHierarchy.tripCount, 2, 'A multi-day gap should separate parent trips');
+
 console.log('All clustering/Timeline helper tests passed.');

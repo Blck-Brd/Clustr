@@ -1404,6 +1404,8 @@
 
         const DEFAULT_TRIP_SETTINGS = {
             tripGapHours: 72,
+            parentTripGapHours: 120,
+            tripMinPhotos: 3,
             maxInactiveDays: 1,
             maxTripDays: 30,
             heatmapRadiusDays: 2,
@@ -1418,6 +1420,8 @@
 
         const buildTripSettings = (overrides = {}) => ({
             tripGapHours: clampNumber(Number(overrides.tripGapHours) || DEFAULT_TRIP_SETTINGS.tripGapHours, 12, 24 * 14),
+            parentTripGapHours: clampNumber(Number(overrides.parentTripGapHours) || DEFAULT_TRIP_SETTINGS.parentTripGapHours, 12, 24 * 30),
+            tripMinPhotos: clampNumber(Number(overrides.tripMinPhotos) || DEFAULT_TRIP_SETTINGS.tripMinPhotos, 1, 100),
             maxInactiveDays: clampNumber(Number(overrides.maxInactiveDays) || DEFAULT_TRIP_SETTINGS.maxInactiveDays, 0, 14),
             maxTripDays: clampNumber(Number(overrides.maxTripDays) || DEFAULT_TRIP_SETTINGS.maxTripDays, 1, 365),
             heatmapRadiusDays: clampNumber(Number(overrides.heatmapRadiusDays) || DEFAULT_TRIP_SETTINGS.heatmapRadiusDays, 0, 14),
@@ -1647,9 +1651,8 @@
         const clusterPhotosIntoTrips = (photos, homeLocation, settings = DEFAULT_TRIP_SETTINGS) => {
             const homeRef = inferHomeReference(photos, homeLocation);
             const densityEpisodes = segmentDenseEpisodes(photos, settings);
-            const trips = [];
             const homeSessionPhotos = [];
-            const extras = [];
+            const nonHomeEpisodes = [];
 
             densityEpisodes.forEach((episodePhotos) => {
                 const home = [];
@@ -1667,19 +1670,60 @@
                     else away.push(photo);
                 });
 
-                const spanHours = (episodePhotos[episodePhotos.length - 1].date.getTime() - episodePhotos[0].date.getTime()) / 3600000;
-
                 if (away.length > home.length) {
                     // Away evidence wins: keep every unknown photo in this density episode inside the trip.
-                    trips.push([...away, ...unknown].sort((a, b) => a.date - b.date));
+                    nonHomeEpisodes.push([...away, ...unknown].sort((a, b) => a.date - b.date));
                     homeSessionPhotos.push(...home);
                 } else if (home.length > 0) {
                     homeSessionPhotos.push(...home, ...unknown);
-                } else if (spanHours > 24) {
-                    // No location evidence but a multi-day density block: one flat trip.
-                    trips.push([...unknown].sort((a, b) => a.date - b.date));
                 } else {
-                    extras.push(...unknown, ...away);
+                    nonHomeEpisodes.push([...unknown].sort((a, b) => a.date - b.date));
+                }
+            });
+
+            // Merge nearby density episodes into one parent trip. Long events are allowed to
+            // contain multiple internal clusters/stops, but they should share one parent folder.
+            nonHomeEpisodes.sort((a, b) => a[0].date - b[0].date);
+            const parentTrips = [];
+            let currentParent = [];
+
+            nonHomeEpisodes.forEach((episodePhotos) => {
+                if (currentParent.length === 0) {
+                    currentParent = [...episodePhotos];
+                    return;
+                }
+
+                const last = currentParent[currentParent.length - 1];
+                const first = episodePhotos[0];
+                const end = episodePhotos[episodePhotos.length - 1];
+                const gapHours = (first.date.getTime() - last.date.getTime()) / 3600000;
+                const durationDays = (end.date.getTime() - currentParent[0].date.getTime()) / 86400000;
+
+                if (gapHours <= settings.parentTripGapHours && durationDays <= settings.maxTripDays) {
+                    currentParent = currentParent.concat(episodePhotos);
+                } else {
+                    parentTrips.push(currentParent);
+                    currentParent = [...episodePhotos];
+                }
+            });
+            if (currentParent.length > 0) parentTrips.push(currentParent);
+
+            const trips = [];
+            const extras = [];
+
+            parentTrips.forEach((parentPhotos) => {
+                const sorted = [...parentPhotos].sort((a, b) => a.date - b.date);
+                const hasLocation = sorted.some((photo) => {
+                    const hasCoords = Boolean(photo.hardData?.coords);
+                    const hasNamedLocation = Boolean(photo.hardData?.locationKey && photo.hardData.location && photo.hardData.location !== 'Neznámé místo');
+                    return hasCoords || hasNamedLocation;
+                });
+                const spanHours = (sorted[sorted.length - 1].date.getTime() - sorted[0].date.getTime()) / 3600000;
+
+                if (hasLocation || spanHours > 24 || sorted.length >= settings.tripMinPhotos) {
+                    trips.push(sorted);
+                } else {
+                    extras.push(sorted);
                 }
             });
 
@@ -1688,15 +1732,12 @@
                 splitLongEpisode(group, settings.maxHomeSessionHours, 3600000).forEach((part) => homeSessions.push(part));
             });
 
-            const groupedExtras = [];
-            segmentDenseEpisodes(extras, settings).forEach((group) => groupedExtras.push(group));
-
             const sortByStart = (items) => items.sort((a, b) => a[0].date - b[0].date);
             return {
                 homeRef,
                 trips: sortByStart(trips),
                 homeSessions: sortByStart(homeSessions),
-                extras: sortByStart(groupedExtras)
+                extras: sortByStart(extras)
             };
         };
 

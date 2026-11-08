@@ -161,6 +161,22 @@ Added after the first checkpoint:
 - **TODO**:
   - Created `TODO.md` with: Location Tinder, Ko-fi profile rework, Vercel issues, project picker, Vite build, real-world Timeline coverage and test coverage.
 
+### Sixth pass - parent trips for long events
+
+- **Parent trip layer**:
+  - Density episodes are merged into a parent trip when the gap is at most `parentTripGapHours` (default **120 h / 5 days**) and the total duration is within `maxTripDays`.
+  - A long vacation can therefore contain multiple internal density episodes/stops, but only **one top-level trip folder**.
+  - Trips separated by a larger gap remain separate parent trips.
+- **Flat vs stops**:
+  - A parent trip needs at least `minPoints` located photos before stop subfolders are attempted.
+  - With no/few locations, the parent is one flat `Trip N` folder; the known location still fills the rest of the trip through dominant-location fill.
+- **Manual location** continues to propagate by `tripId` across the whole parent trip window.
+- **Tests**:
+  - Two nearby density blocks (3 days + gap + 3 days) become one parent trip.
+  - A 14-day separation creates two parent trips.
+  - Real Pictures dataset remains **1 `Trip 1` folder** for 262 location-less Croatia photos plus 371 screenshots/clutter.
+  - Real Timeline hierarchy and 12-seed six-month fuzz still pass.
+
 ### Known limitations / next steps
 
 1. **Timeline coverage matters** - if the Timeline JSON does not cover the photo dates (for example Croatia May 2026 vs a July–October Timeline), those photos have no location. They will be grouped by density into one flat trip folder without stops. Import a Timeline covering those dates for location names/stops.
