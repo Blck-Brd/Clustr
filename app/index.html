@@ -2091,7 +2091,7 @@
             }
             let worker;
             try {
-                worker = new Worker('preview-worker.js');
+                worker = new Worker('preview-worker.js?v=3');
             } catch (e) {
                 resolve(null);
                 return;

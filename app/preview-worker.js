@@ -6,12 +6,12 @@ let exifrReady = false;
 let utifReady = false;
 
 try {
-    importScripts('vendor/exifr.full.umd.js');
+    importScripts('vendor/exifr.full.umd.js?v=3');
     exifrReady = true;
 } catch (error) {}
 
 try {
-    importScripts('vendor/utif.js');
+    importScripts('vendor/utif.js?v=3');
     utifReady = true;
 } catch (error) {}
 
