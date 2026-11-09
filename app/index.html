@@ -56,10 +56,10 @@
     
     <!-- EXIFR full umí číst i zabudované náhledy v RAWu -->
     <script src="vendor/exifr.full.umd.js"></script>
-    <!-- HEIC to JPEG konvertor -->
-    <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
-    <!-- UTIF dekodér pro složité TIFF/RAW (NEF, CR2, DNG) -->
-    <script src="https://cdn.jsdelivr.net/npm/utif@3.1.0/UTIF.js"></script>
+    <!-- HEIC to JPEG konvertor (vendored, funguje i offline) -->
+    <script src="vendor/heic2any.min.js"></script>
+    <!-- UTIF dekodér pro slozit� TIFF/RAW (NEF, CR2, DNG) -->
+    <script src="vendor/utif.js"></script>
 
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #0f172a; color: #e2e8f0; margin: 0; overflow: hidden; }
@@ -2007,43 +2007,110 @@
             };
         };
 
+        const PREVIEW_MAX_EDGE = 640;
+
+        const loadPreviewImage = (url) => new Promise((resolve, reject) => {
+            const image = new Image();
+            image.onload = () => resolve(image);
+            image.onerror = () => reject(new Error('preview decode failed'));
+            image.src = url;
+        });
+
+        const shrinkToObjectUrl = async (source, width, height) => {
+            if (!width || !height) return null;
+            const scale = Math.min(1, PREVIEW_MAX_EDGE / Math.max(width, height));
+            const targetWidth = Math.max(1, Math.round(width * scale));
+            const targetHeight = Math.max(1, Math.round(height * scale));
+            const canvas = document.createElement('canvas');
+            canvas.width = targetWidth;
+            canvas.height = targetHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(source, 0, 0, targetWidth, targetHeight);
+            const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.82));
+            return blob ? URL.createObjectURL(blob) : null;
+        };
+
+        // Typed blobs are required by Safari; exifr returns raw bytes, so we detect the type.
+        const previewFromBlob = async (blob) => {
+            const url = URL.createObjectURL(blob);
+            try {
+                const image = await loadPreviewImage(url);
+                return await shrinkToObjectUrl(image, image.naturalWidth, image.naturalHeight);
+            } catch (e) {
+                return null;
+            } finally {
+                URL.revokeObjectURL(url);
+            }
+        };
+
+        const previewFromHeic = async (file) => {
+            if (typeof heic2any !== 'function') return null;
+            try {
+                const converted = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.8 });
+                const blob = Array.isArray(converted) ? converted[0] : converted;
+                return blob ? previewFromBlob(blob) : null;
+            } catch (e) {
+                return null;
+            }
+        };
+
+        // exifr/UTIF run in a worker with a hard timeout, so a bad raw file can
+        // never leave a tile spinning forever or block the UI.
+        const previewFromWorker = (file) => new Promise((resolve) => {
+            if (typeof Worker === 'undefined') {
+                resolve(null);
+                return;
+            }
+            let worker;
+            try {
+                worker = new Worker('preview-worker.js');
+            } catch (e) {
+                resolve(null);
+                return;
+            }
+            let settled = false;
+            let timer = null;
+            const finish = (value) => {
+                if (settled) return;
+                settled = true;
+                if (timer) clearTimeout(timer);
+                try { worker.terminate(); } catch (e) {}
+                resolve(value);
+            };
+            timer = setTimeout(() => finish(null), 15000);
+            worker.onmessage = async (event) => {
+                const data = event.data || {};
+                if (data.type !== 'result' || settled) return;
+                let url = null;
+                for (const candidate of data.candidates || []) {
+                    if (!candidate || !candidate.buffer) continue;
+                    if (candidate.kind === 'bytes') {
+                        url = await previewFromBlob(new Blob([candidate.buffer], { type: candidate.mime || 'image/jpeg' }));
+                    } else if (candidate.kind === 'rgba' && candidate.width && candidate.height) {
+                        const canvas = document.createElement('canvas');
+                        canvas.width = candidate.width;
+                        canvas.height = candidate.height;
+                        canvas.getContext('2d').putImageData(
+                            new ImageData(new Uint8ClampedArray(candidate.buffer), candidate.width, candidate.height), 0, 0
+                        );
+                        url = await shrinkToObjectUrl(canvas, candidate.width, candidate.height);
+                    }
+                    if (url) break;
+                }
+                finish(url);
+            };
+            worker.onerror = () => finish(null);
+            worker.postMessage({ type: 'preview', id: 'preview', file });
+        });
+
         const generatePreview = async (file) => {
             const ext = file.name.split('.').pop().toLowerCase();
-            try {
-                const thumbUrl = await exifr.thumbnailUrl(file);
-                if (thumbUrl) return thumbUrl;
-            } catch (e) {}
-
             if (ext === 'heic' || ext === 'heif') {
-                try {
-                    const convertedBlob = await heic2any({ blob: file, toType: "image/jpeg", quality: 0.7 });
-                    const blob = Array.isArray(convertedBlob) ? convertedBlob[0] : convertedBlob;
-                    return URL.createObjectURL(blob);
-                } catch (e) { console.warn("HEIC konverze selhala"); }
+                const embedded = await previewFromWorker(file);
+                return embedded || previewFromHeic(file);
             }
-
-            if (['nef', 'cr2', 'dng', 'arw', 'tif', 'tiff'].includes(ext)) {
-                try {
-                    const buffer = await file.arrayBuffer();
-                    const ifds = UTIF.decode(buffer);
-                    if (ifds && ifds.length > 0) {
-                        let ifd = ifds[0];
-                        if (ifds.length > 1 && ifds[1].width && ifds[1].height) {
-                            ifd = ifds[1]; 
-                        }
-                        UTIF.decodeImage(buffer, ifd);
-                        const rgba = UTIF.toRGBA8(ifd);
-                        const canvas = document.createElement('canvas');
-                        canvas.width = ifd.width;
-                        canvas.height = ifd.height;
-                        const ctx = canvas.getContext('2d');
-                        const imgData = new ImageData(new Uint8ClampedArray(rgba), ifd.width, ifd.height);
-                        ctx.putImageData(imgData, 0, 0);
-                        return canvas.toDataURL('image/jpeg', 0.8);
-                    }
-                } catch (e) {
-                    console.warn("RAW UTIF konverze selhala", e);
-                }
+            if (['nef', 'cr2', 'dng', 'arw', 'raf', 'orf', 'tif', 'tiff'].includes(ext)) {
+                return previewFromWorker(file);
             }
             return null;
         };
@@ -2430,7 +2497,15 @@
 
             const processThumbnails = async (loadedFiles) => {
                 const CONCURRENCY_LIMIT = 6; 
+                const PREVIEW_TIMEOUT = 20000;
                 const queue = [...loadedFiles];
+                const withTimeout = (promise, ms) => new Promise((resolve, reject) => {
+                    const timer = setTimeout(() => reject(new Error('preview timeout')), ms);
+                    promise.then(
+                        (value) => { clearTimeout(timer); resolve(value); },
+                        (error) => { clearTimeout(timer); reject(error); }
+                    );
+                });
                 
                 const worker = async () => {
                     while (queue.length > 0) {
@@ -2438,7 +2513,7 @@
                         if (!p || !p.isRaw) continue;
                         
                         try {
-                            const thumbUrl = await generatePreview(p.file);
+                            const thumbUrl = await withTimeout(generatePreview(p.file), PREVIEW_TIMEOUT);
                             setPhotos(prev => prev.map(item => 
                                 item.id === p.id ? { ...item, url: thumbUrl, thumbLoading: false } : item
                             ));
@@ -4094,6 +4169,69 @@ DATA: ${JSON.stringify(data)}`;
             };
 
 
+            // Adds heatmap-selected photos to an existing folder/event without
+            // creating a new one (e.g. a second Turnov cluster weeks later).
+            const addPhotosToExistingFolder = (ids, eventName) => {
+                const idSet = new Set(ids || []);
+                const name = String(eventName || '').trim();
+                if (idSet.size === 0 || !name) return;
+
+                setPhotos((previous) => {
+                    const target = previous.find((photo) =>
+                        !isScreenshotCategory(photo.aiData?.category) && photo.aiData?.event_name === name
+                    ) || previous.find((photo) => photo.aiData?.event_name === name);
+                    const targetAi = target?.aiData || {};
+                    const targetHard = target?.hardData || {};
+                    const targetId = targetAi.clusterId || targetAi.tripId || null;
+                    const newId = targetId ? null : `evt-heatmap-${Date.now()}`;
+                    const nextClusterNumber = targetId ? 0 : previous.reduce((max, photo) => Math.max(max, photo.aiData?.clusterNumber || 0), 0) + 1;
+                    const locationName = String(targetHard.location || '').trim();
+
+                    return previous.map((photo) => {
+                        if (!idSet.has(photo.id)) return photo;
+                        const updated = {
+                            ...photo,
+                            hardData: { ...(photo.hardData || {}) },
+                            aiData: { ...(photo.aiData || {}) }
+                        };
+                        updated.aiData.event_name = name;
+                        updated.aiData.eventNameSource = 'manual';
+                        updated.aiData.tripNameSource = 'manual';
+                        updated.aiData.stopNameSource = 'manual';
+                        updated.aiData.eventKind = targetAi.eventKind || 'misc';
+                        updated.aiData.clusterId = targetAi.clusterId || newId;
+                        updated.aiData.tripId = targetAi.tripId || targetAi.clusterId || newId;
+                        updated.aiData.clusterNumber = targetAi.clusterNumber || nextClusterNumber;
+                        updated.aiData.tripNumber = targetAi.tripNumber || 0;
+                        updated.aiData.stopNumber = targetAi.stopNumber || 0;
+                        updated.aiData.tripStart = targetAi.tripStart || null;
+                        updated.aiData.tripEnd = targetAi.tripEnd || null;
+                        updated.aiData.category = targetAi.category || 'Událost';
+
+                        if (locationName) {
+                            const oldLocation = updated.hardData.location;
+                            updated.hardData.location = locationName;
+                            updated.hardData.locationKey = targetHard.locationKey || normalizeLocationName(locationName);
+                            updated.hardData.locationSource = 'manual';
+                            updated.hardData.coords = null;
+                            const tags = (updated.aiData.tags || []).filter((tag) => tag !== oldLocation && tag !== 'Neznámé místo' && tag !== '#Neznámé místo');
+                            tags.push(locationName);
+                            updated.aiData.tags = [...new Set(tags)];
+                        }
+
+                        return updated;
+                    });
+                });
+
+                setHeatmapPhotoIds(new Set());
+                setSelectedPhotos(new Set());
+                setMessage({
+                    title: t('Přidáno do složky', 'Added to folder'),
+                    text: t(`Přidáno ${idSet.size} fotek do složky „${name}“.`, `Added ${idSet.size} photos to folder "${name}".`)
+                });
+            };
+
+
             const editTripWindowFromGroup = (group) => {
                 const start = group.tripStart || new Date(group.first).getTime();
                 const end = group.tripEnd || new Date(group.last).getTime();
@@ -4580,7 +4718,14 @@ DATA: ${JSON.stringify(data)}`;
                                             </div>
                                             
                                             {p.url ? (
-                                                <img src={p.url} className="w-full h-full object-cover" />
+                                                <img
+                                                    src={p.url}
+                                                    className="w-full h-full object-cover"
+                                                    onError={() => {
+                                                        if (p.url.startsWith('blob:')) URL.revokeObjectURL(p.url);
+                                                        setPhotos(prev => prev.map(item => item.id === p.id ? { ...item, url: null, thumbLoading: false } : item));
+                                                    }}
+                                                />
                                             ) : (
                                                 <div className="w-full h-full bg-slate-700 flex flex-col items-center justify-center text-slate-400 text-xs text-center p-2">
                                                     {p.thumbLoading ? (
@@ -4631,6 +4776,7 @@ DATA: ${JSON.stringify(data)}`;
                                     onApplyName={applyClusterNames}
                                     onApplyLocation={applyClusterLocation}
                                     onCreateFolder={createFolderFromHeatmap}
+                                    onAddToFolder={addPhotosToExistingFolder}
                                     onEditTripWindow={editTripWindowFromGroup}
                                     startInDrawMode={groupingWorkflow === 'heatmap'}
                                 />
@@ -4824,6 +4970,7 @@ DATA: ${JSON.stringify(data)}`;
             onApplyName,
             onApplyLocation,
             onCreateFolder,
+            onAddToFolder,
             onEditTripWindow,
             startInDrawMode = false
         }) => {
@@ -4836,6 +4983,7 @@ DATA: ${JSON.stringify(data)}`;
             const [dragState, setDragState] = useState(null);
             const [name, setName] = useState('');
             const [location, setLocation] = useState('');
+            const [targetFolder, setTargetFolder] = useState('');
             const [nameDirty, setNameDirty] = useState(false);
             const [locationDirty, setLocationDirty] = useState(false);
             const [hover, setHover] = useState(null);
@@ -4910,6 +5058,24 @@ DATA: ${JSON.stringify(data)}`;
                 clustered: photos.filter((photo) => photo.aiData?.clusterId || photo.aiData?.tripId || photo.aiData?.event_name).length,
                 clutter: photos.filter((photo) => isScreenshotCategory(photo.aiData?.category)).length
             }), [photos]);
+
+            const folderOptions = useMemo(() => {
+                const names = new Set();
+                photos.forEach((photo) => {
+                    if (isScreenshotCategory(photo.aiData?.category)) return;
+                    const eventName = cleanEventName(photo.aiData?.event_name || '');
+                    if (!eventName) return;
+                    const parts = eventName.split('/').filter(Boolean);
+                    for (let i = 1; i <= parts.length; i += 1) {
+                        names.add(parts.slice(0, i).join('/'));
+                    }
+                });
+                return [...names].sort(naturalCompare);
+            }, [photos]);
+
+            useEffect(() => {
+                if (targetFolder && !folderOptions.includes(targetFolder)) setTargetFolder('');
+            }, [folderOptions, targetFolder]);
 
             const bounds = useMemo(() => {
                 if (groups.length === 0) return null;
@@ -5325,8 +5491,15 @@ DATA: ${JSON.stringify(data)}`;
                 if (location.trim()) onApplyLocation([...selectedKeys], location.trim(), level);
             };
 
-            const updateClusterRange = (field, value) => {
+            const addToExistingFolder = () => {
+                if (!targetFolder || selectedPhotoIds.size === 0) return;
+                onAddToFolder([...selectedPhotoIds], targetFolder);
                 setSelectedKeys(new Set());
+                setTileSelection(new Set());
+                setClusterRange(null);
+            };
+
+            const updateClusterRange = (field, value) => {                setSelectedKeys(new Set());
                 setTileSelection(new Set());
                 setClusterRange((previous) => {
                     const next = { start: previous?.start || '', end: previous?.end || '', [field]: value };
@@ -5469,6 +5642,18 @@ DATA: ${JSON.stringify(data)}`;
                                             <button onClick={() => { setClusterRange(null); setSelectedKeys(new Set()); setTileSelection(new Set()); }} className="px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded text-[11px] text-slate-300" title={t('Zrušit rozsah', 'Clear range')}>×</button>
                                         </div>
                                     )}
+                                    <div>
+                                        <div className="text-[9px] text-slate-500 uppercase">{t('Přidat do existující složky', 'Add to existing folder')}</div>
+                                        <div className="grid grid-cols-[1fr_auto] gap-1">
+                                            <select data-review-target value={targetFolder} onChange={(event) => setTargetFolder(event.target.value)} className="w-full bg-slate-800 p-1.5 rounded text-xs text-white border border-slate-700">
+                                                <option value="">{t('Vyberte složku…', 'Choose a folder…')}</option>
+                                                {folderOptions.map((folder) => <option key={folder} value={folder}>{folder}</option>)}
+                                            </select>
+                                            <button data-review-add-to-folder onClick={addToExistingFolder} disabled={selectedPhotoIds.size === 0 || !targetFolder} className="px-2 py-1 bg-cyan-700 hover:bg-cyan-600 disabled:bg-slate-700 rounded font-bold text-[11px] text-white">
+                                                ➕ {t('Přidat', 'Add')}
+                                            </button>
+                                        </div>
+                                    </div>
                                     <input type="text" data-review-name value={name} onChange={(event) => { setName(event.target.value); setNameDirty(true); }} placeholder={t('Název nové složky…', 'New folder name…')} className="w-full bg-slate-800 p-1.5 rounded text-xs text-white border border-slate-700" />
                                     <input type="text" data-review-location value={location} onChange={(event) => { setLocation(event.target.value); setLocationDirty(true); }} placeholder={t('Lokace (volitelné)…', 'Location (optional)…')} className="w-full bg-slate-800 p-1.5 rounded text-xs text-white border border-slate-700" />
                                     <div className="flex flex-wrap gap-1">

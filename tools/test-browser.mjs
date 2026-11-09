@@ -152,8 +152,16 @@ try {
     await page.getByText(/Složka vytvořena|Folder created/).waitFor({ timeout: 10000 });
     await page.getByRole('button', { name: 'OK', exact: true }).click();
     await page.locator('[data-folder-tree]').getByText('Heatmap Folder', { exact: false }).first().waitFor({ timeout: 5000 });
-    await page.locator('[data-heatmap-close]').click();
     console.log('Heatmap tile -> folder: OK');
+
+    // Add a second heatmap selection to the folder that already exists.
+    await page.locator('[data-cluster-group]').first().click();
+    await page.locator('[data-review-target]').selectOption('Heatmap Folder');
+    await page.locator('[data-review-add-to-folder]').click();
+    await page.getByText(/Přidáno do složky|Added to folder/).waitFor({ timeout: 10000 });
+    await page.getByRole('button', { name: 'OK', exact: true }).click();
+    console.log('Heatmap selection -> existing folder: OK');
+    await page.locator('[data-heatmap-close]').click();
 
     // Clean state: reset clears photos/folders and skips the Timeline auto-load once.
     page.once('dialog', (dialog) => dialog.accept());
