@@ -9,7 +9,6 @@ app/                 PWA source (single-file React app for now)
   sw.js              Service worker (app shell + CDN cache)
   icons/             PWA icons
   vercel.json        Vercel headers for the app directory
-legacy/html-versions/ Old single-file HTML iterations
 tools/               Checks, tests and asset generation
 docs/                Architecture, deployment and data-format notes
 ```
@@ -28,10 +27,11 @@ docs/                Architecture, deployment and data-format notes
      - Away photos become trips using a **daily density heatmap**: daily counts are smoothed (default radius 2 days), active days are those above a relative threshold, and runs are split at low-density valleys. This keeps a 2–8 May vacation together even with a rest day.
      - If a trip has no location at all, it becomes one flat `Trip N` folder instead of many time-only stops.
      - Inside located trips, stop detection uses a **spatiotemporal grid heatmap**: time/space bins, 3×3×3 smoothing, and connected hot cells become stop subfolders: `Trip N/Stop M - location`.
-   - **Places profile:** the same spatiotemporal grid heatmap used as flat events (`Event N - location`).
-   - Screenshots and clutter are routed to `Screenshot-Clutter` before clustering: English/Czech screenshot names, screenshot/clutter/download paths, and PNG/WebP/GIF images with no camera and no location.
-   - Assign `clusterId`, `tripId`, `tripNumber`, `stopNumber`, `eventKind`, temporary names and auto tags.
-   - Fill unknown locations inside a group from its dominant location.
+    - **Places profile:** the same spatiotemporal grid heatmap used as flat events (`Event N - location`).
+    - **Random:** small, short, location-less bursts and leftovers share one `Random` folder (`randomMinPhotos`, default 3) instead of becoming many tiny events.
+    - Screenshots and clutter are routed to `Screenshot-Clutter` before clustering: English/Czech screenshot names, screenshot/clutter/download paths, lossless images without camera/location, and very small no-EXIF images.
+    - Assign `clusterId`, `tripId`, `tripNumber`, `stopNumber`, `eventKind`, temporary names and auto tags.
+    - Fill unknown locations inside a group from its dominant location (not for Random).
 4. **Phase 3 - AI names**
    - Choose naming level: **Trips** groups by `tripId`, or **Stops** groups by `clusterId`.
    - Build one summary per group (date, time, location, tags), ask Ollama/Gemini for JSON names in batches, normalize response shapes, retry missing names.
@@ -60,7 +60,9 @@ Manual location edits propagate to the whole event and to photos without their o
 
 Manual event actions:
 - **Split** gives the selected photos a new `clusterId` and event name without touching the rest of the original event.
-- **Event / merge** renames whole events; selecting photos from multiple events assigns them a shared `clusterId` and merges the events.
+- **Event / merge** renames whole events; selecting photos from multiple events assigns them a shared `clusterId` and merges the events. Renaming one stop keeps the parent trip folder and identity.
+- Dragging photos into an event adopts that event's `clusterId`/`tripId`; a new folder creates one new event.
+- Manually named photos keep their event identity across Phase 2 re-runs and are excluded from regrouping.
 
 `eventNameSource`: `manual | placeholder | ai`
 

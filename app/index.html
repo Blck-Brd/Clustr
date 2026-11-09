@@ -12,7 +12,44 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Clustr">
     <title>Clustr - AI Photo Sorter</title>
+    <!-- Vercel Web Analytics (static host). Enable it in the Vercel dashboard. -->
+    <script>
+        (function () {
+            var host = window.location.hostname;
+            if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return;
+            window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
+            var script = document.createElement('script');
+            script.defer = true;
+            script.src = '/_vercel/insights/script.js';
+            document.head.appendChild(script);
+        })();
+    </script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        // Last-resort diagnostic: keep a fatal app error visible instead of a black page.
+        (function () {
+            function showFatal(message) {
+                try {
+                    var target = document.body || document.documentElement;
+                    var box = document.getElementById('clustr-fatal');
+                    if (!box) {
+                        box = document.createElement('div');
+                        box.id = 'clustr-fatal';
+                        box.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#020617;color:#fecdd3;font:14px/1.5 monospace;padding:24px;overflow:auto;';
+                        target.appendChild(box);
+                    }
+                    box.textContent = 'Clustr error: ' + message + '\n\nReload with Ctrl+Shift+R. If it repeats, send this text.';
+                } catch (e) {}
+            }
+            window.addEventListener('error', function (event) {
+                showFatal((event && (event.message || (event.error && event.error.message))) || 'Unknown error');
+            });
+            window.addEventListener('unhandledrejection', function (event) {
+                var reason = event && event.reason;
+                showFatal((reason && reason.message) || String(reason || 'Unhandled rejection'));
+            });
+        })();
+    </script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -42,6 +79,7 @@
 
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
+        console.info('Clustr build 2026-11-09.5 (tidy phase 2)');
 
         // --- HELPERS (Mimo komponentu pro stabilitu) ---
         const geocodeCache = new Map();
@@ -123,6 +161,24 @@
             return dot > 0 ? [fileName.slice(0, dot), fileName.slice(dot)] : [fileName, ''];
         };
 
+        // Selecting a folder that already contains an exported copy loads the same photo
+        // twice. Identical name + size + mtime is treated as the same file.
+        const dedupeFilesBySignature = (files) => {
+            const seen = new Set();
+            const unique = [];
+            let duplicates = 0;
+            (files || []).forEach((file) => {
+                const signature = `${String(file.name || '').toLowerCase()}|${file.size || 0}|${file.lastModified || 0}`;
+                if (seen.has(signature)) {
+                    duplicates += 1;
+                    return;
+                }
+                seen.add(signature);
+                unique.push(file);
+            });
+            return { files: unique, duplicates };
+        };
+
         const GEMINI_PRESET_MODELS = ['gemini-3.8-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-pro-preview'];
         const isGeminiSelection = (value) => value === 'gemini-custom' || value === 'gemini-3.8-pro' || GEMINI_PRESET_MODELS.includes(value);
 
@@ -185,6 +241,60 @@
             const parts = String(currentName || '').split('/').filter(Boolean).map(cleanEventName);
             if (level === 'trips') return [clean, ...parts.slice(1)].join('/');
             return parts.length > 1 ? [...parts.slice(0, -1), clean].join('/') : clean;
+        };
+
+        // A manual event edit must never leave a photo in two events. Stop events keep
+        // their trip folder; merging several clusters creates one standalone event.
+        const buildManualEventAiData = (aiData, value, mergedId = null, clusterNumber = 0) => {
+            const next = aiData ? { ...aiData } : {};
+            const currentName = next.event_name || '';
+
+            if (mergedId) {
+                next.event_name = value;
+                next.eventNameSource = 'manual';
+                next.tripNameSource = 'manual';
+                next.stopNameSource = 'manual';
+                next.eventKind = 'misc';
+                next.clusterId = mergedId;
+                next.tripId = mergedId;
+                next.clusterNumber = clusterNumber;
+                next.tripNumber = 0;
+                next.stopNumber = 0;
+                next.tripStart = null;
+                next.tripEnd = null;
+                return next;
+            }
+
+            const kind = next.eventKind;
+            const level = kind === 'trip-stop' ? 'stops' : 'trips';
+            next.event_name = buildEventNameForNaming(currentName, value, level);
+            next.eventNameSource = 'manual';
+            if (kind === 'trip-stop') {
+                next.stopNameSource = 'manual';
+            } else if (kind === 'trip') {
+                next.tripNameSource = 'manual';
+            } else {
+                next.tripNameSource = 'manual';
+                next.stopNameSource = 'manual';
+            }
+            return next;
+        };
+
+        const placeholderEventIndex = (aiData) => {
+            const explicit = Number(aiData?.clusterNumber) || 0;
+            if (explicit > 0) return explicit - 1;
+            const match = String(aiData?.event_name || '').match(/(?:^|\/)Event\s+(\d+)/i);
+            return match ? Math.max(0, Number(match[1]) - 1) : 0;
+        };
+
+        // A flat trip keeps its manually assigned location in the placeholder name,
+        // including after Phase 2 is re-run.
+        const buildGroupPlaceholderName = (group, index, location) => {
+            const base = group?.eventName || buildPlaceholderEventName(index, location);
+            if (group?.eventKind === 'trip' && location && location !== 'Neznámé místo') {
+                return `${base} - ${location}`;
+            }
+            return base;
         };
 
         // AI modely vrací různé tvary: mapu {"0": "název"}, pole stringů,
@@ -421,6 +531,7 @@
             epsTimeHours: 1.5,
             epsSpaceKm: 4,
             minPoints: 3,
+            randomMinPhotos: 3,
             splitGapHours: 6,
             splitJumpKm: 10,
             maxSpanHours: 24,
@@ -447,6 +558,7 @@
                 epsTimeHours,
                 epsSpaceKm,
                 minPoints,
+                randomMinPhotos: Math.round(clampNumber(Number(overrides.randomMinPhotos) || DEFAULT_CLUSTER_SETTINGS.randomMinPhotos, 1, 100)),
                 splitGapHours: clampNumber(Number(overrides.splitGapHours) || Math.max(4, epsTimeHours * 4), 2, 48),
                 splitJumpKm: clampNumber(Number(overrides.splitJumpKm) || Math.max(8, epsSpaceKm * 2.5), 2, 100),
                 maxSpanHours: clampNumber(Number(overrides.maxSpanHours) || 24, 4, 72),
@@ -497,7 +609,10 @@
 
         const SCREENSHOT_CATEGORY = 'Screenshot / Clutter';
         const SCREENSHOT_FOLDER = 'Screenshot-Clutter';
+        const RANDOM_CATEGORY = 'Random';
+        const RANDOM_FOLDER = 'Random';
         const isScreenshotCategory = (value) => value === SCREENSHOT_CATEGORY || value === 'Snímky obrazovky / Různé';
+        const isRandomCategory = (value) => value === RANDOM_CATEGORY;
 
         const dateKey = (value) => {
             const date = value instanceof Date ? value : new Date(value);
@@ -748,14 +863,21 @@
             const exifDate = exif?.DateTimeOriginal || exif?.CreateDate || exif?.ModifyDate;
             if (exifDate) {
                 const parsedDate = new Date(exifDate);
-                if (Number.isFinite(parsedDate.getTime())) date = parsedDate;
+                const year = parsedDate.getFullYear();
+                // Some cameras/exports contain 1899 or 0000 dates; keep the file date instead.
+                if (Number.isFinite(parsedDate.getTime()) && year >= 1900 && year <= new Date().getFullYear() + 1) {
+                    date = parsedDate;
+                }
             }
             if (exif?.Make || exif?.Model) camera = `${exif.Make || ''} ${exif.Model || ''}`.trim();
             if (Number.isFinite(exif?.latitude) && Number.isFinite(exif?.longitude)) {
                 coords = { lat: exif.latitude, lon: exif.longitude };
             }
 
-            const manualLocation = photo.aiData?.locationSource === 'manual' && photo.hardData?.location && photo.hardData.location !== 'Neznámé místo';
+            // Manual locations live on hardData (bulk editor, review modal, manual trip).
+            const manualLocation = photo.hardData?.locationSource === 'manual'
+                && photo.hardData?.location
+                && photo.hardData.location !== 'Neznámé místo';
             let location = manualLocation ? photo.hardData.location : null;
             let locationSource = manualLocation ? 'manual' : null;
             let needsGeocode = false;
@@ -968,10 +1090,12 @@
             // Screenshots/clutter exported as lossless images usually have no camera and no location.
             const extension = name.split('.').pop();
             const lossless = ['png', 'webp', 'gif', 'bmp', 'svg'].includes(extension);
+            const size = Number(photo.file?.size) || 0;
+            const tiny = size > 0 && size < 120 * 1024;
             const noCamera = !photo.hardData?.camera || photo.hardData.camera === 'Neznámý fotoaparát';
             const noLocation = !photo.hardData?.coords
                 && (!photo.hardData?.location || photo.hardData.location === 'Neznámé místo');
-            return lossless && noCamera && noLocation;
+            return noCamera && noLocation && (lossless || tiny);
         };
 
         const groupPhotosByTimeGaps = (items, gapMs = DEFAULT_CLUSTER_SETTINGS.noiseGroupGapMs) => {
@@ -1406,6 +1530,7 @@
             tripGapHours: 72,
             parentTripGapHours: 120,
             tripMinPhotos: 3,
+            randomMinPhotos: 3,
             maxInactiveDays: 1,
             maxTripDays: 30,
             heatmapRadiusDays: 2,
@@ -1422,6 +1547,7 @@
             tripGapHours: clampNumber(Number(overrides.tripGapHours) || DEFAULT_TRIP_SETTINGS.tripGapHours, 12, 24 * 14),
             parentTripGapHours: clampNumber(Number(overrides.parentTripGapHours) || DEFAULT_TRIP_SETTINGS.parentTripGapHours, 12, 24 * 30),
             tripMinPhotos: clampNumber(Number(overrides.tripMinPhotos) || DEFAULT_TRIP_SETTINGS.tripMinPhotos, 1, 100),
+            randomMinPhotos: clampNumber(Number(overrides.randomMinPhotos) || DEFAULT_TRIP_SETTINGS.randomMinPhotos, 1, 100),
             maxInactiveDays: clampNumber(Number(overrides.maxInactiveDays) || DEFAULT_TRIP_SETTINGS.maxInactiveDays, 0, 14),
             maxTripDays: clampNumber(Number(overrides.maxTripDays) || DEFAULT_TRIP_SETTINGS.maxTripDays, 1, 365),
             heatmapRadiusDays: clampNumber(Number(overrides.heatmapRadiusDays) || DEFAULT_TRIP_SETTINGS.heatmapRadiusDays, 0, 14),
@@ -1676,6 +1802,9 @@
                     homeSessionPhotos.push(...home);
                 } else if (home.length > 0) {
                     homeSessionPhotos.push(...home, ...unknown);
+                    // A few away photos inside a home-heavy episode still belong to a trip,
+                    // never dropped. They can be merged by the parent-trip gap below.
+                    if (away.length > 0) nonHomeEpisodes.push([...away].sort((a, b) => a.date - b.date));
                 } else {
                     nonHomeEpisodes.push([...unknown].sort((a, b) => a.date - b.date));
                 }
@@ -1719,8 +1848,9 @@
                     return hasCoords || hasNamedLocation;
                 });
                 const spanHours = (sorted[sorted.length - 1].date.getTime() - sorted[0].date.getTime()) / 3600000;
+                const smallOuting = sorted.length < (settings.randomMinPhotos || 3) && spanHours <= 24;
 
-                if (hasLocation || spanHours > 24 || sorted.length >= settings.tripMinPhotos) {
+                if (!smallOuting && (hasLocation || spanHours > 24 || sorted.length >= settings.tripMinPhotos)) {
                     trips.push(sorted);
                 } else {
                     extras.push(sorted);
@@ -1783,9 +1913,18 @@
                     return hasCoords || hasNamedLocation;
                 }).length;
                 const minLocatedForStops = Math.max(2, stopSettings?.minPoints || 3);
+                const coordsCount = tripPhotos.filter((photo) => {
+                    const coords = photo.hardData?.coords;
+                    return coords && Number.isFinite(coords.lat) && Number.isFinite(coords.lon);
+                }).length;
+                const locationKeys = new Set(tripPhotos
+                    .map((photo) => photo.hardData?.locationKey)
+                    .filter((key) => key));
+                // A manual location alone (no coordinates) means one place, not per-day stops.
+                const singleNamedLocation = coordsCount === 0 && locationKeys.size <= 1;
 
                 // Without enough located photos, one flat trip folder is the honest result.
-                if (locatedCount < minLocatedForStops) {
+                if (locatedCount < minLocatedForStops || singleNamedLocation) {
                     groups.push({
                         photos: tripPhotos,
                         eventName: tripName,
@@ -1839,19 +1978,19 @@
                 });
             });
 
-            episodes.extras.forEach((extraPhotos, index) => {
-                const id = `evt-extra-${extraPhotos[0].date.getTime()}-${index}`;
+            if (episodes.extras.length > 0) {
+                const randomPhotos = episodes.extras.flat().sort((a, b) => a.date - b.date);
                 groups.push({
-                    photos: extraPhotos,
-                    eventName: `Event ${index + 1}`,
-                    clusterId: id,
-                    clusterNumber: index + 1,
-                    eventKind: 'misc',
-                    tripId: id,
+                    photos: randomPhotos,
+                    eventName: RANDOM_FOLDER,
+                    clusterId: 'random',
+                    clusterNumber: 0,
+                    eventKind: 'random',
+                    tripId: 'random',
                     tripNumber: 0,
                     stopNumber: 0
                 });
-            });
+            }
 
             groups.sort((a, b) => a.photos[0].date - b.photos[0].date);
             return {
@@ -1859,6 +1998,7 @@
                 tripCount: episodes.trips.length,
                 homeSessionCount: episodes.homeSessions.length,
                 extraCount: episodes.extras.length,
+                randomCount: episodes.extras.length > 0 ? 1 : 0,
                 stopCount,
                 homeRef: episodes.homeRef
             };
@@ -1926,6 +2066,42 @@
             return `hsl(${hash}, 72%, 62%)`;
         };
 
+        // Keeps a bad cluster render from taking down the whole app (black screen).
+        class ErrorBoundary extends React.Component {
+            constructor(props) {
+                super(props);
+                this.state = { error: null };
+            }
+
+            static getDerivedStateFromError(error) {
+                return { error };
+            }
+
+            componentDidCatch(error, info) {
+                console.error('UI error', error, info);
+            }
+
+            render() {
+                if (this.state.error) {
+                    return React.createElement('div', { className: 'fixed inset-0 bg-black/85 z-[130] flex items-center justify-center p-4' },
+                        React.createElement('div', { className: 'bg-slate-900 border border-rose-800 rounded-xl p-6 max-w-lg text-center' },
+                            React.createElement('div', { className: 'text-lg font-bold text-rose-400 mb-2' }, 'Heatmap error'),
+                            React.createElement('div', { className: 'text-sm text-slate-400 break-words mb-4' }, String(this.state.error?.message || this.state.error)),
+                            React.createElement('button', {
+                                className: 'bg-rose-600 hover:bg-rose-500 text-white font-bold px-4 py-2 rounded',
+                                onClick: () => {
+                                    this.setState({ error: null });
+                                    if (this.props.onReset) this.props.onReset();
+                                }
+                            }, 'Close')
+                        )
+                    );
+                }
+                return this.props.children;
+            }
+        }
+
+
         const App = () => {
             const [photos, setPhotos] = useState([]);
             const [timelineData, setTimelineData] = useState(null);
@@ -1949,6 +2125,7 @@
             const [showExportModal, setShowExportModal] = useState(false);
             const [showHelpModal, setShowHelpModal] = useState(false);
             const [showClusterReview, setShowClusterReview] = useState(false);
+            const [heatmapPhotoIds, setHeatmapPhotoIds] = useState(() => new Set());
             
             const [cloudDb, setCloudDb] = useState(null);
             const [cloudMetadata, setCloudMetadata] = useState(null);
@@ -1977,17 +2154,21 @@
             const [visionModel, setVisionModel] = useState(initialSettings.visionModel || 'moondream');
             const [visionModelCustom, setVisionModelCustom] = useState(initialSettings.visionModelCustom || '');
             const [groupingProfile, setGroupingProfile] = useState(initialSettings.groupingProfile || 'trips');
+            const [groupingWorkflow, setGroupingWorkflow] = useState(initialSettings.groupingWorkflow || 'auto');
+            const [showGroupingSettings, setShowGroupingSettings] = useState(false);
             const [tripSensitivityMode, setTripSensitivityMode] = useState(initialSettings.tripSensitivityMode || 'auto');
             const [clusteringMode, setClusteringMode] = useState(initialSettings.clusteringMode || 'auto');
             const [manualClusterSettings, setManualClusterSettings] = useState({
                 epsTimeHours: initialSettings.clusterEpsTimeHours ?? 1.5,
                 epsSpaceKm: initialSettings.clusterEpsSpaceKm ?? 4,
-                minPoints: initialSettings.clusterMinPoints ?? 3
+                minPoints: initialSettings.clusterMinPoints ?? 3,
+                randomMinPhotos: initialSettings.clusterRandomMinPhotos ?? 3
             });
             const [manualTripSettings, setManualTripSettings] = useState({
                 tripGapHours: initialSettings.tripGapHours ?? 72,
                 homeRadiusKm: initialSettings.homeRadiusKm ?? 15,
-                homeSessionGapHours: initialSettings.homeSessionGapHours ?? 4
+                homeSessionGapHours: initialSettings.homeSessionGapHours ?? 4,
+                randomMinPhotos: initialSettings.tripRandomMinPhotos ?? 3
             });
             const [lastClusterSettings, setLastClusterSettings] = useState(null);
             
@@ -2046,17 +2227,20 @@
                         lang, namingLevel, textModel, textModelCustom, geminiModelCustom, homeLocation,
                         visionModel, visionModelCustom, customFolders,
                         groupingProfile,
+                        groupingWorkflow,
                         tripSensitivityMode,
                         clusteringMode,
                         clusterEpsTimeHours: manualClusterSettings.epsTimeHours,
                         clusterEpsSpaceKm: manualClusterSettings.epsSpaceKm,
                         clusterMinPoints: manualClusterSettings.minPoints,
+                        clusterRandomMinPhotos: manualClusterSettings.randomMinPhotos,
                         tripGapHours: manualTripSettings.tripGapHours,
                         homeRadiusKm: manualTripSettings.homeRadiusKm,
-                        homeSessionGapHours: manualTripSettings.homeSessionGapHours
+                        homeSessionGapHours: manualTripSettings.homeSessionGapHours,
+                        tripRandomMinPhotos: manualTripSettings.randomMinPhotos
                     }));
                 } catch (e) {}
-            }, [lang, namingLevel, textModel, textModelCustom, geminiModelCustom, homeLocation, visionModel, visionModelCustom, customFolders, groupingProfile, tripSensitivityMode, clusteringMode, manualClusterSettings, manualTripSettings]);
+            }, [lang, namingLevel, textModel, textModelCustom, geminiModelCustom, homeLocation, visionModel, visionModelCustom, customFolders, groupingProfile, groupingWorkflow, tripSensitivityMode, clusteringMode, manualClusterSettings, manualTripSettings]);
 
             useEffect(() => {
                 if (modelAutoFixRef.current || ollamaModels.length === 0) return;
@@ -2274,6 +2458,8 @@
                     const ext = f.name.split('.').pop().toLowerCase();
                     return f.type.startsWith('image/') || allowedExts.includes(ext);
                 });
+                const deduped = dedupeFilesBySignature(files);
+                const uniqueFiles = deduped.files;
                 
                 const parsedMeta = [];
                 if (Array.isArray(localMetadata)) parsedMeta.push(...localMetadata);
@@ -2288,7 +2474,7 @@
                     && (!meta.lastModified || meta.lastModified === file.lastModified)
                 ) || parsedMeta.find((meta) => meta.name === file.name);
 
-                const loaded = files.map(f => {
+                const loaded = uniqueFiles.map(f => {
                     const existing = findMeta(f);
                     const ext = f.name.split('.').pop().toLowerCase();
                     const isRaw = ['nef', 'cr2', 'arw', 'dng', 'raf', 'orf', 'heic', 'heif', 'tif', 'tiff'].includes(ext);
@@ -2315,10 +2501,21 @@
                 });
                 setActiveFilters([]);
                 setSelectedPhotos(new Set());
+                setHeatmapPhotoIds(new Set());
                 setNeedsRelink(false);
                 setLocalMetadata(null);
                 setCloudMetadata(null);
                 processThumbnails(loaded);
+
+                if (deduped.duplicates > 0) {
+                    setMessage({
+                        title: t('Duplicity přeskočeny', 'Duplicates skipped'),
+                        text: t(
+                            `Načteno ${loaded.length} fotek. Přeskočeno ${deduped.duplicates} identických kopií (stejný název, velikost i čas).`,
+                            `Loaded ${loaded.length} photos. Skipped ${deduped.duplicates} identical copies (same name, size and modified time).`
+                        )
+                    });
+                }
             };
 
             const handleTimeline = (e) => {
@@ -2431,17 +2628,65 @@
 
                     setMessage({ title: "Přesunuto", text: `Složka přesunuta do ${newFolderPath} (${count} fotek).` });
                 } else if (selectedPhotos.size > 0) {
-                    let count = selectedPhotos.size;
-                    setPhotos(prev => prev.map(p => {
-                        if (!selectedPhotos.has(p.id)) return p;
-                        let updated = { ...p };
-                        if (!updated.aiData) updated.aiData = {};
-                        updated.aiData.event_name = targetEvent;
-                        updated.aiData.eventNameSource = 'manual';
-                        return updated;
-                    }));
+                    const movedIds = new Set(selectedPhotos);
+                    setPhotos(prev => {
+                        const exactRep = prev.find((photo) => !movedIds.has(photo.id) && photo.aiData?.event_name === targetEvent);
+                        const parentExists = !exactRep && prev.some((photo) => !movedIds.has(photo.id) && (photo.aiData?.event_name || '').startsWith(targetEvent + '/'));
+                        const maxClusterNumber = prev.reduce((max, photo) => Math.max(max, photo.aiData?.clusterNumber || 0), 0) + 1;
+                        const newId = `evt-moved-${Date.now()}`;
+
+                        return prev.map((photo) => {
+                            if (!movedIds.has(photo.id)) return photo;
+                            const updated = { ...photo, aiData: { ...(photo.aiData || {}) } };
+                            const currentName = updated.aiData.event_name || '';
+                            const leaf = currentName.includes('/') ? currentName.split('/').pop() : currentName;
+
+                            if (exactRep) {
+                                // Joining an existing event adopts its real cluster/trip identity.
+                                const target = exactRep.aiData || {};
+                                updated.aiData.event_name = targetEvent;
+                                updated.aiData.eventNameSource = 'manual';
+                                updated.aiData.clusterId = target.clusterId || newId;
+                                updated.aiData.tripId = target.tripId || target.clusterId || newId;
+                                updated.aiData.eventKind = target.eventKind || 'misc';
+                                updated.aiData.clusterNumber = target.clusterNumber || maxClusterNumber;
+                                updated.aiData.tripNumber = target.tripNumber || 0;
+                                updated.aiData.stopNumber = target.stopNumber || 0;
+                                updated.aiData.tripStart = target.tripStart || null;
+                                updated.aiData.tripEnd = target.tripEnd || null;
+                            } else if (parentExists) {
+                                const siblingName = leaf ? `${targetEvent}/${leaf}` : targetEvent;
+                                const sibling = prev.find((item) => !movedIds.has(item.id) && item.aiData?.event_name === siblingName);
+                                updated.aiData.event_name = siblingName;
+                                updated.aiData.eventNameSource = 'manual';
+                                if (sibling) {
+                                    // Matching leaf inside the parent means the same event; share its id.
+                                    const target = sibling.aiData || {};
+                                    updated.aiData.clusterId = target.clusterId || newId;
+                                    updated.aiData.tripId = target.tripId || target.clusterId || newId;
+                                    updated.aiData.eventKind = target.eventKind || updated.aiData.eventKind || 'misc';
+                                    updated.aiData.clusterNumber = target.clusterNumber || maxClusterNumber;
+                                    updated.aiData.tripNumber = target.tripNumber || 0;
+                                    updated.aiData.stopNumber = target.stopNumber || 0;
+                                }
+                            } else {
+                                // New folder: the moved photos become one new standalone event.
+                                updated.aiData.event_name = targetEvent;
+                                updated.aiData.eventNameSource = 'manual';
+                                updated.aiData.eventKind = 'misc';
+                                updated.aiData.clusterId = newId;
+                                updated.aiData.tripId = newId;
+                                updated.aiData.clusterNumber = maxClusterNumber;
+                                updated.aiData.tripNumber = 0;
+                                updated.aiData.stopNumber = 0;
+                                updated.aiData.tripStart = null;
+                                updated.aiData.tripEnd = null;
+                            }
+                            return updated;
+                        });
+                    });
                     setSelectedPhotos(new Set());
-                    setMessage({ title: "Přesunuto", text: `Úspěšně přesunuto ${count} fotek do složky "${targetEvent}".` });
+                    setMessage({ title: "Přesunuto", text: `Úspěšně přesunuto ${movedIds.size} fotek do složky "${targetEvent}".` });
                 }
             };
 
@@ -2756,7 +3001,9 @@
                 setMessage({ title: t("EXIF aktualizován", "EXIF updated"), text: t("Čas, fotoaparát a lokace byly načteny. Pro seskupení spusťte fázi 2.", "Time, camera and location were loaded. Run phase 2 to group photos.") });
             };
 
-            const runPhase2 = async () => {
+            const runPhase2 = async (workflowOverride = null) => {
+                const workflow = workflowOverride || groupingWorkflow;
+                if (workflowOverride) setGroupingWorkflow(workflowOverride);
                 if (photos.length === 0) {
                     setMessage({ title: t("Chyba", "Error"), text: t("Nejprve nahrajte složku s fotkami.", "Please load a photo folder first.") });
                     return;
@@ -2808,13 +3055,40 @@
 
                     const screenshots = work.filter(isLikelyScreenshot);
                     const normalPhotos = work.filter((photo) => !isLikelyScreenshot(photo));
+                    // Manually named photos keep their event identity across re-runs, so a
+                    // re-group can never put them into a second event.
+                    const manualPhotos = normalPhotos.filter((photo) => photo.aiData?.eventNameSource === 'manual'
+                        && photo.aiData?.event_name
+                        && photo.aiData?.clusterId);
+                    const manualIds = new Set(manualPhotos.map((photo) => photo.id));
+                    const groupablePhotos = normalPhotos.filter((photo) => !manualIds.has(photo.id));
 
+                    const isHeatmapWorkflow = workflow === 'heatmap';
                     const isTripsProfile = groupingProfile === 'trips';
                     let effectiveClusterSettings;
                     let eventGroups = [];
                     let tripInfo = null;
 
-                    if (isTripsProfile) {
+                    if (isHeatmapWorkflow) {
+                        effectiveClusterSettings = buildClusterSettings(manualClusterSettings);
+                        setLastClusterSettings({ ...effectiveClusterSettings, profile: 'heatmap' });
+                        setProgress(t(
+                            'Připravuji fotky pro ruční clustery v heatmapě...',
+                            'Preparing photos for manual clusters in the heatmap...'
+                        ));
+                        if (groupablePhotos.length > 0) {
+                            eventGroups.push({
+                                photos: groupablePhotos.slice().sort((a, b) => a.date - b.date),
+                                eventName: 'Uncategorized',
+                                clusterId: 'uncategorized',
+                                clusterNumber: 0,
+                                eventKind: 'misc',
+                                tripId: 'uncategorized',
+                                tripNumber: 0,
+                                stopNumber: 0
+                            });
+                        }
+                    } else if (isTripsProfile) {
                         effectiveClusterSettings = tripSensitivityMode === 'auto'
                             ? computeAutoTripSettings(normalPhotos, homeLocation)
                             : buildTripSettings(manualTripSettings);
@@ -2824,7 +3098,7 @@
                             `Seskupuji cesty a domov (${effectiveClusterSettings.tripGapHours.toFixed(0)} h mezera / ${effectiveClusterSettings.homeRadiusKm.toFixed(0)} km domov)...`,
                             `Grouping trips and home (${effectiveClusterSettings.tripGapHours.toFixed(0)} h gap / ${effectiveClusterSettings.homeRadiusKm.toFixed(0)} km home)...`
                         ));
-                        tripInfo = buildHierarchicalEvents(normalPhotos, homeLocation, effectiveClusterSettings, manualStopSettings);
+                        tripInfo = buildHierarchicalEvents(groupablePhotos, homeLocation, effectiveClusterSettings, manualStopSettings);
                         eventGroups = tripInfo.groups;
                     } else {
                         effectiveClusterSettings = clusteringMode === 'auto'
@@ -2835,28 +3109,82 @@
                             `Seskupuji podle hustoty (${effectiveClusterSettings.epsTimeHours.toFixed(1)} h / ${effectiveClusterSettings.epsSpaceKm.toFixed(1)} km)...`,
                             `Grouping by density (${effectiveClusterSettings.epsTimeHours.toFixed(1)} h / ${effectiveClusterSettings.epsSpaceKm.toFixed(1)} km)...`
                         ));
-                        eventGroups = clusterPhotosByDensity(normalPhotos, effectiveClusterSettings).map((groupPhotos, index) => ({
-                            photos: groupPhotos,
-                            eventName: null,
-                            clusterId: `evt-place-${groupPhotos[0]?.date?.getTime() || Date.now()}-${index}`,
-                            clusterNumber: index + 1,
-                            eventKind: 'place',
-                            tripId: null,
-                            tripNumber: 0,
-                            stopNumber: 0
-                        }));
+                        const placeClusters = clusterPhotosByDensity(groupablePhotos, effectiveClusterSettings);
+                        const randomPhotos = [];
+                        eventGroups = [];
+                        placeClusters.forEach((groupPhotos, index) => {
+                            if (groupPhotos.length < (effectiveClusterSettings.randomMinPhotos || 3)) {
+                                randomPhotos.push(...groupPhotos);
+                                return;
+                            }
+                            eventGroups.push({
+                                photos: groupPhotos,
+                                eventName: null,
+                                clusterId: `evt-place-${groupPhotos[0]?.date?.getTime() || Date.now()}-${index}`,
+                                clusterNumber: index + 1,
+                                eventKind: 'place',
+                                tripId: null,
+                                tripNumber: 0,
+                                stopNumber: 0
+                            });
+                        });
+                        if (randomPhotos.length > 0) {
+                            eventGroups.push({
+                                photos: randomPhotos.sort((a, b) => a.date - b.date),
+                                eventName: RANDOM_FOLDER,
+                                clusterId: 'random',
+                                clusterNumber: 0,
+                                eventKind: 'random',
+                                tripId: 'random',
+                                tripNumber: 0,
+                                stopNumber: 0
+                            });
+                        }
                     }
+
+                    if (manualPhotos.length > 0) {
+                        const manualGroups = new Map();
+                        manualPhotos.forEach((photo) => {
+                            const key = photo.aiData?.clusterId || photo.aiData?.tripId || photo.id;
+                            if (!manualGroups.has(key)) manualGroups.set(key, []);
+                            manualGroups.get(key).push(photo);
+                        });
+                        manualGroups.forEach((photos, key) => {
+                            const first = photos[0];
+                            eventGroups.push({
+                                photos: photos.sort((a, b) => a.date - b.date),
+                                eventName: first.aiData?.event_name || '',
+                                clusterId: first.aiData?.clusterId || key,
+                                clusterNumber: first.aiData?.clusterNumber || 0,
+                                eventKind: first.aiData?.eventKind || 'misc',
+                                tripId: first.aiData?.tripId || first.aiData?.clusterId || key,
+                                tripNumber: first.aiData?.tripNumber || 0,
+                                stopNumber: first.aiData?.stopNumber || 0,
+                                tripStart: first.aiData?.tripStart || null,
+                                tripEnd: first.aiData?.tripEnd || null,
+                                manual: true
+                            });
+                        });
+                    }
+                    eventGroups.sort((a, b) => (a.photos[0]?.date?.getTime() || 0) - (b.photos[0]?.date?.getTime() || 0));
 
                     eventGroups.forEach((group, index) => {
                         const groupPhotos = group.photos;
-                        const dominant = applyDominantClusterLocation(groupPhotos);
+                        const isRandom = group.eventKind === 'random';
+                        const dominant = (group.manual || isRandom) ? null : applyDominantClusterLocation(groupPhotos);
                         const location = dominant?.location || groupPhotos[0]?.hardData?.location || 'Neznámé místo';
-                        const placeholder = group.eventName || buildPlaceholderEventName(index, location);
+                        const placeholder = buildGroupPlaceholderName(group, index, location);
                         const clusterId = group.clusterId || `evt-${groupPhotos[0]?.date?.getTime() || Date.now()}-${index}`;
 
                         groupPhotos.forEach((photo) => {
                             const autoTags = buildAutoTags(photo.date, photo.hardData);
                             photo.aiData.tags = mergePhotoTags(photo.aiData.tags, autoTags, null);
+
+                            if (group.manual) {
+                                photo.aiData.category = photo.aiData.category || 'Událost';
+                                return;
+                            }
+
                             photo.aiData.clusterId = clusterId;
                             photo.aiData.clusterNumber = group.clusterNumber || index + 1;
                             photo.aiData.eventKind = group.eventKind || 'place';
@@ -2865,7 +3193,7 @@
                             photo.aiData.stopNumber = group.stopNumber || 0;
                             photo.aiData.tripStart = group.tripStart || null;
                             photo.aiData.tripEnd = group.tripEnd || null;
-                            photo.aiData.category = 'Událost';
+                            photo.aiData.category = isRandom ? RANDOM_CATEGORY : 'Událost';
 
                             if (photo.aiData.eventNameSource === 'manual') {
                                 // Ručně pojmenované události zůstávají při re-seskupení nedotčené.
@@ -2899,20 +3227,28 @@
                     setCustomFolders((prev) => prev.filter((folder) => !isPlaceholderEventName(folder.split('/').pop())));
                     setActiveFilters((prev) => prev.filter((filter) => !filter.startsWith('event-')));
                     setSelectedPhotos(new Set());
+                    setHeatmapPhotoIds(new Set());
                     setPhotos([...work]);
 
                     const knownLocations = new Set(work.map((p) => p.hardData.location).filter((location) => location && location !== 'Neznámé místo'));
                     const modeLabel = clusteringMode === 'auto' ? t('Auto', 'Auto') : t('Ruční', 'Manual');
-                    const summaryText = isTripsProfile
+                    const randomNote = tripInfo?.randomCount > 0 ? t(' a Random', ' and Random') : '';
+                    const summaryText = isHeatmapWorkflow
                         ? t(
-                            `Vytvořeno ${tripInfo.tripCount} cest, ${tripInfo.stopCount} zastávek a ${tripInfo.homeSessionCount} domácích focení z ${normalPhotos.length} fotek (${knownLocations.size} lokací). Režim ${modeLabel}: mezera ${effectiveClusterSettings.tripGapHours.toFixed(0)} h, domov ${effectiveClusterSettings.homeRadiusKm.toFixed(0)} km, sezení ${effectiveClusterSettings.homeSessionGapHours.toFixed(1)} h.`,
-                            `Created ${tripInfo.tripCount} trips, ${tripInfo.stopCount} stops and ${tripInfo.homeSessionCount} home sessions from ${normalPhotos.length} photos (${knownLocations.size} locations). ${modeLabel} mode: ${effectiveClusterSettings.tripGapHours.toFixed(0)} h gap, ${effectiveClusterSettings.homeRadiusKm.toFixed(0)} km home, ${effectiveClusterSettings.homeSessionGapHours.toFixed(1)} h session.`
+                            `Režim heatmapa: ${normalPhotos.length} fotek připraveno. Nakreslete clustery v dolním panelu (táhnutím nebo přes Start/End) a vytvořte složky.`,
+                            `Heatmap mode: ${normalPhotos.length} photos ready. Draw clusters in the bottom panel (drag or use Start/End) and create folders.`
+                        )
+                        : isTripsProfile
+                        ? t(
+                            `Vytvořeno ${tripInfo.tripCount} cest, ${tripInfo.stopCount} zastávek a ${tripInfo.homeSessionCount} domácích focení${randomNote} z ${normalPhotos.length} fotek (${knownLocations.size} lokací). Režim ${modeLabel}: mezera ${effectiveClusterSettings.tripGapHours.toFixed(0)} h, domov ${effectiveClusterSettings.homeRadiusKm.toFixed(0)} km, sezení ${effectiveClusterSettings.homeSessionGapHours.toFixed(1)} h.`,
+                            `Created ${tripInfo.tripCount} trips, ${tripInfo.stopCount} stops and ${tripInfo.homeSessionCount} home sessions${randomNote} from ${normalPhotos.length} photos (${knownLocations.size} locations). ${modeLabel} mode: ${effectiveClusterSettings.tripGapHours.toFixed(0)} h gap, ${effectiveClusterSettings.homeRadiusKm.toFixed(0)} km home, ${effectiveClusterSettings.homeSessionGapHours.toFixed(1)} h session.`
                         )
                         : t(
                             `Vytvořeno ${eventGroups.length} událostí z ${normalPhotos.length} fotek (${knownLocations.size} lokací). Režim ${modeLabel}: ${effectiveClusterSettings.epsTimeHours.toFixed(1)} h / ${effectiveClusterSettings.epsSpaceKm.toFixed(1)} km, min. ${effectiveClusterSettings.minPoints} fotky.`,
                             `Created ${eventGroups.length} events from ${normalPhotos.length} photos (${knownLocations.size} locations). ${modeLabel} mode: ${effectiveClusterSettings.epsTimeHours.toFixed(1)} h / ${effectiveClusterSettings.epsSpaceKm.toFixed(1)} km, min ${effectiveClusterSettings.minPoints} photos.`
                         );
-                    setMessage({ title: t("Seskupeno", "Grouped"), text: summaryText });
+                    setMessage({ title: isHeatmapWorkflow ? t('Heatmapa připravena', 'Heatmap ready') : t("Seskupeno", "Grouped"), text: summaryText });
+                    if (isHeatmapWorkflow) setShowClusterReview(true);
                 } catch (e) {
                     setMessage({ title: t("Chyba seskupení", "Grouping error"), text: e.message });
                 }
@@ -3543,6 +3879,7 @@ DATA: ${JSON.stringify(data)}`;
                 const count = idsToUpdate.size;
                 const mergedClusterId = type === 'event' && targetClusterIds.size > 1 ? `evt-merged-${Date.now()}` : null;
                 const splitClusterId = type === 'split' ? `evt-split-${Date.now()}` : null;
+                const nextClusterNumber = photos.reduce((max, photo) => Math.max(max, photo.aiData?.clusterNumber || 0), 0) + 1;
 
                 setPhotos(prev => prev.map(p => {
                     if (!idsToUpdate.has(p.id)) return p;
@@ -3551,25 +3888,13 @@ DATA: ${JSON.stringify(data)}`;
                     if (!updated.hardData) updated.hardData = { location: 'Neznámé místo' };
 
                     if (type === 'event') {
-                        updated.aiData.event_name = val;
-                        updated.aiData.eventNameSource = 'manual';
-                        updated.aiData.tripNameSource = 'manual';
-                        updated.aiData.stopNameSource = 'manual';
-                        updated.aiData.eventKind = 'misc';
-                        if (mergedClusterId) {
-                            updated.aiData.clusterId = mergedClusterId;
-                            updated.aiData.tripId = mergedClusterId;
-                            updated.aiData.clusterNumber = 0;
-                        }
+                        // A single event keeps its place in the trip hierarchy; selecting
+                        // multiple events merges them into one standalone event.
+                        updated.aiData = buildManualEventAiData(updated.aiData, val, mergedClusterId, nextClusterNumber);
+                        updated.aiData.category = 'Událost';
                     } else if (type === 'split') {
-                        updated.aiData.event_name = val;
-                        updated.aiData.eventNameSource = 'manual';
-                        updated.aiData.tripNameSource = 'manual';
-                        updated.aiData.stopNameSource = 'manual';
-                        updated.aiData.eventKind = 'misc';
-                        updated.aiData.clusterId = splitClusterId;
-                        updated.aiData.tripId = splitClusterId;
-                        updated.aiData.clusterNumber = 0;
+                        updated.aiData = buildManualEventAiData(updated.aiData, val, splitClusterId, nextClusterNumber);
+                        updated.aiData.category = 'Událost';
                     } else if (type === 'parent-event') {
                         const current = updated.aiData.event_name || 'Nezařazeno';
                         const base = current.includes('/') ? current.split('/').pop() : current;
@@ -3595,7 +3920,7 @@ DATA: ${JSON.stringify(data)}`;
                             } else if (updated.aiData.eventKind === 'trip') {
                                 placeholder = `Trip ${updated.aiData.tripNumber || 1} - ${val}`;
                             } else if (updated.aiData.eventKind !== 'home') {
-                                placeholder = buildPlaceholderEventName((updated.aiData.clusterNumber || 1) - 1, val);
+                                placeholder = buildPlaceholderEventName(placeholderEventIndex(updated.aiData), val);
                             }
                             if (placeholder) {
                                 updated.aiData.event_name = [...parentParts, placeholder].join('/');
@@ -3626,25 +3951,58 @@ DATA: ${JSON.stringify(data)}`;
 
             const applyClusterNames = (keys, value, level) => {
                 const keySet = new Set(keys);
-                setPhotos((previous) => previous.map((photo) => {
-                    const key = level === 'trips'
-                        ? (photo.aiData?.tripId || photo.aiData?.clusterId)
-                        : photo.aiData?.clusterId;
-                    if (!keySet.has(key)) return photo;
+                const mergeSelected = keySet.size > 1;
+                const mergedId = mergeSelected ? `evt-merged-${Date.now()}` : null;
 
-                    const currentName = photo.aiData?.event_name || '';
-                    const eventName = buildEventNameForNaming(currentName, value, level === 'trips' ? 'trips' : 'stops');
-                    const nextAiData = {
-                        ...photo.aiData,
-                        event_name: eventName,
-                        eventNameSource: 'manual'
-                    };
-                    if (level === 'trips') nextAiData.tripNameSource = 'manual';
-                    else if (photo.aiData?.eventKind === 'trip-stop') nextAiData.stopNameSource = 'manual';
-                    else nextAiData.tripNameSource = 'manual';
+                setPhotos((previous) => {
+                    const nextClusterNumber = previous.reduce((max, photo) => Math.max(max, photo.aiData?.clusterNumber || 0), 0) + 1;
+                    return previous.map((photo) => {
+                        const key = level === 'trips'
+                            ? (photo.aiData?.tripId || photo.aiData?.clusterId)
+                            : photo.aiData?.clusterId;
+                        if (!keySet.has(key)) return photo;
 
-                    return { ...photo, aiData: nextAiData };
-                }));
+                        if (!mergedId) {
+                            const currentName = photo.aiData?.event_name || '';
+                            const eventName = buildEventNameForNaming(currentName, value, level === 'trips' ? 'trips' : 'stops');
+                            const nextAiData = {
+                                ...photo.aiData,
+                                event_name: eventName,
+                                eventNameSource: 'manual'
+                            };
+                            if (level === 'trips') nextAiData.tripNameSource = 'manual';
+                            else if (photo.aiData?.eventKind === 'trip-stop') nextAiData.stopNameSource = 'manual';
+                            else nextAiData.tripNameSource = 'manual';
+
+                            return { ...photo, aiData: nextAiData };
+                        }
+
+                        if (level === 'trips') {
+                            // Merging trips keeps their stop leaves but shares one parent trip id.
+                            const currentName = photo.aiData?.event_name || '';
+                            const nextAiData = {
+                                ...photo.aiData,
+                                event_name: buildEventNameForNaming(currentName, value, 'trips'),
+                                eventNameSource: 'manual',
+                                tripNameSource: 'manual',
+                                tripId: mergedId
+                            };
+                            if (photo.aiData?.eventKind !== 'trip-stop') {
+                                nextAiData.clusterId = mergedId;
+                                nextAiData.eventKind = 'misc';
+                                nextAiData.clusterNumber = nextClusterNumber;
+                                nextAiData.tripNumber = 0;
+                                nextAiData.stopNumber = 0;
+                                nextAiData.tripStart = null;
+                                nextAiData.tripEnd = null;
+                            }
+                            return { ...photo, aiData: nextAiData };
+                        }
+
+                        // Merging stops/events makes one real event, not just a shared name.
+                        return { ...photo, aiData: buildManualEventAiData(photo.aiData, value, mergedId, nextClusterNumber) };
+                    });
+                });
             };
 
             const applyClusterLocation = (keys, value, level) => {
@@ -3675,13 +4033,67 @@ DATA: ${JSON.stringify(data)}`;
                         } else if (nextAiData.eventKind === 'trip-stop') {
                             nextAiData.event_name = [...parentParts, buildPlaceholderStopName((nextAiData.stopNumber || 1) - 1, value)].join('/');
                         } else if (nextAiData.eventKind !== 'home') {
-                            nextAiData.event_name = [...parentParts, buildPlaceholderEventName((nextAiData.clusterNumber || 1) - 1, value)].join('/');
+                            nextAiData.event_name = [...parentParts, buildPlaceholderEventName(placeholderEventIndex(nextAiData), value)].join('/');
                         }
                     }
 
                     return { ...photo, hardData: nextHardData, aiData: nextAiData };
                 }));
             };
+
+            // Creates a real folder/event from the photos selected on the heatmap.
+            const createFolderFromHeatmap = (ids, value, location) => {
+                const idSet = new Set(ids || []);
+                const name = String(value || '').trim();
+                if (idSet.size === 0 || !name) return;
+
+                const newId = `evt-heatmap-${Date.now()}`;
+                const nextClusterNumber = photos.reduce((max, photo) => Math.max(max, photo.aiData?.clusterNumber || 0), 0) + 1;
+                const locationName = String(location || '').trim();
+
+                setPhotos((previous) => previous.map((photo) => {
+                    if (!idSet.has(photo.id)) return photo;
+                    const updated = {
+                        ...photo,
+                        hardData: { ...(photo.hardData || {}) },
+                        aiData: { ...(photo.aiData || {}) }
+                    };
+                    updated.aiData.event_name = name;
+                    updated.aiData.eventNameSource = 'manual';
+                    updated.aiData.tripNameSource = 'manual';
+                    updated.aiData.stopNameSource = 'manual';
+                    updated.aiData.eventKind = 'misc';
+                    updated.aiData.clusterId = newId;
+                    updated.aiData.tripId = newId;
+                    updated.aiData.clusterNumber = nextClusterNumber;
+                    updated.aiData.tripNumber = 0;
+                    updated.aiData.stopNumber = 0;
+                    updated.aiData.tripStart = null;
+                    updated.aiData.tripEnd = null;
+                    updated.aiData.category = 'Událost';
+
+                    if (locationName) {
+                        const oldLocation = updated.hardData.location;
+                        updated.hardData.location = locationName;
+                        updated.hardData.locationKey = normalizeLocationName(locationName);
+                        updated.hardData.locationSource = 'manual';
+                        updated.hardData.coords = null;
+                        const tags = (updated.aiData.tags || []).filter((tag) => tag !== oldLocation && tag !== 'Neznámé místo' && tag !== '#Neznámé místo');
+                        tags.push(locationName);
+                        updated.aiData.tags = [...new Set(tags)];
+                    }
+
+                    return updated;
+                }));
+
+                setHeatmapPhotoIds(new Set());
+                setSelectedPhotos(new Set());
+                setMessage({
+                    title: t('Složka vytvořena', 'Folder created'),
+                    text: t(`Vytvořena složka „${name}“ pro ${idSet.size} fotek.`, `Created folder "${name}" for ${idSet.size} photos.`)
+                });
+            };
+
 
             const editTripWindowFromGroup = (group) => {
                 const start = group.tripStart || new Date(group.first).getTime();
@@ -3734,8 +4146,12 @@ DATA: ${JSON.stringify(data)}`;
                     const q = searchQuery.toLowerCase();
                     res = res.filter(p => p.name.toLowerCase().includes(q) || p.hardData?.location?.toLowerCase().includes(q) || p.aiData?.event_name?.toLowerCase().includes(q));
                 }
+
+                if (heatmapPhotoIds.size > 0) {
+                    res = res.filter(p => heatmapPhotoIds.has(p.id));
+                }
                 return res;
-            }, [photos, activeFilters, searchQuery]);
+            }, [photos, activeFilters, searchQuery, heatmapPhotoIds]);
 
             const allTags = useMemo(() => {
                 const s = new Set();
@@ -3850,11 +4266,27 @@ DATA: ${JSON.stringify(data)}`;
                                     </div>
 
                                     <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 space-y-2">
-                                        <div className="text-[10px] text-slate-500 mb-1 uppercase font-bold">{t("2. Seskupení podle času a místa", "2. Group by Time & Location")}</div>
-                                        <div className="text-[10px] text-slate-500 leading-relaxed">
-                                            {t("Načte EXIF, přiřadí lokaci z Timeline, najde hustá fotografická místa a vytvoří složky událostí s dočasnými názvy. Fáze 3 je volitelná – složky můžete přejmenovat ručně.", "Reads EXIF, assigns a location from Timeline, finds dense photo bursts and creates event folders with temporary names. Phase 3 is optional – you can rename folders manually.")}
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-[10px] text-slate-500 uppercase font-bold">{t("2. Fáze 2 – Seskupení", "2. Phase 2 – Grouping")}</span>
+                                            <button onClick={() => setShowGroupingSettings(v => !v)} title={t('Ruční nastavení clusteringu', 'Manual clustering settings')} className={`text-xs px-1.5 py-0.5 rounded ${showGroupingSettings ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'}`}>⚙️</button>
                                         </div>
 
+                                        <button data-heatmap-clustering onClick={() => runPhase2('heatmap')} disabled={isGrouping} className="w-full bg-cyan-600 p-2 rounded text-xs font-bold text-white hover:bg-cyan-500 disabled:bg-slate-700 disabled:cursor-wait">
+                                            {isGrouping ? (progress || t('⏳ Zpracovávám...', '⏳ Working...')) : t('📊 Heatmap clustering', '📊 Heatmap clustering')}
+                                        </button>
+                                        <div className="text-[9px] text-slate-500">
+                                            {t('Nakreslete clustery přímo v časové heatmapě.', 'Draw clusters directly on the time heatmap.')}
+                                        </div>
+
+                                        <div className="flex gap-1">
+                                            <button data-auto-clustering onClick={() => runPhase2('auto')} disabled={isGrouping} className="flex-1 bg-slate-800 p-2 rounded text-xs text-slate-200 hover:bg-slate-700 disabled:bg-slate-700 disabled:cursor-wait">
+                                                {isGrouping ? (progress || t('⏳ Seskupuji...', '⏳ Grouping...')) : t('⚡ Auto clustering', '⚡ Auto clustering')}
+                                            </button>
+                                            <button onClick={() => setShowGroupingSettings(v => !v)} title={t('Ruční nastavení clusteringu', 'Manual clustering settings')} className="px-2 bg-slate-800 hover:bg-slate-700 rounded text-slate-300">⚙️</button>
+                                        </div>
+
+                                        {showGroupingSettings && (
+                                            <div className="space-y-2 border-t border-slate-800 pt-2">
                                         <select value={groupingProfile} onChange={e => setGroupingProfile(e.target.value)} className="w-full bg-slate-800 text-xs p-1 rounded border border-slate-700 text-white">
                                             <option value="trips">{t("Profil: Cesty + domov (doporučeno)", "Profile: Trips + home (recommended)")}</option>
                                             <option value="places">{t("Profil: Místa (hustota)", "Profile: Places (density)")}</option>
@@ -3868,7 +4300,7 @@ DATA: ${JSON.stringify(data)}`;
                                                 </select>
 
                                                 {tripSensitivityMode === 'manual' && (
-                                                    <div className="grid grid-cols-3 gap-2">
+                                                    <div className="grid grid-cols-4 gap-2">
                                                         <div>
                                                             <div className="text-[9px] text-slate-500">{t("Mezera (h)", "Gap (h)")}</div>
                                                             <input type="number" min="12" max="336" step="1" value={manualTripSettings.tripGapHours} onChange={e => setManualTripSettings({ ...manualTripSettings, tripGapHours: Number(e.target.value) })} className="w-full bg-slate-800 p-1 rounded text-xs text-white border border-slate-700" />
@@ -3881,6 +4313,10 @@ DATA: ${JSON.stringify(data)}`;
                                                             <div className="text-[9px] text-slate-500">{t("Sezení (h)", "Session (h)")}</div>
                                                             <input type="number" min="0.5" max="24" step="0.5" value={manualTripSettings.homeSessionGapHours} onChange={e => setManualTripSettings({ ...manualTripSettings, homeSessionGapHours: Number(e.target.value) })} className="w-full bg-slate-800 p-1 rounded text-xs text-white border border-slate-700" />
                                                         </div>
+                                                        <div>
+                                                            <div className="text-[9px] text-slate-500">{t("Random min.", "Random min")}</div>
+                                                            <input type="number" min="1" max="100" step="1" value={manualTripSettings.randomMinPhotos} onChange={e => setManualTripSettings({ ...manualTripSettings, randomMinPhotos: Number(e.target.value) })} className="w-full bg-slate-800 p-1 rounded text-xs text-white border border-slate-700" />
+                                                        </div>
                                                     </div>
                                                 )}
 
@@ -3890,7 +4326,7 @@ DATA: ${JSON.stringify(data)}`;
                                                 </select>
 
                                                 {clusteringMode === 'manual' && (
-                                                    <div className="grid grid-cols-3 gap-2">
+                                                    <div className="grid grid-cols-4 gap-2">
                                                         <div>
                                                             <div className="text-[9px] text-slate-500">{t("Čas (h)", "Time (h)")}</div>
                                                             <input type="number" min="0.5" max="12" step="0.5" value={manualClusterSettings.epsTimeHours} onChange={e => setManualClusterSettings({ ...manualClusterSettings, epsTimeHours: Number(e.target.value) })} className="w-full bg-slate-800 p-1 rounded text-xs text-white border border-slate-700" />
@@ -3902,6 +4338,10 @@ DATA: ${JSON.stringify(data)}`;
                                                         <div>
                                                             <div className="text-[9px] text-slate-500">{t("Min. fotek", "Min photos")}</div>
                                                             <input type="number" min="2" max="20" step="1" value={manualClusterSettings.minPoints} onChange={e => setManualClusterSettings({ ...manualClusterSettings, minPoints: Number(e.target.value) })} className="w-full bg-slate-800 p-1 rounded text-xs text-white border border-slate-700" />
+                                                        </div>
+                                                        <div>
+                                                            <div className="text-[9px] text-slate-500">{t("Random min.", "Random min")}</div>
+                                                            <input type="number" min="1" max="100" step="1" value={manualClusterSettings.randomMinPhotos} onChange={e => setManualClusterSettings({ ...manualClusterSettings, randomMinPhotos: Number(e.target.value) })} className="w-full bg-slate-800 p-1 rounded text-xs text-white border border-slate-700" />
                                                         </div>
                                                     </div>
                                                 )}
@@ -3916,7 +4356,7 @@ DATA: ${JSON.stringify(data)}`;
                                                 </select>
 
                                                 {clusteringMode === 'manual' && (
-                                                    <div className="grid grid-cols-3 gap-2">
+                                                    <div className="grid grid-cols-4 gap-2">
                                                         <div>
                                                             <div className="text-[9px] text-slate-500">{t("Čas (h)", "Time (h)")}</div>
                                                             <input type="number" min="0.5" max="12" step="0.5" value={manualClusterSettings.epsTimeHours} onChange={e => setManualClusterSettings({ ...manualClusterSettings, epsTimeHours: Number(e.target.value) })} className="w-full bg-slate-800 p-1 rounded text-xs text-white border border-slate-700" />
@@ -3928,6 +4368,10 @@ DATA: ${JSON.stringify(data)}`;
                                                         <div>
                                                             <div className="text-[9px] text-slate-500">{t("Min. fotek", "Min photos")}</div>
                                                             <input type="number" min="2" max="20" step="1" value={manualClusterSettings.minPoints} onChange={e => setManualClusterSettings({ ...manualClusterSettings, minPoints: Number(e.target.value) })} className="w-full bg-slate-800 p-1 rounded text-xs text-white border border-slate-700" />
+                                                        </div>
+                                                        <div>
+                                                            <div className="text-[9px] text-slate-500">{t("Random min.", "Random min")}</div>
+                                                            <input type="number" min="1" max="100" step="1" value={manualClusterSettings.randomMinPhotos} onChange={e => setManualClusterSettings({ ...manualClusterSettings, randomMinPhotos: Number(e.target.value) })} className="w-full bg-slate-800 p-1 rounded text-xs text-white border border-slate-700" />
                                                         </div>
                                                     </div>
                                                 )}
@@ -3943,23 +4387,16 @@ DATA: ${JSON.stringify(data)}`;
                                                     ? t(`Auto: ${lastClusterSettings.epsTimeHours.toFixed(1)} h / ${lastClusterSettings.epsSpaceKm.toFixed(1)} km / min. ${lastClusterSettings.minPoints}`, `Auto: ${lastClusterSettings.epsTimeHours.toFixed(1)} h / ${lastClusterSettings.epsSpaceKm.toFixed(1)} km / min ${lastClusterSettings.minPoints}`)
                                                     : t("Citlivost se spočítá při spuštění.", "Sensitivity is calculated when you run it."))}
                                         </div>
+                                            </div>
+                                        )}
 
-                                        <button onClick={runPhase2} disabled={isGrouping} className="w-full bg-rose-600 p-2 rounded text-xs text-white hover:bg-rose-500 disabled:bg-slate-700 disabled:cursor-wait">
-                                            {isGrouping ? (progress || t('⏳ Seskupuji...', '⏳ Grouping...')) : t('📸 Seskupit fotky', '📸 Group Photos')}
-                                        </button>
-
-                                        <button onClick={openTripModal} className="w-full bg-slate-800 p-2 rounded text-xs text-slate-200 hover:bg-slate-700 border border-slate-700">
-                                            📅 {t('Ručně vytvořit cestu (datumové okno)', 'Manual trip window')}
-                                        </button>
-                                        <div className="text-[9px] text-slate-500">
-                                            {t('Vytvoří jednu složku cesty ze všech fotek v zadaném datovém rozsahu (např. 2.5.–8.5.).', 'Creates one trip folder from all photos in a date range (e.g. 2 May–8 May).')}
-                                        </div>
-
-                                        <button onClick={() => setShowClusterReview(true)} disabled={photos.length === 0} className="w-full bg-slate-800 p-2 rounded text-xs text-slate-200 hover:bg-slate-700 border border-slate-700 disabled:opacity-50">
-                                            📊 {t('Zkontrolovat shluky (heatmapa)', 'Review clusters (heatmap)')}
-                                        </button>
-                                        <div className="text-[9px] text-slate-500">
-                                            {t('Zobrazí clustery v čase/mapě. Kliknutím vyberete cluster a hned ho pojmenujete nebo mu nastavíte lokaci.', 'Shows clusters over time/map. Click a cluster to name it or set its location immediately.')}
+                                        <div className="grid grid-cols-2 gap-1 pt-1">
+                                            <button data-open-heatmap onClick={() => setShowClusterReview(true)} disabled={photos.length === 0} className="bg-slate-800 p-2 rounded text-[11px] text-slate-200 hover:bg-slate-700 border border-slate-700 disabled:opacity-50">
+                                                📊 {t('Otevřít heatmapu', 'Open heatmap')}
+                                            </button>
+                                            <button onClick={openTripModal} className="bg-slate-800 p-2 rounded text-[11px] text-slate-200 hover:bg-slate-700 border border-slate-700">
+                                                📅 {t('Ruční cesta', 'Manual trip')}
+                                            </button>
                                         </div>
                                     </div>
 
@@ -4091,6 +4528,12 @@ DATA: ${JSON.stringify(data)}`;
                             <input type="text" placeholder={t("Hledat v událostech a fotkách...", "Search events and photos...")} value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full max-w-md bg-slate-800 border border-slate-700 rounded-full py-2 px-4 text-sm text-white" />
                             
                             <div className="flex items-center gap-3">
+                                {heatmapPhotoIds.size > 0 && (
+                                    <div className="text-xs flex items-center gap-1 font-bold text-cyan-300 bg-cyan-950/50 border border-cyan-800 rounded-full px-3 py-1">
+                                        📊 {heatmapPhotoIds.size} {t('z heatmapy', 'from heatmap')}
+                                        <button onClick={() => setHeatmapPhotoIds(new Set())} className="text-cyan-100 hover:text-white ml-1" title={t('Zrušit výběr heatmapy', 'Clear heatmap selection')}>×</button>
+                                    </div>
+                                )}
                                 {photos.length > 0 && !needsRelink && (
                                     <div className={`text-xs mr-2 flex items-center gap-1 font-bold ${(isLocalSaving || isCloudSyncing) ? 'text-amber-400 animate-pulse' : 'text-slate-600'}`}>
                                         💾 {(isLocalSaving || isCloudSyncing) ? t("Ukládání...", "Saving...") : t("Uloženo", "Saved")}
@@ -4112,7 +4555,7 @@ DATA: ${JSON.stringify(data)}`;
                                 )}
                             </div>
                         </div>
-                        <div ref={galleryRef} data-gallery="true" className="flex-1 overflow-y-auto p-6 custom-scrollbar pb-32">
+                        <div ref={galleryRef} data-gallery="true" className="flex-1 min-h-0 overflow-y-auto p-6 custom-scrollbar pb-32">
                             {filteredPhotos.length > 0 && (
                                 <div style={{ height: `${galleryTotalHeight}px`, position: 'relative' }}>
                                     <div
@@ -4177,7 +4620,7 @@ DATA: ${JSON.stringify(data)}`;
                     </div>
 
                     {selectedPhotos.size > 0 && (
-                        <div className="fixed bottom-8 left-[calc(50%+10rem)] -translate-x-1/2 bg-slate-800 border border-slate-700 shadow-2xl shadow-black rounded-full px-4 py-3 flex items-center gap-3 z-[60] animate-bounce-short">
+                        <div className={`fixed ${showClusterReview ? 'bottom-[calc(38vh+1rem)]' : 'bottom-8'} left-[calc(50%+10rem)] -translate-x-1/2 bg-slate-800 border border-slate-700 shadow-2xl shadow-black rounded-full px-4 py-3 flex items-center gap-3 z-[60] animate-bounce-short`}>
                             <span className="text-white font-bold text-sm bg-slate-950 border border-slate-700 px-4 py-1.5 rounded-full">{selectedPhotos.size} {t("vybráno", "selected")}</span>
                             <div className="w-px h-6 bg-slate-600 mx-1"></div>
                             <button onClick={() => setBulkModal({isOpen: true, type: 'parent-event', value: ''})} className="text-sm font-bold text-orange-300 hover:text-orange-100 hover:bg-slate-700 px-4 py-1.5 rounded-full transition-colors" title="Zařadí události pod hlavní složku">📁+ {t("Zabalit pod", "Group in")}</button>
@@ -4216,16 +4659,21 @@ DATA: ${JSON.stringify(data)}`;
                     )}
 
                     {showClusterReview && (
-                        <ClusterReviewModal
-                            photos={photos}
-                            t={t}
-                            lang={lang}
-                            lastClusterSettings={lastClusterSettings}
-                            onClose={() => setShowClusterReview(false)}
-                            onApplyName={applyClusterNames}
-                            onApplyLocation={applyClusterLocation}
-                            onEditTripWindow={editTripWindowFromGroup}
-                        />
+                        <ErrorBoundary onReset={() => { setShowClusterReview(false); setHeatmapPhotoIds(new Set()); }}>
+                            <ClusterReviewModal
+                                photos={photos}
+                                t={t}
+                                lang={lang}
+                                lastClusterSettings={lastClusterSettings}
+                                onClose={() => { setShowClusterReview(false); setHeatmapPhotoIds(new Set()); }}
+                                onHighlight={setHeatmapPhotoIds}
+                                onApplyName={applyClusterNames}
+                                onApplyLocation={applyClusterLocation}
+                                onCreateFolder={createFolderFromHeatmap}
+                                onEditTripWindow={editTripWindowFromGroup}
+                                startInDrawMode={groupingWorkflow === 'heatmap'}
+                            />
+                        </ErrorBoundary>
                     )}
 
                     {tripModal.isOpen && (
@@ -4371,13 +4819,20 @@ DATA: ${JSON.stringify(data)}`;
             lang,
             lastClusterSettings,
             onClose,
+            onHighlight,
             onApplyName,
             onApplyLocation,
-            onEditTripWindow
+            onCreateFolder,
+            onEditTripWindow,
+            startInDrawMode = false
         }) => {
             const [level, setLevel] = useState('trips');
             const [tab, setTab] = useState('timeline');
+            const [drawMode, setDrawMode] = useState(Boolean(startInDrawMode));
+            const [clusterRange, setClusterRange] = useState(null);
             const [selectedKeys, setSelectedKeys] = useState(() => new Set());
+            const [tileSelection, setTileSelection] = useState(() => new Set());
+            const [dragState, setDragState] = useState(null);
             const [name, setName] = useState('');
             const [location, setLocation] = useState('');
             const [hover, setHover] = useState(null);
@@ -4404,6 +4859,7 @@ DATA: ${JSON.stringify(data)}`;
                             locations: new Map(),
                             kinds: new Map(),
                             dayCounts: new Map(),
+                            dayPhotos: new Map(),
                             tripStart: photo.aiData?.tripStart || null,
                             tripEnd: photo.aiData?.tripEnd || null,
                             eventKind: photo.aiData?.eventKind || 'misc'
@@ -4423,7 +4879,11 @@ DATA: ${JSON.stringify(data)}`;
                     const kind = getPhotoKind(photo);
                     group.kinds.set(kind, (group.kinds.get(kind) || 0) + 1);
                     const day = dateKey(photo.date);
-                    if (day) group.dayCounts.set(day, (group.dayCounts.get(day) || 0) + 1);
+                    if (day) {
+                        group.dayCounts.set(day, (group.dayCounts.get(day) || 0) + 1);
+                        if (!group.dayPhotos.has(day)) group.dayPhotos.set(day, []);
+                        group.dayPhotos.get(day).push(photo);
+                    }
                 });
 
                 return [...map.values()]
@@ -4450,8 +4910,15 @@ DATA: ${JSON.stringify(data)}`;
 
             const bounds = useMemo(() => {
                 if (groups.length === 0) return null;
-                const minDate = Math.min(...groups.map((group) => new Date(group.first).setHours(0, 0, 0, 0)));
-                const maxDate = Math.max(...groups.map((group) => new Date(group.last).setHours(0, 0, 0, 0)));
+                let minDate = Infinity;
+                let maxDate = -Infinity;
+                groups.forEach((group) => {
+                    const first = new Date(group.first).setHours(0, 0, 0, 0);
+                    const last = new Date(group.last).setHours(0, 0, 0, 0);
+                    if (Number.isFinite(first)) minDate = Math.min(minDate, first);
+                    if (Number.isFinite(last)) maxDate = Math.max(maxDate, last);
+                });
+                if (!Number.isFinite(minDate) || !Number.isFinite(maxDate)) return null;
                 const dayMs = 86400000;
                 return { minDate, maxDate, spanDays: Math.max(1, Math.round((maxDate - minDate) / dayMs) + 1) };
             }, [groups]);
@@ -4467,15 +4934,79 @@ DATA: ${JSON.stringify(data)}`;
 
             const geoBounds = useMemo(() => {
                 if (geoPoints.length === 0) return null;
-                const lats = geoPoints.map((point) => point.lat);
-                const lons = geoPoints.map((point) => point.lon);
-                return {
-                    minLat: Math.min(...lats),
-                    maxLat: Math.max(...lats),
-                    minLon: Math.min(...lons),
-                    maxLon: Math.max(...lons)
-                };
+                let minLat = Infinity;
+                let maxLat = -Infinity;
+                let minLon = Infinity;
+                let maxLon = -Infinity;
+                geoPoints.forEach((point) => {
+                    minLat = Math.min(minLat, point.lat);
+                    maxLat = Math.max(maxLat, point.lat);
+                    minLon = Math.min(minLon, point.lon);
+                    maxLon = Math.max(maxLon, point.lon);
+                });
+                if (!Number.isFinite(minLat) || !Number.isFinite(minLon)) return null;
+                return { minLat, maxLat, minLon, maxLon };
             }, [geoPoints]);
+
+            // Chrome caps canvas dimensions; keep the timeline under that limit for large libraries.
+            const canvasDpr = window.devicePixelRatio || 1;
+            const maxCssCanvasHeight = Math.floor(30000 / canvasDpr);
+            const maxCanvasRows = Math.max(1, maxCssCanvasHeight - 32);
+            const timelineGroups = groups.length > maxCanvasRows ? groups.slice(0, maxCanvasRows) : groups;
+            const timelineRowHeight = timelineGroups.length > Math.max(1, Math.floor((maxCssCanvasHeight - 32) / 22))
+                ? Math.max(1, Math.floor((maxCssCanvasHeight - 32) / timelineGroups.length))
+                : 22;
+            const timelineHeight = 8 + timelineGroups.length * timelineRowHeight + 24;
+            const sidebarGroups = groups.slice(0, 500);
+
+            const clusterRangeOffsets = useMemo(() => {
+                if (!bounds || !clusterRange?.start || !clusterRange?.end) return null;
+                const loKey = clusterRange.start <= clusterRange.end ? clusterRange.start : clusterRange.end;
+                const hiKey = clusterRange.start <= clusterRange.end ? clusterRange.end : clusterRange.start;
+                const start = Math.round((new Date(`${loKey}T00:00:00`).getTime() - bounds.minDate) / 86400000);
+                const end = Math.round((new Date(`${hiKey}T00:00:00`).getTime() - bounds.minDate) / 86400000);
+                return {
+                    start: Math.max(0, start),
+                    end: Math.min(bounds.spanDays - 1, end)
+                };
+            }, [bounds, clusterRange]);
+
+            const rangePhotoIds = useMemo(() => {
+                const ids = new Set();
+                if (!clusterRange?.start || !clusterRange?.end) return ids;
+                const lo = clusterRange.start <= clusterRange.end ? clusterRange.start : clusterRange.end;
+                const hi = clusterRange.start <= clusterRange.end ? clusterRange.end : clusterRange.start;
+                photos.forEach((photo) => {
+                    if (isScreenshotCategory(photo.aiData?.category)) return;
+                    const day = dateKey(photo.date);
+                    if (day && day >= lo && day <= hi) ids.add(photo.id);
+                });
+                return ids;
+            }, [photos, clusterRange]);
+
+            const selectedPhotoIds = useMemo(() => {
+                const ids = new Set();
+                groups.forEach((group) => {
+                    if (selectedKeys.has(group.key)) {
+                        group.photos.forEach((photo) => ids.add(photo.id));
+                    }
+                    group.dayPhotos.forEach((dayPhotos, day) => {
+                        if (tileSelection.has(`${group.key}|${day}`)) {
+                            dayPhotos.forEach((photo) => ids.add(photo.id));
+                        }
+                    });
+                });
+                rangePhotoIds.forEach((id) => ids.add(id));
+                return ids;
+            }, [groups, selectedKeys, tileSelection, rangePhotoIds]);
+            const selectedPhotoSignature = useMemo(() => [...selectedPhotoIds].sort().join('|'), [selectedPhotoIds]);
+            useEffect(() => {
+                if (onHighlight) onHighlight(new Set(selectedPhotoIds));
+                // eslint-disable-next-line react-hooks/exhaustive-deps
+            }, [selectedPhotoSignature]);
+            useEffect(() => () => {
+                if (onHighlight) onHighlight(new Set());
+            }, []);
 
             useEffect(() => {
                 const selected = groups.filter((group) => selectedKeys.has(group.key));
@@ -4490,14 +5021,17 @@ DATA: ${JSON.stringify(data)}`;
 
             useEffect(() => {
                 if (tab !== 'timeline' || !timelineRef.current || !bounds || groups.length === 0) return;
+                if (!Number.isFinite(bounds.minDate) || !Number.isFinite(bounds.spanDays)) return;
                 const canvas = timelineRef.current;
                 const ctx = canvas.getContext('2d');
+                if (!ctx) return;
+                try {
                 const left = 190;
                 const right = 12;
                 const top = 8;
-                const rowHeight = 22;
+                const rowHeight = timelineRowHeight;
                 const width = 980;
-                const height = top + groups.length * rowHeight + 24;
+                const height = timelineHeight;
                 const dpr = window.devicePixelRatio || 1;
 
                 canvas.style.width = `${width}px`;
@@ -4509,7 +5043,7 @@ DATA: ${JSON.stringify(data)}`;
                 ctx.fillRect(0, 0, width, height);
 
                 const dayWidth = Math.max(2, (width - left - right) / bounds.spanDays);
-                const days = [...new Set(groups.flatMap((group) => [...group.dayCounts.keys()]))].sort();
+                const days = [...new Set(timelineGroups.flatMap((group) => [...group.dayCounts.keys()]))].sort();
                 ctx.font = '9px sans-serif';
                 ctx.fillStyle = '#64748b';
                 days.forEach((day, index) => {
@@ -4522,31 +5056,65 @@ DATA: ${JSON.stringify(data)}`;
                     ctx.restore();
                 });
 
-                groups.forEach((group, row) => {
+                timelineGroups.forEach((group, row) => {
                     const y = top + row * rowHeight;
                     const selected = selectedKeys.has(group.key);
                     ctx.fillStyle = selected ? 'rgba(249, 115, 22, 0.18)' : (row % 2 === 0 ? 'rgba(30, 41, 59, 0.55)' : 'rgba(15, 23, 42, 0.35)');
                     ctx.fillRect(0, y, width, rowHeight);
-                    ctx.fillStyle = group.color;
-                    ctx.font = '10px sans-serif';
-                    const label = `${group.name} (${group.photos.length})`;
-                    ctx.fillText(label.length > 28 ? `${label.slice(0, 27)}…` : label, 6, y + 14);
+                    if (rowHeight >= 12) {
+                        ctx.fillStyle = group.color;
+                        ctx.font = '10px sans-serif';
+                        const label = `${group.name} (${group.photos.length})`;
+                        ctx.fillText(label.length > 28 ? `${label.slice(0, 27)}…` : label, 6, y + 14);
+                    }
                     group.dayCounts.forEach((count, day) => {
                         const offset = Math.round((new Date(`${day}T00:00:00`).getTime() - bounds.minDate) / 86400000);
                         const x = left + offset * dayWidth;
                         const ratio = Math.min(1, count / 20);
                         ctx.globalAlpha = 0.25 + ratio * 0.75;
                         ctx.fillStyle = group.color;
-                        ctx.fillRect(x, y + 3, Math.max(1, dayWidth - 0.5), rowHeight - 6);
+                        ctx.fillRect(x, y + 1, Math.max(1, dayWidth - 0.5), Math.max(1, rowHeight - 2));
                         ctx.globalAlpha = 1;
+                        if (tileSelection.has(`${group.key}|${day}`)) {
+                            ctx.strokeStyle = '#f8fafc';
+                            ctx.lineWidth = 1.5;
+                            ctx.strokeRect(x + 0.5, y + 1, Math.max(1, dayWidth - 1), Math.max(1, rowHeight - 2));
+                        }
                     });
                 });
-            }, [tab, groups, bounds, selectedKeys]);
+
+                if (clusterRangeOffsets) {
+                    const x = left + clusterRangeOffsets.start * dayWidth;
+                    const w = (clusterRangeOffsets.end - clusterRangeOffsets.start + 1) * dayWidth;
+                    ctx.fillStyle = 'rgba(34, 211, 238, 0.12)';
+                    ctx.fillRect(x, top, w, height - top - 24);
+                    ctx.strokeStyle = 'rgba(34, 211, 238, 0.85)';
+                    ctx.lineWidth = 1.5;
+                    ctx.strokeRect(x, top, w, height - top - 24);
+                }
+
+                if (dragState) {
+                    const start = Math.max(0, Math.min(dragState.start, dragState.end));
+                    const end = Math.min(bounds.spanDays - 1, Math.max(dragState.start, dragState.end));
+                    ctx.strokeStyle = '#67e8f9';
+                    ctx.lineWidth = 2;
+                    if (dragState.global) {
+                        ctx.strokeRect(left + start * dayWidth, top, (end - start + 1) * dayWidth, height - top - 24);
+                    } else {
+                        ctx.strokeRect(left + start * dayWidth, top + dragState.row * rowHeight, (end - start + 1) * dayWidth, rowHeight);
+                    }
+                }
+                } catch (error) {
+                    console.error('Timeline heatmap draw failed', error);
+                }
+            }, [tab, groups, bounds, selectedKeys, tileSelection, dragState, clusterRangeOffsets, timelineRowHeight, timelineHeight]);
 
             useEffect(() => {
                 if (tab !== 'map' || !mapRef.current) return;
                 const canvas = mapRef.current;
                 const ctx = canvas.getContext('2d');
+                if (!ctx) return;
+                try {
                 const width = 860;
                 const height = 440;
                 const padding = 34;
@@ -4595,9 +5163,13 @@ DATA: ${JSON.stringify(data)}`;
                 ctx.fillStyle = '#94a3b8';
                 ctx.font = '10px sans-serif';
                 ctx.fillText(`${geoPoints.length} ${t('fotek s polohou', 'photos with location')}`, width - 150, 18);
+                } catch (error) {
+                    console.error('Map heatmap draw failed', error);
+                }
             }, [tab, geoPoints, geoBounds, selectedKeys, t]);
 
             const toggleGroup = (key) => {
+                setTileSelection(new Set());
                 setSelectedKeys((previous) => {
                     const next = new Set(previous);
                     if (next.has(key)) next.delete(key);
@@ -4606,14 +5178,82 @@ DATA: ${JSON.stringify(data)}`;
                 });
             };
 
-            const handleTimelineClick = (event) => {
-                if (!timelineRef.current || groups.length === 0) return;
+            const timelineDayWidth = Math.max(2, (980 - 190 - 12) / Math.max(1, bounds?.spanDays || 1));
+            const timelineOffsetAt = (event) => {
                 const rect = timelineRef.current.getBoundingClientRect();
+                const x = event.clientX - rect.left;
                 const y = event.clientY - rect.top - 8;
-                const row = Math.floor(y / 22);
-                if (row < 0 || row >= groups.length) return;
-                toggleGroup(groups[row].key);
+                const row = Math.floor(y / timelineRowHeight);
+                const offset = Math.floor((x - 190) / timelineDayWidth);
+                return { row, offset, x };
             };
+
+            const handleTimelineMouseDown = (event) => {
+                if (!timelineRef.current || !bounds || timelineGroups.length === 0) return;
+                const { row, offset, x } = timelineOffsetAt(event);
+                if (x < 190) {
+                    if (row >= 0 && row < timelineGroups.length) toggleGroup(timelineGroups[row].key);
+                    return;
+                }
+                if (offset < 0 || offset >= bounds.spanDays) return;
+                if (drawMode) {
+                    setSelectedKeys(new Set());
+                    setTileSelection(new Set());
+                    setDragState({ global: true, row: Math.max(0, row), start: offset, end: offset });
+                    event.preventDefault();
+                    return;
+                }
+                if (row < 0 || row >= timelineGroups.length) return;
+                setSelectedKeys(new Set());
+                setDragState({ row, start: offset, end: offset });
+                event.preventDefault();
+            };
+
+            const handleTimelineMouseMove = (event) => {
+                if (!dragState || !bounds) return;
+                const { offset } = timelineOffsetAt(event);
+                const clamped = Math.max(0, Math.min(bounds.spanDays - 1, offset));
+                if (clamped !== dragState.end) setDragState({ ...dragState, end: clamped });
+            };
+
+            const handleTimelineMouseUp = () => {
+                if (!dragState || !bounds) return;
+                const start = Math.max(0, Math.min(dragState.start, dragState.end));
+                const end = Math.min(bounds.spanDays - 1, Math.max(dragState.start, dragState.end));
+
+                if (dragState.global) {
+                    const startDate = new Date(bounds.minDate);
+                    startDate.setDate(startDate.getDate() + start);
+                    const endDate = new Date(bounds.minDate);
+                    endDate.setDate(endDate.getDate() + end);
+                    const startKey = dateKey(startDate);
+                    const endKey = dateKey(endDate);
+                    if (startKey && endKey) setClusterRange({ start: startKey, end: endKey });
+                    setSelectedKeys(new Set());
+                    setTileSelection(new Set());
+                    setDragState(null);
+                    return;
+                }
+
+                const group = timelineGroups[dragState.row];
+                if (group) {
+                    setTileSelection((previous) => {
+                        const next = new Set(previous);
+                        for (let offset = start; offset <= end; offset += 1) {
+                            const dayDate = new Date(bounds.minDate);
+                            dayDate.setDate(dayDate.getDate() + offset);
+                            const day = dateKey(dayDate);
+                            if (!day) continue;
+                            const key = `${group.key}|${day}`;
+                            if (start === end && next.has(key)) next.delete(key);
+                            else next.add(key);
+                        }
+                        return next;
+                    });
+                }
+                setDragState(null);
+            };
+
 
             const handleMapClick = (event) => {
                 if (!mapRef.current || geoPoints.length === 0 || !geoBounds) return;
@@ -4649,40 +5289,60 @@ DATA: ${JSON.stringify(data)}`;
                 if (location.trim()) onApplyLocation([...selectedKeys], location.trim(), level);
             };
 
-            return (
-                <div className="fixed inset-0 bg-black/85 z-[125] flex items-center justify-center p-4" onClick={onClose}>
-                    <div className="bg-slate-900 border border-slate-700 rounded-xl w-full max-w-6xl max-h-[92vh] overflow-y-auto custom-scrollbar p-5" onClick={(event) => event.stopPropagation()}>
-                        <div className="flex items-start justify-between gap-4 mb-4">
-                            <div>
-                                <div className="text-lg font-bold text-orange-400">{t('Kontrola shluků na heatmapě', 'Cluster heatmap review')}</div>
-                                <div className="text-[11px] text-slate-500">
-                                    {t('Klikněte na řádek nebo bod a pojmenujte cluster. Název i lokace se aplikují na celý vybraný cluster.', 'Click a row or point, then name the cluster. Name and location apply to the whole selected cluster.')}
-                                </div>
-                            </div>
-                            <button onClick={onClose} className="text-slate-500 hover:text-white text-2xl leading-none">&times;</button>
-                        </div>
+            const updateClusterRange = (field, value) => {
+                setSelectedKeys(new Set());
+                setTileSelection(new Set());
+                setClusterRange((previous) => {
+                    const next = { start: previous?.start || '', end: previous?.end || '', [field]: value };
+                    if (next.start && next.end && next.start > next.end) {
+                        if (field === 'start') next.end = next.start;
+                        else next.start = next.end;
+                    }
+                    return next;
+                });
+            };
 
-                        <div className="flex flex-wrap items-center gap-2 mb-3">
+            const toggleDrawMode = () => {
+                if (drawMode) setClusterRange(null);
+                setSelectedKeys(new Set());
+                setTileSelection(new Set());
+                setDrawMode(!drawMode);
+            };
+
+            return (
+                <div data-heatmap-panel="true" className="shrink-0 h-[38vh] min-h-[280px] border-t-2 border-cyan-800 bg-slate-900 flex flex-col z-[80]" onClick={(event) => event.stopPropagation()}>
+                    <div className="flex items-center justify-between gap-3 px-3 py-1.5 border-b border-slate-800">
+                        <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                            <div className="text-sm font-bold text-orange-400 shrink-0">📊 {t('Heatmapa', 'Heatmap')}</div>
                             <div className="flex bg-slate-950 border border-slate-800 rounded-full p-0.5">
-                                <button onClick={() => { setLevel('trips'); setSelectedKeys(new Set()); }} className={`px-3 py-1 rounded-full text-xs font-bold ${level === 'trips' ? 'bg-orange-600 text-white' : 'text-slate-400'}`}>{t('Cesty', 'Trips')}</button>
-                                <button onClick={() => { setLevel('stops'); setSelectedKeys(new Set()); }} className={`px-3 py-1 rounded-full text-xs font-bold ${level === 'stops' ? 'bg-orange-600 text-white' : 'text-slate-400'}`}>{t('Zastávky / události', 'Stops / events')}</button>
+                                <button onClick={() => { setLevel('trips'); setSelectedKeys(new Set()); setTileSelection(new Set()); }} className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${level === 'trips' ? 'bg-orange-600 text-white' : 'text-slate-400'}`}>{t('Cesty', 'Trips')}</button>
+                                <button onClick={() => { setLevel('stops'); setSelectedKeys(new Set()); setTileSelection(new Set()); }} className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${level === 'stops' ? 'bg-orange-600 text-white' : 'text-slate-400'}`}>{t('Zastávky', 'Stops')}</button>
                             </div>
                             <div className="flex bg-slate-950 border border-slate-800 rounded-full p-0.5">
-                                <button onClick={() => setTab('timeline')} className={`px-3 py-1 rounded-full text-xs font-bold ${tab === 'timeline' ? 'bg-cyan-700 text-white' : 'text-slate-400'}`}>{t('Časová heatmapa', 'Time heatmap')}</button>
-                                <button onClick={() => setTab('map')} className={`px-3 py-1 rounded-full text-xs font-bold ${tab === 'map' ? 'bg-cyan-700 text-white' : 'text-slate-400'}`}>{t('Mapa', 'Map')}</button>
+                                <button onClick={() => setTab('timeline')} className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${tab === 'timeline' ? 'bg-cyan-700 text-white' : 'text-slate-400'}`}>{t('Čas', 'Time')}</button>
+                                <button onClick={() => setTab('map')} className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${tab === 'map' ? 'bg-cyan-700 text-white' : 'text-slate-400'}`}>{t('Mapa', 'Map')}</button>
                             </div>
-                            <div className="text-[10px] text-slate-500">
+                            <button
+                                data-heatmap-draw-mode
+                                onClick={toggleDrawMode}
+                                className={`px-2 py-0.5 rounded-full text-[11px] font-bold border ${drawMode ? 'bg-emerald-600 border-emerald-500 text-white' : 'bg-slate-950 border-slate-800 text-slate-400'}`}
+                            >
+                                {drawMode ? t('✏️ Kreslení clusterů', '✏️ Draw clusters') : t('🔍 Prohlížení', '🔍 Inspect')}
+                            </button>
+                            <div className="text-[10px] text-slate-500 truncate">
                                 {lastClusterSettings?.profile === 'trips'
                                     ? t(`Cesty: ${lastClusterSettings.trip?.heatmapRadiusDays ?? 2} dny okno / ${lastClusterSettings.trip?.maxInactiveDays ?? 1} dny bez fotek`, `Trips: ${lastClusterSettings.trip?.heatmapRadiusDays ?? 2} day window / ${lastClusterSettings.trip?.maxInactiveDays ?? 1} rest days`)
                                     : t('Citlivost: podle aktuálního nastavení.', 'Sensitivity: current settings.')}
                             </div>
                         </div>
+                        <button data-heatmap-close="true" onClick={onClose} className="text-slate-500 hover:text-white text-2xl leading-none shrink-0">&times;</button>
+                    </div>
 
-                        <div className="grid lg:grid-cols-[1fr_280px] gap-4">
-                            <div className="min-w-0">
+                    <div className="flex-1 min-h-0 grid lg:grid-cols-[1fr_340px] gap-2 p-2 overflow-y-auto custom-scrollbar">
+                            <div className="min-w-0 min-h-0">
                                 {groups.length === 0 ? (
-                                    <div className="h-64 flex flex-col items-center justify-center border border-slate-800 rounded-lg bg-slate-950 p-6 text-center">
-                                        <div className="text-3xl mb-2">📊</div>
+                                    <div className="h-full flex flex-col items-center justify-center border border-slate-800 rounded-lg bg-slate-950 p-4 text-center">
+                                        <div className="text-2xl mb-1">📊</div>
                                         <div className="text-sm font-bold text-slate-300">{t('Žádné clustery k zobrazení', 'No clusters to show')}</div>
                                         <div className="text-[11px] text-slate-500 mt-2">
                                             {t(
@@ -4698,11 +5358,21 @@ DATA: ${JSON.stringify(data)}`;
                                         </div>
                                     </div>
                                 ) : tab === 'timeline' ? (
-                                    <div className="max-h-[55vh] overflow-auto custom-scrollbar border border-slate-800 rounded-lg p-2 bg-slate-950">
-                                        <canvas ref={timelineRef} data-cluster-review-canvas="timeline" onClick={handleTimelineClick} className="cursor-pointer" />
+                                    <div className="h-full overflow-auto custom-scrollbar border border-slate-800 rounded-lg p-2 bg-slate-950">
+                                        <div className="text-[10px] text-slate-500 mb-1">
+                                            {drawMode
+                                                ? t('Táhněte po časové ose (nebo zadejte Start/End) pro nový cluster. Po vytvoření můžete hned nakreslit další.', 'Drag on the timeline (or use Start/End) for a new cluster. After creating it, draw the next one immediately.')
+                                                : t('Klikněte na den pro výběr fotek, táhněte pro rozsah. Klikněte na název řádku pro celý cluster.', 'Click a day to select its photos, drag for a range. Click the row label for the whole cluster.')}
+                                        </div>
+                                        {timelineGroups.length < groups.length && (
+                                            <div className="text-[10px] text-amber-400 p-1">
+                                                {t(`Heatmapa zobrazuje prvních ${timelineGroups.length} z ${groups.length} clusterů.`, `Heatmap shows the first ${timelineGroups.length} of ${groups.length} clusters.`)}
+                                            </div>
+                                        )}
+                                        <canvas ref={timelineRef} data-cluster-review-canvas="timeline" onMouseDown={handleTimelineMouseDown} onMouseMove={handleTimelineMouseMove} onMouseUp={handleTimelineMouseUp} onMouseLeave={() => setDragState(null)} className="cursor-crosshair" />
                                     </div>
                                 ) : (
-                                    <div className="max-h-[55vh] overflow-auto custom-scrollbar border border-slate-800 rounded-lg p-2 bg-slate-950">
+                                    <div className="h-full overflow-auto custom-scrollbar border border-slate-800 rounded-lg p-2 bg-slate-950">
                                         {geoPoints.length === 0 ? (
                                             <div className="text-sm text-slate-500 p-4">{t('Žádné fotky s GPS/Timeline souřadnicemi.', 'No photos with GPS/Timeline coordinates.')}</div>
                                         ) : (
@@ -4712,60 +5382,92 @@ DATA: ${JSON.stringify(data)}`;
                                 )}
                             </div>
 
-                            <div className="border border-slate-800 rounded-lg p-2 bg-slate-950 max-h-[55vh] overflow-y-auto custom-scrollbar">
-                                {groups.length === 0 && <div className="text-[11px] text-slate-600 p-2">{t('Nejprve spusťte fázi 2.', 'Run Phase 2 first.')}</div>}
-                                {groups.map((group) => (
-                                    <button
-                                        key={group.key}
-                                        data-cluster-group={group.key}
-                                        onClick={() => toggleGroup(group.key)}
-                                        className={`w-full text-left px-2 py-1.5 rounded mb-1 border transition-colors ${selectedKeys.has(group.key) ? 'border-orange-500 bg-orange-950/40' : 'border-transparent hover:bg-slate-800/70'}`}
-                                    >
-                                        <div className="flex items-center gap-2 text-[11px] text-slate-300">
-                                            <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: group.color }} />
-                                            <span className="truncate flex-1">{group.name}</span>
-                                            <span className="text-slate-500">{group.photos.length}</span>
+                            <div className="min-h-0 flex flex-col gap-1">
+                                <div className="flex-1 min-h-0 border border-slate-800 rounded-lg p-2 bg-slate-950 overflow-y-auto custom-scrollbar">
+                                    {groups.length === 0 && <div className="text-[11px] text-slate-600 p-2">{t('Nejprve spusťte fázi 2.', 'Run Phase 2 first.')}</div>}
+                                    {sidebarGroups.map((group) => (
+                                        <button
+                                            key={group.key}
+                                            data-cluster-group={group.key}
+                                            onClick={() => toggleGroup(group.key)}
+                                            className={`w-full text-left px-2 py-1 rounded mb-0.5 border transition-colors ${selectedKeys.has(group.key) ? 'border-orange-500 bg-orange-950/40' : 'border-transparent hover:bg-slate-800/70'}`}
+                                        >
+                                            <div className="flex items-center gap-2 text-[11px] text-slate-300">
+                                                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: group.color }} />
+                                                <span className="truncate flex-1">{group.name}</span>
+                                                <span className="text-slate-500">{group.photos.length}</span>
+                                            </div>
+                                            <div className="text-[9px] text-slate-600 mt-0.5 truncate">
+                                                {new Date(group.first).toLocaleDateString(lang === 'cs' ? 'cs-CZ' : 'en-US')} – {new Date(group.last).toLocaleDateString(lang === 'cs' ? 'cs-CZ' : 'en-US')}
+                                                {group.location ? ` · ${group.location}` : ''}
+                                            </div>
+                                        </button>
+                                    ))}
+                                    {groups.length > sidebarGroups.length && (
+                                        <div className="text-[10px] text-slate-500 p-2 text-center">
+                                            {t(`Zobrazeno prvních ${sidebarGroups.length} z ${groups.length} clusterů.`, `Showing first ${sidebarGroups.length} of ${groups.length} clusters.`)}
                                         </div>
-                                        <div className="text-[9px] text-slate-600 mt-0.5">
-                                            {new Date(group.first).toLocaleDateString(lang === 'cs' ? 'cs-CZ' : 'en-US')} – {new Date(group.last).toLocaleDateString(lang === 'cs' ? 'cs-CZ' : 'en-US')}
-                                            {group.location ? ` · ${group.location}` : ''}
-                                        </div>
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
+                                    )}
+                                </div>
 
-                        <div className="mt-4 border-t border-slate-800 pt-4 flex flex-wrap items-end gap-3">
-                            <div className="text-xs text-slate-400 min-w-[110px]">
-                                {selectedKeys.size} {t('vybráno', 'selected')}
+                                <div className="shrink-0 border-t border-slate-800 pt-1.5 space-y-1">
+                                    <div className="flex items-center justify-between text-[10px] text-slate-400">
+                                        <span>📊 {selectedPhotoIds.size} {t('fotek vybráno', 'photos selected')}</span>
+                                        <span>{selectedKeys.size} {t('clusterů', 'clusters')}</span>
+                                    </div>
+                                    {drawMode && (
+                                        <div className="grid grid-cols-[1fr_1fr_auto] gap-1 items-end">
+                                            <div>
+                                                <div className="text-[9px] text-slate-500 uppercase">{t('Start', 'Start')}</div>
+                                                <input type="date" data-cluster-start value={clusterRange?.start || ''} onChange={(event) => updateClusterRange('start', event.target.value)} className="w-full bg-slate-800 p-1 rounded text-[11px] text-white border border-slate-700" />
+                                            </div>
+                                            <div>
+                                                <div className="text-[9px] text-slate-500 uppercase">{t('Konec', 'End')}</div>
+                                                <input type="date" data-cluster-end value={clusterRange?.end || ''} onChange={(event) => updateClusterRange('end', event.target.value)} className="w-full bg-slate-800 p-1 rounded text-[11px] text-white border border-slate-700" />
+                                            </div>
+                                            <button onClick={() => { setClusterRange(null); setSelectedKeys(new Set()); setTileSelection(new Set()); }} className="px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded text-[11px] text-slate-300" title={t('Zrušit rozsah', 'Clear range')}>×</button>
+                                        </div>
+                                    )}
+                                    <input type="text" data-review-name value={name} onChange={(event) => setName(event.target.value)} placeholder={t('Název nové složky…', 'New folder name…')} className="w-full bg-slate-800 p-1.5 rounded text-xs text-white border border-slate-700" />
+                                    <input type="text" data-review-location value={location} onChange={(event) => setLocation(event.target.value)} placeholder={t('Lokace (volitelné)…', 'Location (optional)…')} className="w-full bg-slate-800 p-1.5 rounded text-xs text-white border border-slate-700" />
+                                    <div className="flex flex-wrap gap-1">
+                                        <button data-review-apply onClick={apply} disabled={selectedKeys.size === 0 || (!name.trim() && !location.trim())} className="px-2 py-1 bg-orange-600 hover:bg-orange-500 disabled:bg-slate-700 rounded font-bold text-[11px] text-white">
+                                            {t('Použít na clustery', 'Apply to clusters')}
+                                        </button>
+                                        <button
+                                            data-review-create
+                                            onClick={() => {
+                                                if (!name.trim() || selectedPhotoIds.size === 0) return;
+                                                onCreateFolder([...selectedPhotoIds], name.trim(), location.trim());
+                                                setSelectedKeys(new Set());
+                                                setTileSelection(new Set());
+                                                setClusterRange(null);
+                                                setName('');
+                                                setLocation('');
+                                            }}
+                                            disabled={selectedPhotoIds.size === 0 || !name.trim()}
+                                            className="px-2 py-1 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 rounded font-bold text-[11px] text-white"
+                                        >
+                                            ➕ {drawMode ? t('Vytvořit cluster', 'Create cluster') : t('Nová složka z výběru', 'New folder from selection')}
+                                        </button>
+                                        <button onClick={() => { setSelectedKeys(new Set(groups.map((group) => group.key))); setTileSelection(new Set()); }} className="px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded text-[11px] text-slate-300">
+                                            {t('Vybrat vše', 'Select all')}
+                                        </button>
+                                        <button onClick={() => { setSelectedKeys(new Set()); setTileSelection(new Set()); }} className="px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded text-[11px] text-slate-300">
+                                            {t('Zrušit výběr', 'Clear')}
+                                        </button>
+                                        {selectedGroups.length === 1 && level === 'trips' && (
+                                            <button onClick={() => onEditTripWindow(selectedGroups[0])} className="px-2 py-1 bg-cyan-800 hover:bg-cyan-700 rounded text-[11px] text-white">
+                                                📅 {t('Datumové okno', 'Trip window')}
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
                             </div>
-                            <div className="flex-1 min-w-[160px]">
-                                <div className="text-[10px] text-slate-500 uppercase mb-1">{t('Název clusteru', 'Cluster name')}</div>
-                                <input type="text" data-review-name value={name} onChange={(event) => setName(event.target.value)} placeholder={t('např. Dovolená Chorvatsko', 'e.g. Croatia vacation')} className="w-full bg-slate-800 p-2 rounded text-sm text-white border border-slate-700" />
-                            </div>
-                            <div className="flex-1 min-w-[160px]">
-                                <div className="text-[10px] text-slate-500 uppercase mb-1">{t('Lokace (volitelné)', 'Location (optional)')}</div>
-                                <input type="text" data-review-location value={location} onChange={(event) => setLocation(event.target.value)} placeholder={t('např. Pag, Chorvatsko', 'e.g. Pag, Croatia')} className="w-full bg-slate-800 p-2 rounded text-sm text-white border border-slate-700" />
-                            </div>
-                            <button data-review-apply onClick={apply} disabled={selectedKeys.size === 0 || (!name.trim() && !location.trim())} className="px-4 py-2 bg-orange-600 hover:bg-orange-500 disabled:bg-slate-700 rounded font-bold text-sm text-white">
-                                {t('Aplikovat na výběr', 'Apply to selection')}
-                            </button>
-                            <button onClick={() => setSelectedKeys(new Set(groups.map((group) => group.key)))} className="px-3 py-2 bg-slate-800 hover:bg-slate-700 rounded text-xs text-slate-300">
-                                {t('Vybrat vše', 'Select all')}
-                            </button>
-                            <button onClick={() => setSelectedKeys(new Set())} className="px-3 py-2 bg-slate-800 hover:bg-slate-700 rounded text-xs text-slate-300">
-                                {t('Zrušit výběr', 'Clear')}
-                            </button>
-                            {selectedGroups.length === 1 && level === 'trips' && (
-                                <button onClick={() => onEditTripWindow(selectedGroups[0])} className="px-3 py-2 bg-cyan-800 hover:bg-cyan-700 rounded text-xs text-white">
-                                    📅 {t('Upravit datumové okno', 'Edit trip window')}
-                                </button>
-                            )}
                         </div>
                     </div>
-                </div>
-            );
-        };
+                );
+            };
 
 
         const root = ReactDOM.createRoot(document.getElementById('root'));

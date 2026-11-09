@@ -9,9 +9,9 @@
 ## Clustering / data
 
 - [ ] Import a Timeline JSON covering the photo dates (Croatia May 2026 is not covered by the current July-October Timeline).
-- [ ] Review the new cluster heatmap with real data; tune `heatmapRadiusDays`, `maxInactiveDays` and stop sensitivity.
+- [ ] Review the new cluster heatmap with real data; tune `heatmapRadiusDays`, `maxInactiveDays`, `randomMinPhotos` and stop sensitivity.
 - [ ] Add a per-trip stop sensitivity override.
-- [ ] Add a "merge clusters" action that also shares `tripId`/`clusterId`, not only the display name.
+- [ ] Test a full `D:\Fotky` run (35k files) after the large-folder performance pass.
 
 ## Storage / architecture
 
@@ -31,7 +31,17 @@
 
 - [x] Timeline v2 (visits, activities, paths, nearest named location).
 - [x] Density heatmap clustering (daily trip heatmap + spatiotemporal stop grid).
-- [x] Screenshot/Clutter folder, excluded from clustering.
+- [x] Screenshot/Clutter folder, excluded from clustering; size-based clutter detection.
 - [x] Clean-state reset button.
 - [x] Manual trip window and cluster review heatmap.
 - [x] Localhost dev server with automatic Timeline.json loading.
+- [x] Manual event/location edits cannot put one photo into two events.
+- [x] Real cluster merge shares `tripId`/`clusterId`.
+- [x] Random category for small/fuzzy bursts.
+- [x] Identical duplicate files deduped on import.
+- [x] Deprecated legacy HTML versions removed.
+- [x] Heatmap docked as a bottom panel with day/range tile selection and folder creation from the selection.
+- [x] Vercel Analytics script + package.
+- [x] Heatmap black-screen guards (error boundary, canvas limits, fatal overlay).
+- [x] Phase 2 workflow selector: Auto sort or Manual clusters in heatmap.
+- [x] Manual cluster Start/End ranges and multiple back-to-back clusters from the heatmap.

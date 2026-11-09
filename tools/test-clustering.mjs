@@ -19,7 +19,7 @@ const preApp = script.slice(0, appStart);
 const fetchStats = { calls: 0 };
 const sandbox = {
     console,
-    React: {},
+    React: { Component: class Component {} },
     localStorage: { getItem: () => null, setItem: () => {} },
     Image: function Image() {},
     document: { createElement: () => ({ getContext: () => ({}) }) },
@@ -33,10 +33,10 @@ const helperNames = [
     'findTimelineMatch', 'resolveTimelineEntry', 'findNearestNamedTimelineLocation', 'normalizeLocationName',
     'clusterPhotosByDensity', 'computeAutoClusterSettings', 'buildClusterSettings', 'applyDominantClusterLocation',
     'interpolateMissingLocations', 'findLocationInheritanceTargets',
-    'buildPlaceholderEventName', 'buildPlaceholderStopName', 'buildEventNameForNaming', 'mergePhotoTags', 'buildAutoTags', 'isLikelyScreenshot',
-    'roundedCoordKey', 'distanceKm', 'extractPhotoMetadata',
+    'buildPlaceholderEventName', 'buildPlaceholderStopName', 'buildEventNameForNaming', 'buildManualEventAiData', 'buildGroupPlaceholderName', 'mergePhotoTags', 'buildAutoTags', 'isLikelyScreenshot',
+    'roundedCoordKey', 'distanceKm', 'extractPhotoMetadata', 'dedupeFilesBySignature',
     'buildTripSettings', 'computeAutoTripSettings', 'inferHomeReference', 'isHomePhoto',
-    'clusterPhotosIntoTrips', 'buildHierarchicalEvents'
+    'clusterPhotosIntoTrips', 'buildHierarchicalEvents', 'RANDOM_FOLDER', 'RANDOM_CATEGORY'
 ];
 
 vm.runInContext(
@@ -255,6 +255,35 @@ assert.equal(timelineOnlyMeta.coords.lat, 50.08);
 assert.equal(timelineOnlyMeta.locationSource, 'timeline');
 assert.ok(timelineOnlyMeta.locationKey);
 
+// Broken camera dates (e.g. 1899/0000) fall back to the file date.
+const invalidDateMeta = await h.extractPhotoMetadata(
+    { id: 'bad-date', name: 'bad-date.jpg', date: new Date('2020-06-01T10:00:00'), hardData: {}, aiData: {}, file: { lastModified: new Date('2020-06-01T10:00:00').getTime() } },
+    [],
+    '',
+    { DateTimeOriginal: '1899:12:31 23:59:59' }
+);
+assert.equal(invalidDateMeta.date.getFullYear(), 2020);
+
+// Manual locations survive Phase 2 even when the Timeline says something else.
+const manualLocationMeta = await h.extractPhotoMetadata(
+    {
+        id: 'manual-location',
+        name: 'manual-location.jpg',
+        date: new Date(t0),
+        hardData: { location: 'Praha', locationKey: 'praha', locationSource: 'manual', coords: null },
+        aiData: { tags: [] },
+        file: {}
+    },
+    [{ ...timelineOnlyEntry, name: 'Brno' }],
+    ''
+);
+assert.equal(manualLocationMeta.location, 'Praha');
+assert.equal(manualLocationMeta.locationSource, 'manual');
+
+// A flat trip keeps its location suffix in the placeholder name.
+assert.equal(h.buildGroupPlaceholderName({ eventKind: 'trip', eventName: 'Trip 1' }, 0, 'Pag'), 'Trip 1 - Pag');
+assert.equal(h.buildGroupPlaceholderName({ eventKind: 'trip-stop', eventName: 'Trip 1/Stop 1' }, 0, 'Pag'), 'Trip 1/Stop 1');
+
 // One vacation with 1289 photos should become ONE trip (with stop subfolders).
 const vacationStart = new Date('2026-06-01T09:00:00').getTime();
 const vacationPlaces = [
@@ -421,6 +450,18 @@ assert.equal(noLocationHierarchy.groups.length, 1);
 assert.equal(noLocationHierarchy.groups[0].eventName, 'Trip 1');
 assert.equal(noLocationHierarchy.groups[0].photos.length, noLocationVacation.length);
 
+// A manual location without coordinates keeps the trip flat (no fake per-day stops).
+noLocationVacation.forEach((item) => {
+    item.hardData.location = 'Pag';
+    item.hardData.locationKey = 'pag';
+    item.hardData.locationSource = 'manual';
+});
+const manualLocationTrip = h.buildHierarchicalEvents(noLocationVacation, '', h.buildTripSettings());
+assert.equal(manualLocationTrip.tripCount, 1);
+assert.equal(manualLocationTrip.stopCount, 0);
+assert.equal(manualLocationTrip.groups.length, 1);
+assert.equal(manualLocationTrip.groups[0].eventName, 'Trip 1');
+
 // A long event split into density episodes still becomes one parent trip.
 const parentTripPhotos = [];
 for (let day = 0; day < 3; day += 1) {
@@ -443,5 +484,115 @@ for (let day = 14; day < 17; day += 1) {
 }
 const splitHierarchy = h.buildHierarchicalEvents(splitTripPhotos, '', h.buildTripSettings());
 assert.equal(splitHierarchy.tripCount, 2, 'A multi-day gap should separate parent trips');
+
+// Manual event edits must never detach a stop from its trip or leave a photo in two events.
+const stopAiData = {
+    event_name: 'Trip 1/Stop 1 - Praha',
+    eventKind: 'trip-stop',
+    clusterId: 'stop-1',
+    tripId: 'trip-1',
+    clusterNumber: 1,
+    tripNumber: 1,
+    stopNumber: 1,
+    eventNameSource: 'placeholder'
+};
+const renamedStop = h.buildManualEventAiData(stopAiData, 'Karlův most');
+assert.equal(renamedStop.event_name, 'Trip 1/Karlův most');
+assert.equal(renamedStop.clusterId, 'stop-1');
+assert.equal(renamedStop.tripId, 'trip-1');
+assert.equal(renamedStop.eventKind, 'trip-stop');
+assert.equal(renamedStop.stopNameSource, 'manual');
+
+const flatTripAiData = { ...stopAiData, event_name: 'Trip 1', eventKind: 'trip', clusterId: 'trip-1', tripId: 'trip-1' };
+const renamedFlatTrip = h.buildManualEventAiData(flatTripAiData, 'Croatia');
+assert.equal(renamedFlatTrip.event_name, 'Croatia');
+assert.equal(renamedFlatTrip.clusterId, 'trip-1');
+assert.equal(renamedFlatTrip.tripId, 'trip-1');
+assert.equal(renamedFlatTrip.eventKind, 'trip');
+
+const mergedAiData = h.buildManualEventAiData(stopAiData, 'Merged event', 'evt-merged-1', 7);
+assert.equal(mergedAiData.event_name, 'Merged event');
+assert.equal(mergedAiData.clusterId, 'evt-merged-1');
+assert.equal(mergedAiData.tripId, 'evt-merged-1');
+assert.equal(mergedAiData.eventKind, 'misc');
+assert.equal(mergedAiData.clusterNumber, 7);
+assert.equal(mergedAiData.tripNumber, 0);
+assert.equal(mergedAiData.stopNumber, 0);
+
+// Identical name + size + mtime is the same file, not a second photo.
+const deduped = h.dedupeFilesBySignature([
+    { name: 'a.jpg', size: 10, lastModified: 1 },
+    { name: 'A.JPG', size: 10, lastModified: 1 },
+    { name: 'b.jpg', size: 20, lastModified: 1 }
+]);
+assert.equal(deduped.files.length, 2);
+assert.equal(deduped.duplicates, 1);
+
+// A home-heavy density episode must not drop its few away photos.
+const mixedPhoto = (id, time, location, coords, locationSource) => ({
+    id,
+    name: `${id}.jpg`,
+    date: new Date(time),
+    hardData: {
+        location,
+        locationKey: location,
+        coords,
+        locationSource,
+        camera: 'Nikon',
+        dateStr: new Date(time).toLocaleDateString('cs-CZ'),
+        timeStr: new Date(time).toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' })
+    },
+    aiData: { tags: [] }
+});
+const mixedDay = vacationStart + 40 * 86400000;
+const mixedEpisode = [
+    mixedPhoto('home-1', mixedDay + 9 * 3600000, 'Doma', { lat: 50.08, lon: 14.43 }, 'home'),
+    mixedPhoto('home-2', mixedDay + 10 * 3600000, 'Doma', { lat: 50.0801, lon: 14.4301 }, 'home'),
+    mixedPhoto('home-3', mixedDay + 11 * 3600000, 'Doma', { lat: 50.0802, lon: 14.4302 }, 'home'),
+    mixedPhoto('away-1', mixedDay + 14 * 3600000, 'Mnichov', { lat: 48.14, lon: 11.58 }, 'timeline'),
+    mixedPhoto('unknown-1', mixedDay + 15 * 3600000, 'Neznámé místo', null, 'unknown'),
+    mixedPhoto('unknown-2', mixedDay + 16 * 3600000, 'Neznámé místo', null, 'unknown')
+];
+const mixedHierarchy = h.buildHierarchicalEvents(mixedEpisode, 'Doma', h.buildTripSettings());
+const mixedSeen = new Set();
+mixedHierarchy.groups.forEach((group) => group.photos.forEach((item) => {
+    assert.ok(!mixedSeen.has(item.id), `Mixed episode photo assigned twice: ${item.id}`);
+    mixedSeen.add(item.id);
+}));
+assert.equal(mixedSeen.size, mixedEpisode.length, 'Mixed episode must keep every photo');
+assert.ok(
+    mixedHierarchy.groups.some((group) => group.photos.some((item) => item.id === 'away-1') && !group.eventName.startsWith('Home ')),
+    'Away photo must stay in a non-home event'
+);
+
+// Tiny isolated bursts become one Random catch-all instead of many events.
+const randomBursts = [];
+for (let i = 0; i < 2; i += 1) {
+    randomBursts.push(photo(vacationStart + 200 * 86400000 + i * 60000, 'Neznámé místo', ''));
+}
+for (let i = 0; i < 2; i += 1) {
+    randomBursts.push(photo(vacationStart + 230 * 86400000 + i * 60000, 'Neznámé místo', ''));
+}
+const randomHierarchy = h.buildHierarchicalEvents(randomBursts, '', h.buildTripSettings());
+const randomGroups = randomHierarchy.groups.filter((group) => group.eventKind === 'random');
+assert.equal(randomGroups.length, 1, 'Small bursts should share one Random group');
+assert.equal(randomGroups[0].eventName, h.RANDOM_FOLDER);
+assert.equal(randomGroups[0].photos.length, randomBursts.length);
+
+// Screenshot/clutter detection uses file size when EXIF has no camera or location.
+const tinyUnknown = {
+    name: 'clutter.jpg',
+    file: { size: 30 * 1024 },
+    hardData: { camera: 'Neznámý fotoaparát', location: 'Neznámé místo', coords: null },
+    aiData: { tags: [] }
+};
+const largeUnknown = {
+    name: 'photo.jpg',
+    file: { size: 2 * 1024 * 1024 },
+    hardData: { camera: 'Neznámý fotoaparát', location: 'Neznámé místo', coords: null },
+    aiData: { tags: [] }
+};
+assert.equal(h.isLikelyScreenshot(tinyUnknown), true);
+assert.equal(h.isLikelyScreenshot(largeUnknown), false);
 
 console.log('All clustering/Timeline helper tests passed.');

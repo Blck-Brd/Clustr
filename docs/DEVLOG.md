@@ -177,6 +177,90 @@ Added after the first checkpoint:
   - Real Pictures dataset remains **1 `Trip 1` folder** for 262 location-less Croatia photos plus 371 screenshots/clutter.
   - Real Timeline hierarchy and 12-seed six-month fuzz still pass.
 
+### Seventh pass - one photo, one event; Random; clutter by size
+
+- **Manual event edits no longer double a photo into two events**:
+  - Bulk **Event** keeps a stop inside its trip (`Trip 1/Stop 1 -> Trip 1/<new name>`) instead of flattening it to a top-level folder while keeping the old `tripId`.
+  - Selecting several events/clusters and applying one name now performs a real merge: the photos share `clusterId` and `tripId`; trip-level merges keep their stop leaves.
+  - Dragging photos onto an existing event folder adopts that event's `clusterId`/`tripId`; dropping into a new folder creates one real new event; dropping into a parent folder keeps the leaf identity.
+  - Manual/AI-named photos are excluded from regrouping and restored after Phase 2, so re-running grouping cannot move them into a second event.
+  - `placeholderEventIndex()` keeps location renames from producing several `Event 0 - ...` folders.
+- **Random / fuzz category**:
+  - Small, short, location-less bursts and leftovers now go to one `Random` folder instead of one `Event N` per burst.
+  - New `randomMinPhotos` setting (default 3) is available in the manual trip and stop/place settings.
+  - `Random` is excluded from dominant-location fill, so unrelated photos do not inherit one location.
+- **Screenshots / clutter by size**:
+  - An image with no camera, no location and either a lossless extension or a file smaller than 120 KB is routed to `Screenshot-Clutter`.
+  - Screenshots remain a separate category/folder and are excluded from trips, stops and Random.
+- **Duplicate imports**:
+  - Files with the same name, size and modified time (`file.lastModified`) are loaded once. The app reports how many identical copies were skipped.
+- **Manual location on a flat trip**:
+  - Manual locations are now actually read from `hardData.locationSource` (the previous check looked at `aiData`, so manual places were lost on re-run).
+  - A single named location without coordinates keeps the trip flat (`Trip N - Pag`) instead of inventing per-day stops.
+- **Broken EXIF dates**:
+  - Camera dates before 1900 (seen as 1899 in the `D:\Fotky` subset) or after next year fall back to the file's modified date instead of creating a bogus trip.
+- **Heatmap / review verification**:
+  - Verified Phase 2 -> Review clusters on a 1,500-file subset of `D:\Fotky`: 57 groups, canvas 980x1286, no page errors.
+  - Empty review after Phase 2 is therefore treated as stale PWA shell or a dataset that is entirely screenshot/clutter. `sw.js` cache bumped to `clustr-shell-v9`; hard-reload once after deploying.
+- **Deployment**:
+  - Vercel: Root Directory `app`, Framework `Other`, Build/Output/Install/Dev commands empty (no override). Documented in `docs/DEPLOYMENT.md`.
+- **Housekeeping**:
+  - Deprecated `legacy/html-versions/` removed.
+- **Tests**:
+  - Manual stop rename preserves the trip and ids; multi-event merge shares ids; duplicate-file dedupe; mixed home/away episode keeps every photo; small bursts become one `Random`; tiny no-EXIF images classify as clutter.
+
+### Eighth pass - analytics, heatmap safety
+
+- **Vercel Analytics**: installed `@vercel/analytics`; `app/index.html` injects `/_vercel/insights/script.js` on non-localhost hosts. Enable Web Analytics in the Vercel dashboard.
+- **Heatmap black screen hardening**:
+  - Added a React error boundary around the cluster review so a bad cluster cannot blank the whole app.
+  - Bounds/geo bounds are computed without huge `Math.min(...array)` spreads and ignore invalid dates.
+  - Timeline canvas height is capped under Chrome's canvas limit (also with device pixel ratio), row height shrinks for very large group counts, and labels are skipped when rows are too small.
+  - Sidebar renders the first 500 groups with a "showing first N" note instead of thousands of buttons.
+  - If the canvas must truncate, it reports how many clusters are shown; the sidebar can still select others.
+
+### Ninth pass - heatmap bottom panel and folder carving
+
+- **Bottom heatmap panel**:
+  - The cluster review is no longer a full-screen modal. It opens as a docked panel in the lower ~38% of the main area; the gallery stays visible above and shrinks to the remaining space.
+  - Closing it clears the heatmap photo filter.
+- **Tile selection**:
+  - Click a day tile to select only that day's photos in a row; drag across days to select a range. Clicking the row label still selects the whole cluster.
+  - Selected tiles are outlined, the gallery filters to the selected photos, and the header shows `📊 N from heatmap` with a clear button.
+  - Clicking a tile clears the coarse row selection so the selection is exactly what you see.
+- **Create folders from the heatmap**:
+  - Name/location inputs now include **New folder from selection**, which creates one real event/folder from the highlighted photos (new shared `clusterId`/`tripId`) without touching the rest of the source trip.
+  - This is the escape hatch for a large `Trip 1` with visible density gaps: select the later day range, name it, create the folder, and the remaining days stay in the original trip.
+- **Safety**:
+  - Panel canvas remains capped/virtualized-safe; the sidebar list is capped at 500 rows; the bulk selection bar moves above the panel while it is open.
+  - Browser test now covers tile selection -> gallery filter -> create folder.
+
+### Tenth pass - heatmap-first Phase 2 and manual cluster ranges
+
+- **Phase 2 workflow selector**:
+  - New choice: **Auto sort** or **Manual clusters in heatmap**.
+  - Auto keeps the existing Trips/Places + home/stop pipeline.
+  - Heatmap mode still reads EXIF, Timeline and locations, routes screenshots/clutter, then puts all normal photos into one `Uncategorized` group and opens the heatmap panel automatically in draw mode.
+- **Manual cluster ranges**:
+  - In draw mode, drag anywhere on the timeline to set a global date range, or type precise **Start** / **End** dates.
+  - The range is shown as a vertical band, the gallery filters to exactly the photos inside it, and **Create cluster** creates one real folder from them.
+  - After creating a cluster the range clears but draw mode stays on, so multiple clusters can be drawn back-to-back.
+  - `Screenshot-Clutter` is always excluded from range selection.
+- **Why it matters**:
+  - A large `Trip 1` with density gaps can now be split into several named folders directly on the timeline; the remaining photos stay in `Uncategorized` (heatmap mode) or in the original trip (auto mode).
+- **Tests**:
+  - Playwright now also covers the heatmap-first flow: select heatmap mode -> prepare -> panel opens in draw mode -> set Start/End -> create a named folder.
+  - Service worker cache bumped to `clustr-shell-v9`.
+
+### Eleventh pass - tidy Phase 2 controls
+
+- Phase 2 settings are no longer a wall of selects.
+  - Two primary actions: **📊 Heatmap clustering** (cyan, prominent) and **⚡ Auto clustering**.
+  - The auto button has a **⚙️** cog that toggles manual clustering settings (profile, sensitivity, min photos, Random min) only when needed.
+  - Small secondary actions remain: **Open heatmap** and **Manual trip**.
+- This makes the heatmap the clear core tool and keeps auto tuning out of the way.
+- Service worker cache bumped to `clustr-shell-v9`.
+
 ### Known limitations / next steps
 
 1. **Timeline coverage matters** - if the Timeline JSON does not cover the photo dates (for example Croatia May 2026 vs a July–October Timeline), those photos have no location. They will be grouped by density into one flat trip folder without stops. Import a Timeline covering those dates for location names/stops.
@@ -189,7 +273,8 @@ Added after the first checkpoint:
 ### Continue here
 
 - Repository: https://github.com/Blck-Brd/Clustr
-- Deploy: Vercel Root Directory = `app`; no build command.
+- Deploy: Vercel Root Directory = `app`; Framework `Other`; Build/Output/Install/Dev commands empty; no overrides.
+- After deploying, hard-reload once (Ctrl+Shift+R) because the PWA shell cache was bumped to `clustr-shell-v9`.
 - Local run: `npm run dev` → http://127.0.0.1:4173/
 - Tests: `npm run check`, `npm test`, `npm run test:browser`.
-- Next recommended task: import a Timeline covering the photo dates and re-run Phase 2; then project picker + Vite build.
+- Next recommended task: run the full `D:\Fotky` library once and tune `randomMinPhotos` / clutter cutoff; then import a Timeline covering the photo dates, then project picker + Vite build.

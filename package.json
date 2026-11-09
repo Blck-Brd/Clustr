@@ -15,5 +15,8 @@
   "devDependencies": {
     "@babel/standalone": "^7.28.4",
     "playwright": "^1.65.0"
+  },
+  "dependencies": {
+    "@vercel/analytics": "^2.0.1"
   }
 }

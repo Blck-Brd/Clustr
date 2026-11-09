@@ -8,7 +8,7 @@ It is a single-file React app with no build step and no backend. It can be deplo
 
 1. **Upload Folder** - select a photo directory.
 2. **Timeline JSON (optional)** - import Google Timeline so locations can be assigned by photo time.
-3. **Phase 2 - Grouping** - reads EXIF date/time, assigns a location from Timeline (falling back to GPS), interpolates missing locations, and builds the event tree. The default profile creates **one folder per trip** (`Trip 1`) with **stop subfolders** (`Trip 1/Stop 1 - Kutná Hora`), plus separate home sessions and weekend trips. The `Places` profile creates flat dense location events instead. Trip boundaries come from a smoothed daily photo-density heatmap, not fixed gaps. Sensitivity is Auto by default; manual values are available. Photos without any location still form one flat trip folder if their density spans multiple days.
+3. **Phase 2 - Grouping** - choose **Auto sort** (density trips/stops, home sessions, Random) or **Manual clusters in heatmap**. Auto reads EXIF, Timeline and locations and builds the event tree. Heatmap mode prepares the photos and opens the bottom heatmap panel in draw mode; drag a date range or set Start/End and create each cluster/folder manually. The event tree is still available for AI naming and export.
 4. **Phase 3 - AI Names** - sends each event summary (date, time, location, tags) to Ollama or Gemini and replaces the temporary names. Manually named events are left untouched.
 5. **Phase 4 - Visual Tags** - optional batch or single-image tagging with Moondream / Llama Vision through Ollama.
 6. **Review and Export** - use Tinder mode, edit folders/tags, then export photos and XMP sidecars.
@@ -16,10 +16,10 @@ It is a single-file React app with no build step and no backend. It can be deplo
 ### Cluster-level edits
 
 - Phase 2 creates `Trip N` folders with `Stop N - location` subfolders, plus `Home N` sessions. Rename `Trip N` to “Vacation”.
-- Selecting a photo and changing its **location** or **event name** in the bulk editor applies the change to every photo in the same stop/event.
+- Selecting a photo and changing its **location** or **event name** in the bulk editor applies the change to every photo in the same stop/event. A single stop rename keeps its trip folder; selecting multiple events merges them into one event.
 - Renaming a folder in the tree also marks the affected event as manually named, so phase 3 will not overwrite it.
 - Wrapping events in a parent folder keeps AI naming available for the leaf events.
-- Phase 2 preserves manually named events when it is run again.
+- Phase 2 preserves manually named events (including their cluster/trip identity) when it is run again.
 
 ## Features
 
@@ -28,10 +28,13 @@ It is a single-file React app with no build step and no backend. It can be deplo
 - **Local persistence** - photo metadata and Timeline data are saved to IndexedDB and relinked after a refresh by file name, size and modified time.
 - **Trips + home hierarchy (default)** - a smoothed **daily photo-density heatmap** finds active days and rest valleys, so one vacation becomes one trip folder. Nearby density episodes are merged into one parent trip; internal segments become stop subfolders only when there are enough located photos. Stops use a spatiotemporal **grid heatmap**.
 - **Places/density profile** - the same grid heatmap used as flat place events if you do not want trip folders.
-- **Screenshot / Clutter folder** - Czech/English screenshots, lossless images without camera/location, Downloads/meme paths and similar clutter go to `Screenshot-Clutter`, outside the clustering.
+- **Screenshot / Clutter folder** - Czech/English screenshots, lossless images without camera/location, very small no-EXIF images, Downloads/meme paths and similar clutter go to `Screenshot-Clutter`, outside the clustering.
+- **Random category** - small, short, location-less bursts and leftovers go to one `Random` folder instead of creating a full event per burst; `randomMinPhotos` is adjustable.
+- **Duplicate-safe import** - identical files (same name, size and modified time) are loaded once and reported.
 - **Clean state** - the 🧹 button clears IndexedDB, local settings and cloud metadata.
 - **Manual trip window** - create one trip folder from all photos in a date range (e.g. 2–8 May) with an optional whole-trip location.
-- **Cluster review heatmap** - review clusters over time or on a map, select them, and apply a name/location immediately.
+- **Cluster review heatmap** - docked bottom panel; review clusters over time or on a map, click a day tile or drag a range to filter the gallery, then create a folder directly from the selected photos.
+- **Heatmap-first Phase 2** - choose auto sort or manual heatmap clusters; heatmap mode prepares the photos and lets you draw Start/End date ranges and create multiple folders back-to-back.
 - **TODO roadmap** - see `TODO.md` for Location Tinder, Ko-fi profile rework, Vercel issues and remaining architecture tasks.
 - **Auto + manual sensitivity** - Auto derives the trip/home or place window from the dataset. Trip sensitivity (gap, home radius, session gap) and stop/place sensitivity (time, space, min photos) are separate.
 - **Trip or stop AI naming** - Phase 3 can name the top-level trip folders or the stop subfolders, preserving the other level.
@@ -78,7 +81,6 @@ npm run test:browser
 
 ```text
 app/                  PWA source and assets
-legacy/html-versions/ Previous single-file HTML versions
 tools/                Checks, tests and icon generation
 docs/                 Architecture, deployment, Timeline format and DEVLOG
 ```
@@ -130,7 +132,6 @@ Small vision models such as Moondream do not follow keyword instructions reliabl
 - Project metadata and Timeline data are stored locally in IndexedDB; photo blobs are never stored.
 - If Firebase globals (`__firebase_config`, `__app_id`) are present, only the Gemini API key is synced through Firestore.
 - All photo processing happens in the browser.
-- Previous HTML versions are kept for reference under `legacy/html-versions/`.
 
 ## Notes
 

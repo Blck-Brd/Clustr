@@ -10,6 +10,9 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const port = 4175;
 const baseUrl = `http://127.0.0.1:${port}/`;
 const smallJpg = Buffer.from('/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==', 'base64');
+// Keep the browser smoke-test photos above the clutter-size cutoff so they are
+// treated as normal photos, not screenshots.
+const normalJpg = Buffer.concat([smallJpg, Buffer.alloc(140 * 1024)]);
 
 const waitForServer = async () => {
     for (let attempt = 0; attempt < 50; attempt += 1) {
@@ -24,7 +27,7 @@ const waitForServer = async () => {
 
 const photoDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clustr-photos-'));
 for (let index = 0; index < 120; index += 1) {
-    fs.writeFileSync(path.join(photoDir, `photo-${String(index).padStart(3, '0')}.jpg`), smallJpg);
+    fs.writeFileSync(path.join(photoDir, `photo-${String(index).padStart(3, '0')}.jpg`), normalJpg);
 }
 
 const server = spawn(process.execPath, [path.join(root, 'tools', 'serve.mjs')], {
@@ -43,7 +46,10 @@ try {
     const pageErrors = [];
     page.on('pageerror', (error) => pageErrors.push(error.message));
     page.on('console', (message) => {
-        if (message.type() === 'error') pageErrors.push(message.text());
+        if (message.type() !== 'error') return;
+        // Ollama polling is optional and logs a refused connection when it is not running.
+        if (/ERR_CONNECTION_REFUSED|localhost:11434/i.test(message.text())) return;
+        pageErrors.push(message.text());
     });
 
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
@@ -100,18 +106,18 @@ try {
     console.log(`Virtualized gallery after scroll: ${afterScrollTiles}/120 tiles rendered`);
 
     // Cluster review heatmap: empty state before Phase 2.
-    await page.getByRole('button', { name: /Zkontrolovat shluky|Review clusters/ }).click();
-    await page.getByText(/Kontrola shluků na heatmapě|Cluster heatmap review/).waitFor({ timeout: 10000 });
+    await page.locator('[data-open-heatmap]').click();
+    await page.locator('[data-heatmap-panel]').waitFor({ timeout: 10000 });
     assert.ok(await page.getByText(/Nejprve spusťte fázi 2|Run Phase 2 first/).count() > 0, 'Cluster review should explain that Phase 2 is required');
-    await page.getByRole('button', { name: '×' }).click();
+    await page.locator('[data-heatmap-close]').click();
     console.log('Cluster review empty state: OK');
 
     // Run Phase 2 and verify clusters appear in the heatmap review.
-    await page.getByRole('button', { name: /Seskupit fotky|Group Photos/ }).click();
+    await page.locator('[data-auto-clustering]').click();
     await page.getByText(/Seskupeno|Grouped/).waitFor({ timeout: 60000 });
     await page.getByRole('button', { name: 'OK', exact: true }).click();
-    await page.getByRole('button', { name: /Zkontrolovat shluky|Review clusters/ }).click();
-    await page.getByText(/Kontrola shluků na heatmapě|Cluster heatmap review/).waitFor({ timeout: 10000 });
+    await page.locator('[data-open-heatmap]').click();
+    await page.locator('[data-heatmap-panel]').waitFor({ timeout: 10000 });
     await page.locator('[data-cluster-group]').first().waitFor({ timeout: 10000 });
     const reviewGroups = await page.locator('[data-cluster-group]').count();
     assert.ok(reviewGroups > 0, 'Cluster review should show clusters after Phase 2');
@@ -122,8 +128,23 @@ try {
     await page.locator('[data-review-apply]').click();
     await page.waitForTimeout(600);
     assert.ok(await page.getByText('Test Trip', { exact: false }).count() > 0, 'Renamed cluster should appear in the review list');
-    await page.getByRole('button', { name: '×' }).click();
+    await page.locator('[data-heatmap-close]').click();
     console.log('Cluster review with clusters: OK');
+
+    // Tile selection filters the gallery, and a new folder can be created from it.
+    await page.locator('[data-open-heatmap]').click();
+    await page.locator('[data-heatmap-panel]').waitFor({ timeout: 10000 });
+    await page.locator('[data-cluster-review-canvas="timeline"]').click({ position: { x: 300, y: 16 } });
+    await page.waitForTimeout(400);
+    assert.ok(await page.locator('[data-photo-id]').count() > 0, 'Heatmap tile should highlight photos in the gallery');
+    await page.locator('[data-review-name]').fill('Heatmap Folder');
+    await page.locator('[data-review-create]').click();
+    await page.getByText(/Složka vytvořena|Folder created/).waitFor({ timeout: 10000 });
+    await page.getByRole('button', { name: 'OK', exact: true }).click();
+    await page.waitForTimeout(600);
+    assert.ok(await page.getByText('Heatmap Folder', { exact: false }).count() > 0, 'New folder should appear in the tree');
+    await page.locator('[data-heatmap-close]').click();
+    console.log('Heatmap tile -> folder: OK');
 
     // Clean state: reset clears photos/folders and skips the Timeline auto-load once.
     page.once('dialog', (dialog) => dialog.accept());

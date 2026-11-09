@@ -18,7 +18,7 @@ const preApp = script.slice(0, appStart);
 
 const sandbox = {
     console,
-    React: {},
+    React: { Component: class Component {} },
     localStorage: { getItem: () => null, setItem: () => {} },
     Image: function Image() {},
     document: { createElement: () => ({ getContext: () => ({}) }) },
