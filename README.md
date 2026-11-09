@@ -90,17 +90,6 @@ $env:OLLAMA_ORIGINS="*"
 ollama serve
 ```
 
-## Deploy to Vercel
-
-The repository includes `app/vercel.json`, `manifest.webmanifest`, `sw.js`, and PWA icons.
-
-1. Import the repository in Vercel.
-2. Set **Root Directory** to `app`.
-3. Framework preset: **Other**.
-4. Build command: none.
-5. Output directory: none.
-6. Deploy.
-
 See `docs/DEPLOYMENT.md` for details.
 
 > Note: When the app is served over HTTPS, browsers may restrict HTTP requests to `http://localhost` because of mixed-content / Private Network Access rules. Local AI through Ollama is most reliable when the app is opened locally (`index.html`, `http://localhost`, or `vercel dev`) rather than from the public HTTPS deployment.
