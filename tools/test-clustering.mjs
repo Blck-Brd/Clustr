@@ -34,7 +34,7 @@ const helperNames = [
     'clusterPhotosByDensity', 'computeAutoClusterSettings', 'buildClusterSettings', 'applyDominantClusterLocation',
     'interpolateMissingLocations', 'findLocationInheritanceTargets',
     'buildPlaceholderEventName', 'buildPlaceholderStopName', 'buildEventNameForNaming', 'buildManualEventAiData', 'buildGroupPlaceholderName', 'mergePhotoTags', 'buildAutoTags', 'isLikelyScreenshot',
-    'roundedCoordKey', 'distanceKm', 'extractPhotoMetadata', 'dedupeFilesBySignature',
+    'roundedCoordKey', 'distanceKm', 'extractPhotoMetadata', 'dedupeFilesBySignature', 'naturalCompare',
     'buildTripSettings', 'computeAutoTripSettings', 'inferHomeReference', 'isHomePhoto',
     'clusterPhotosIntoTrips', 'buildHierarchicalEvents', 'RANDOM_FOLDER', 'RANDOM_CATEGORY'
 ];
@@ -529,6 +529,9 @@ assert.equal(mergedAiData.eventKind, 'misc');
 assert.equal(mergedAiData.clusterNumber, 7);
 assert.equal(mergedAiData.tripNumber, 0);
 assert.equal(mergedAiData.stopNumber, 0);
+
+// Folder names sort naturally: Trip 10 after Trip 9.
+assert.equal(['Trip 10', 'Trip 9', 'Trip 2'].sort(h.naturalCompare).join(','), 'Trip 2,Trip 9,Trip 10');
 
 // Identical name + size + mtime is the same file, not a second photo.
 const deduped = h.dedupeFilesBySignature([

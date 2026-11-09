@@ -79,7 +79,7 @@
 
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
-        console.info('Clustr build 2026-11-09.6 (heatmap bottom + click clusters)');
+        console.info('Clustr build 2026-11-09.7 (natural sort + input fix)');
 
         // --- HELPERS (Mimo komponentu pro stabilitu) ---
         const geocodeCache = new Map();
@@ -183,6 +183,9 @@
         const isGeminiSelection = (value) => value === 'gemini-custom' || value === 'gemini-3.8-pro' || GEMINI_PRESET_MODELS.includes(value);
 
         const initialSettings = loadSettings();
+
+        // Natural sort so "Trip 10" comes after "Trip 9" in the folder tree.
+        const naturalCompare = (a, b) => String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
 
         const makeUniqueFileName = (fileName, usedNames) => {
             const key = fileName.toLowerCase();
@@ -4163,7 +4166,7 @@ DATA: ${JSON.stringify(data)}`;
                 photos.forEach(p => {
                     if (p.aiData?.event_name) s.add(p.aiData.event_name);
                 });
-                return Array.from(s).sort();
+                return Array.from(s).sort(naturalCompare);
             }, [photos, customFolders]);
 
             // REKURZIVNÍ STROM (Podpora nekonečného zanoření)
@@ -4212,7 +4215,7 @@ DATA: ${JSON.stringify(data)}`;
                         </div>
                         {hasChildren && (
                             <div className="border-l border-slate-700/50 ml-2">
-                                {Object.values(node.children).map(child => renderFolderNode(child))}
+                                {Object.values(node.children).sort((a, b) => naturalCompare(a.name, b.name)).map(child => renderFolderNode(child))}
                             </div>
                         )}
                     </div>
@@ -4483,12 +4486,13 @@ DATA: ${JSON.stringify(data)}`;
                                             <button onClick={() => setActiveFilters(p => p.filter(f => !f.startsWith('event-')))} className="text-[10px] text-blue-400 hover:underline">{t("Reset", "Reset")}</button>
                                         </div>
                                         <div 
+                                            data-folder-tree="true"
                                             className="space-y-1 max-h-64 overflow-y-auto custom-scrollbar p-1 -ml-3"
                                             onDragOver={handleDragOver}
                                             onDrop={(e) => handleDropOnEvent(e, '')}
                                         >
                                             {Object.keys(nestedTree).length === 0 && <div className="text-[10px] text-slate-600 italic pl-3">{t("Žádné události...", "No events...")}</div>}
-                                            {Object.values(nestedTree).map(node => renderFolderNode(node))}
+                                            {Object.values(nestedTree).sort((a, b) => naturalCompare(a.name, b.name)).map(node => renderFolderNode(node))}
                                         </div>
                                     </div>
 
@@ -4832,6 +4836,8 @@ DATA: ${JSON.stringify(data)}`;
             const [dragState, setDragState] = useState(null);
             const [name, setName] = useState('');
             const [location, setLocation] = useState('');
+            const [nameDirty, setNameDirty] = useState(false);
+            const [locationDirty, setLocationDirty] = useState(false);
             const [hover, setHover] = useState(null);
             const timelineRef = useRef(null);
             const mapRef = useRef(null);
@@ -5013,13 +5019,13 @@ DATA: ${JSON.stringify(data)}`;
             useEffect(() => {
                 const selected = groups.filter((group) => selectedKeys.has(group.key));
                 if (selected.length === 1) {
-                    setName(selected[0].name);
-                    setLocation(selected[0].location || '');
+                    if (!nameDirty) setName(selected[0].name);
+                    if (!locationDirty) setLocation(selected[0].location || '');
                 } else {
-                    setName('');
-                    setLocation('');
+                    if (!nameDirty) setName('');
+                    if (!locationDirty) setLocation('');
                 }
-            }, [selectedKeys, groups]);
+            }, [selectedKeys, groups, nameDirty, locationDirty]);
 
             useEffect(() => {
                 if (tab !== 'timeline' || !timelineRef.current || !bounds || groups.length === 0) return;
@@ -5463,8 +5469,8 @@ DATA: ${JSON.stringify(data)}`;
                                             <button onClick={() => { setClusterRange(null); setSelectedKeys(new Set()); setTileSelection(new Set()); }} className="px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded text-[11px] text-slate-300" title={t('Zrušit rozsah', 'Clear range')}>×</button>
                                         </div>
                                     )}
-                                    <input type="text" data-review-name value={name} onChange={(event) => setName(event.target.value)} placeholder={t('Název nové složky…', 'New folder name…')} className="w-full bg-slate-800 p-1.5 rounded text-xs text-white border border-slate-700" />
-                                    <input type="text" data-review-location value={location} onChange={(event) => setLocation(event.target.value)} placeholder={t('Lokace (volitelné)…', 'Location (optional)…')} className="w-full bg-slate-800 p-1.5 rounded text-xs text-white border border-slate-700" />
+                                    <input type="text" data-review-name value={name} onChange={(event) => { setName(event.target.value); setNameDirty(true); }} placeholder={t('Název nové složky…', 'New folder name…')} className="w-full bg-slate-800 p-1.5 rounded text-xs text-white border border-slate-700" />
+                                    <input type="text" data-review-location value={location} onChange={(event) => { setLocation(event.target.value); setLocationDirty(true); }} placeholder={t('Lokace (volitelné)…', 'Location (optional)…')} className="w-full bg-slate-800 p-1.5 rounded text-xs text-white border border-slate-700" />
                                     <div className="flex flex-wrap gap-1">
                                         <button data-review-apply onClick={apply} disabled={selectedKeys.size === 0 || (!name.trim() && !location.trim())} className="px-2 py-1 bg-orange-600 hover:bg-orange-500 disabled:bg-slate-700 rounded font-bold text-[11px] text-white">
                                             {t('Použít na clustery', 'Apply to clusters')}
@@ -5479,6 +5485,8 @@ DATA: ${JSON.stringify(data)}`;
                                                 setClusterRange(null);
                                                 setName('');
                                                 setLocation('');
+                                                setNameDirty(false);
+                                                setLocationDirty(false);
                                             }}
                                             disabled={selectedPhotoIds.size === 0 || !name.trim()}
                                             className="px-2 py-1 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 rounded font-bold text-[11px] text-white"

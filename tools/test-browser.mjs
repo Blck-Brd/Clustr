@@ -151,7 +151,7 @@ try {
     await page.locator('[data-review-create]').click();
     await page.getByText(/Složka vytvořena|Folder created/).waitFor({ timeout: 10000 });
     await page.getByRole('button', { name: 'OK', exact: true }).click();
-    await page.getByText('Heatmap Folder', { exact: false }).first().waitFor({ timeout: 5000 });
+    await page.locator('[data-folder-tree]').getByText('Heatmap Folder', { exact: false }).first().waitFor({ timeout: 5000 });
     await page.locator('[data-heatmap-close]').click();
     console.log('Heatmap tile -> folder: OK');
 
