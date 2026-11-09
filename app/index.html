@@ -2091,7 +2091,7 @@
             }
             let worker;
             try {
-                worker = new Worker('preview-worker.js?v=3');
+                worker = new Worker('preview-worker.js?v=4');
             } catch (e) {
                 resolve(null);
                 return;
@@ -2567,7 +2567,7 @@
             }, []);
 
             const processThumbnails = async (loadedFiles) => {
-                const CONCURRENCY_LIMIT = 6; 
+                const CONCURRENCY_LIMIT = 8; 
                 const PREVIEW_TIMEOUT = 20000;
                 const queue = [...loadedFiles];
                 const withTimeout = (promise, ms) => new Promise((resolve, reject) => {
@@ -5997,4 +5997,5 @@ DATA: ${JSON.stringify(data)}`;
     </script>
 </body>
 </html>
+
 

@@ -80,6 +80,108 @@ const buildJpegFromIfd = (ifd, data, off, len) => {
     return null;
 };
 
+// Same idea as buildJpegFromIfd, but for previews split across multiple strips.
+const buildJpegFromStrips = (ifd, data, offsets, counts) => {
+    if (!offsets || !counts || offsets.length === 0 || offsets.length !== counts.length) return null;
+    const compression = tagValue(ifd, 't259');
+    if (![6, 7].includes(compression)) return null;
+
+    let total = 0;
+    for (let i = 0; i < counts.length; i += 1) total += counts[i];
+    if (total <= 0 || total > 40e6) return null;
+
+    // If any strip already contains a complete JPEG, use the largest one.
+    let best = null;
+    for (let i = 0; i < offsets.length; i += 1) {
+        const off = offsets[i];
+        const len = counts[i];
+        if (!(off >= 0) || off + len > data.length) continue;
+        if (data[off] !== 0xFF || data[off + 1] !== 0xD8) continue;
+        const end = findJpegEnd(data, off, off + len);
+        if (end > off) {
+            const length = end - off;
+            if (!best || length > best.length) best = { offset: off, length };
+        }
+    }
+    if (best) return data.slice(best.offset, best.offset + best.length);
+
+    const width = tagValue(ifd, 't256');
+    const height = tagValue(ifd, 't257');
+    let prefix = new Uint8Array(0);
+    let sos = new Uint8Array(0);
+    let sofPosition = -1;
+
+    if (compression === 7) {
+        const tables = ifd.t347;
+        if (tables && tables.length) {
+            let cut = tables.length;
+            for (let i = 0; i < tables.length - 1; i += 1) {
+                if (tables[i] === 0xFF && tables[i + 1] === 0xD9) { cut = i; break; }
+            }
+            prefix = tables.slice(0, cut);
+        }
+    } else {
+        ifd.width = width;
+        ifd.height = height;
+        try {
+            const init = UTIF.decode._decodeOldJPEGInit(ifd, data, offsets[0], counts[0]);
+            prefix = init.tables || new Uint8Array(0);
+            sos = init.sosMarker || new Uint8Array(0);
+            sofPosition = init.sofPosition;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    const out = new Uint8Array(prefix.length + sos.length + total + 2);
+    let pos = 0;
+    out.set(prefix, pos);
+    pos += prefix.length;
+
+    if (compression === 6 && sofPosition >= 0 && pos >= sofPosition + 9) {
+        out[sofPosition + 5] = (height >>> 8) & 255;
+        out[sofPosition + 6] = height & 255;
+        out[sofPosition + 7] = (width >>> 8) & 255;
+        out[sofPosition + 8] = width & 255;
+    }
+    if (compression === 6 && sos.length) {
+        const firstOff = offsets[0];
+        if (!(data[firstOff] === 0xFF && data[firstOff + 1] === 0xDA)) {
+            out.set(sos, pos);
+            pos += sos.length;
+        }
+    }
+
+    let hasSOI = prefix.length >= 2 && prefix[0] === 0xFF && prefix[1] === 0xD8;
+    for (let i = 0; i < offsets.length; i += 1) {
+        const off = offsets[i];
+        const len = counts[i];
+        if (!(off >= 0) || off + len > data.length) continue;
+        let start = 0;
+        if (data[off] === 0xFF && data[off + 1] === 0xD8) {
+            if (hasSOI) start = 2;
+            else hasSOI = true;
+        }
+        out.set(data.subarray(off + start, off + len), pos);
+        pos += len - start;
+    }
+    out[pos++] = 0xFF;
+    out[pos++] = 0xD9;
+    return out.slice(0, pos);
+};
+
+const flattenIfds = (list, depth = 0, out = []) => {
+    if (!Array.isArray(list) || depth > 3) return out;
+    list.forEach((ifd) => {
+        if (!ifd) return;
+        out.push(ifd);
+        if (ifd.subIFD) flattenIfds(ifd.subIFD, depth + 1, out);
+        if (ifd.exifIFD) flattenIfds([ifd.exifIFD], depth + 1, out);
+        if (ifd.dngPrvt) flattenIfds([ifd.dngPrvt], depth + 1, out);
+    });
+    return out;
+};
+
 const collectUtifCandidates = (buffer, candidates) => {
     if (!utifReady || typeof UTIF === 'undefined') return;
     let ifds;
@@ -91,7 +193,7 @@ const collectUtifCandidates = (buffer, candidates) => {
     if (!ifds || !ifds.length) return;
 
     const data = new Uint8Array(buffer);
-    const ranked = ifds
+    const ranked = flattenIfds(ifds)
         .map((ifd) => ({
             ifd,
             width: tagValue(ifd, 't256'),
@@ -108,18 +210,21 @@ const collectUtifCandidates = (buffer, candidates) => {
         });
 
     for (const { ifd, width, height, compression, strips } of ranked) {
-        if ([6, 7].includes(compression) && strips <= 1 && width * height <= 40e6) {
+        if ([6, 7].includes(compression) && width * height <= 40e6) {
             const offsets = ifd.t273 || ifd.t324;
             const counts = ifd.t279 || ifd.t325;
-            if (offsets && counts && offsets.length === 1) {
-                const jpeg = buildJpegFromIfd(ifd, data, offsets[0], counts[0]);
+            if (offsets && counts && offsets.length === counts.length && offsets.length > 0) {
+                const jpeg = strips <= 1
+                    ? buildJpegFromIfd(ifd, data, offsets[0], counts[0])
+                    : buildJpegFromStrips(ifd, data, offsets, counts);
                 if (jpeg && jpeg.length) {
                     candidates.push({ kind: 'bytes', buffer: jpeg.buffer, mime: 'image/jpeg' });
                 }
             }
         }
 
-        if (width * height > 1e6) continue;
+        const smallArea = compression === 1 ? 4e6 : 1e6;
+        if (width * height > smallArea) continue;
         try {
             UTIF.decodeImage(buffer, ifd);
             const w = ifd.width || width;
