@@ -90,8 +90,13 @@ UTIF.decode = function(buff)
 
 	var ifdo = bin.readUint(data, offset);  offset+=4;
 	var ifds = [];
+	// Guard against malformed/cyclic IFD chains in raw files.
+	var seen = {}, guard = 0;
 	while(true) {
+		if(!(ifdo>0) || ifdo+2>data.length || seen[ifdo] || guard++>64) break;
+		seen[ifdo] = true;
 		var noff = UTIF._readIFD(bin, data, ifdo, ifds, 0, false);
+		if(!(noff>=0) || noff+4>data.length) break;
 		ifdo = bin.readUint(data, noff);
 		if(ifdo==0) break;
 	}
@@ -892,7 +897,10 @@ UTIF.ttypes = {  256:3,257:3,258:3,   259:3, 262:3,  273:4,  274:3, 277:3,278:4,
 
 UTIF._readIFD = function(bin, data, offset, ifds, depth, debug)
 {
+	if(!(offset>=0) || offset+2>data.length) return offset;
 	var cnt = bin.readUshort(data, offset);  offset+=2;
+	if(!(cnt>=0)) cnt = 0;
+	if(offset + cnt*12 > data.length) cnt = Math.max(0, Math.floor((data.length-offset)/12));
 	var ifd = {};  ifds.push(ifd);
 
 	if(debug) log("   ".repeat(depth),ifds.length-1,">>>----------------");
@@ -904,20 +912,30 @@ UTIF._readIFD = function(bin, data, offset, ifds, depth, debug)
 		var voff = bin.readUint  (data, offset);    offset+=4;
 		//if(tag==33723) {type=1; num*=4;}//console.log(type,num,voff);//type = 1;  // IPTC/NAA
 
+		// Clamp malformed counts to the actual data bounds. Some raw files
+		// contain bogus tag lengths that otherwise hang or crash the parser.
+		if(!(num>=0)) num = 0;
+		var typeSize = ({1:1,2:1,3:2,4:4,5:8,6:1,7:1,8:2,9:4,10:8,11:4,12:8})[type] || 1;
+		var inline = (type==1 || type==2 || type==7) ? num<5 : (type==3 || type==8) ? num<3 : (type==4 || type==9) ? num<2 : false;
+		var vbase = inline ? offset-4 : voff;
+		if(!(vbase>=0) || vbase>data.length) { num = 0; vbase = 0; }
+		var maxNum = Math.max(0, Math.floor((data.length - vbase) / typeSize));
+		if(num > maxNum) num = maxNum;
+
 		var arr = [];
 		//ifd["t"+tag+"-"+UTIF.tags[tag]] = arr;
-		if(type== 1 || type==7) {  arr = new Uint8Array(data.buffer, (num<5 ? offset-4 : voff), num);  }
-		if(type== 2) {  var o0 = (num<5 ? offset-4 : voff), c=data[o0];  
-						if(c<128) arr.push( bin.readASCII(data, o0, num-1) );
-						else      arr = new Uint8Array(data.buffer, o0, num-1);  }
-		if(type== 3) {  for(var j=0; j<num; j++) arr.push(bin.readUshort(data, (num<3 ? offset-4 : voff)+2*j));  }
-		if(type== 4) {  for(var j=0; j<num; j++) arr.push(bin.readUint  (data, (num<2 ? offset-4 : voff)+4*j));  }
-		if(type== 5) {  for(var j=0; j<num; j++) arr.push(bin.readUint  (data, voff+j*8) / bin.readUint(data,voff+j*8+4));  }
-		if(type== 8) {  for(var j=0; j<num; j++) arr.push(bin.readShort (data, (num<3 ? offset-4 : voff)+2*j));  }
-		if(type== 9) {  for(var j=0; j<num; j++) arr.push(bin.readInt   (data, (num<2 ? offset-4 : voff)+4*j));  }
-		if(type==10) {  for(var j=0; j<num; j++) arr.push(bin.readInt   (data, voff+j*8) / bin.readInt (data,voff+j*8+4));  }
-		if(type==11) {  for(var j=0; j<num; j++) arr.push(bin.readFloat (data, voff+j*4));  }
-		if(type==12) {  for(var j=0; j<num; j++) arr.push(bin.readDouble(data, voff+j*8));  }
+		if(type== 1 || type==7) {  arr = new Uint8Array(data.buffer, vbase, num);  }
+		if(type== 2) {  var o0 = vbase, c=data[o0];  
+						if(c<128) arr.push( bin.readASCII(data, o0, Math.max(0,num-1)) );
+						else      arr = new Uint8Array(data.buffer, o0, Math.max(0,num-1));  }
+		if(type== 3) {  for(var j=0; j<num; j++) arr.push(bin.readUshort(data, vbase+2*j));  }
+		if(type== 4) {  for(var j=0; j<num; j++) arr.push(bin.readUint  (data, vbase+4*j));  }
+		if(type== 5) {  for(var j=0; j<num; j++) arr.push(bin.readUint(data, vbase+j*8) / bin.readUint(data,vbase+j*8+4));  }
+		if(type== 8) {  for(var j=0; j<num; j++) arr.push(bin.readShort (data, vbase+2*j));  }
+		if(type== 9) {  for(var j=0; j<num; j++) arr.push(bin.readInt   (data, vbase+4*j));  }
+		if(type==10) {  for(var j=0; j<num; j++) arr.push(bin.readInt   (data, vbase+j*8) / bin.readInt (data,vbase+j*8+4));  }
+		if(type==11) {  for(var j=0; j<num; j++) arr.push(bin.readFloat (data, vbase+j*4));  }
+		if(type==12) {  for(var j=0; j<num; j++) arr.push(bin.readDouble(data, vbase+j*8));  }
 		
 		ifd["t"+tag] = arr;
 		
@@ -926,23 +944,21 @@ UTIF._readIFD = function(bin, data, offset, ifds, depth, debug)
 		
 		if(tag==330 && ifd["t272"] && ifd["t272"][0]=="DSLR-A100") {  } 
 		// ifd["t258"]=[12];  ifd["t259"]=[32767];  ifd["t273"]=[offset+arr[0]];  ifd["t277"]=[1];  ifd["t279"]=[1];  ifd["t33421"]=[2,2];  ifd["t33422"]=[0,1,1,2];
-		else if(tag==330 || tag==34665 || (tag==50740 && bin.readUshort(data,bin.readUint(arr,0))<300  )) {
+		else if(depth<4 && (tag==330 || tag==34665 || (tag==50740 && arr.length && bin.readUshort(data,bin.readUint(arr,0))<300  ))) {
 			var oarr = tag==50740 ? [bin.readUint(arr,0)] : arr;
 			var subfd = [];
-			for(var j=0; j<oarr.length; j++) UTIF._readIFD(bin, data, oarr[j], subfd, depth+1, debug);
+			var olen = Math.min(oarr.length, 16);
+			for(var j=0; j<olen; j++) {
+				var oo = oarr[j];
+				if(!(oo>=0) || oo+2>data.length) continue;
+				UTIF._readIFD(bin, data, oo, subfd, depth+1, debug);
+			}
 			if(tag==  330) ifd.subIFD = subfd;
 			if(tag==34665) ifd.exifIFD = subfd[0];
 			if(tag==50740) ifd.dngPrvt = subfd[0];
 		}
-		if(tag==37500) {
-			var mn = arr;
-			//console.log(bin.readASCII(mn,0,mn.length), mn);
-			if(bin.readASCII(mn,0,5)=="Nikon")  ifd.makerNote = UTIF["decode"](mn.slice(10).buffer)[0];
-			else if(bin.readUshort(data,voff)<300){
-				var subsub=[];  UTIF._readIFD(bin, data, voff, subsub, depth+1, debug);
-				ifd.makerNote = subsub[0];
-			}
-		}
+		// Maker notes are not needed for previews and can recurse/hang on some
+		// raw files, so they are intentionally not parsed here.
 	}
 	if(debug) log("   ".repeat(depth),"<<<---------------");
 	return offset;

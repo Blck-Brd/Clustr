@@ -62,7 +62,7 @@ try {
     failed = true;
 }
 
-for (const file of ['sw.js', 'exif-worker.js', 'geo-worker.js', 'preview-worker.js']) {
+for (const file of ['sw.js', 'exif-worker.js', 'geo-worker.js', 'preview-worker.js', 'vendor/utif.js']) {
     try {
         new Function(fs.readFileSync(path.join(appDir, file), 'utf8'));
         console.log(`${file} is syntactically valid`);
@@ -83,3 +83,4 @@ for (const file of ['manifest.webmanifest', 'vercel.json']) {
 }
 
 if (failed) process.exit(1);
+

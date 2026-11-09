@@ -238,6 +238,12 @@
             .trim()
             .slice(0, 80);
 
+        // A manually typed folder name is a single folder, not an event path.
+        const sanitizeFolderName = (value) => String(value == null ? '' : value)
+            .replace(/[\\/]+/g, ' - ')
+            .replace(/\s+/g, ' ')
+            .trim();
+
         const buildEventNameForNaming = (currentName, aiName, level) => {
             const clean = cleanEventName(aiName);
             if (!clean) return currentName;
@@ -2077,7 +2083,7 @@
                 try { worker.terminate(); } catch (e) {}
                 resolve(value);
             };
-            timer = setTimeout(() => finish(null), 15000);
+            timer = setTimeout(() => finish(null), 8000);
             worker.onmessage = async (event) => {
                 const data = event.data || {};
                 if (data.type !== 'result' || settled) return;
@@ -4118,7 +4124,7 @@ DATA: ${JSON.stringify(data)}`;
             // Creates a real folder/event from the photos selected on the heatmap.
             const createFolderFromHeatmap = (ids, value, location) => {
                 const idSet = new Set(ids || []);
-                const name = String(value || '').trim();
+                const name = sanitizeFolderName(value);
                 if (idSet.size === 0 || !name) return;
 
                 const newId = `evt-heatmap-${Date.now()}`;
@@ -4731,7 +4737,7 @@ DATA: ${JSON.stringify(data)}`;
                                                     {p.thumbLoading ? (
                                                         <><span className="animate-spin text-xl mb-1">⏳</span>Načítám náhled...</>
                                                     ) : (
-                                                        <><span className="text-2xl mb-1">📷</span>RAW/HEIC<br/>{p.name.split('.').pop().toUpperCase()}</>
+                                                        <><span className="text-2xl mb-1">📷</span>{p.name.split('.').pop().toUpperCase()}<br/>{t('Bez náhledu', 'No preview')}</>
                                                     )}
                                                 </div>
                                             )}
@@ -5072,6 +5078,33 @@ DATA: ${JSON.stringify(data)}`;
                 });
                 return [...names].sort(naturalCompare);
             }, [photos]);
+
+            // Flatten the folder tree depth-first so the picker shows real hierarchy.
+            const folderTreeOptions = useMemo(() => {
+                const root = { children: new Map() };
+                folderOptions.forEach((path) => {
+                    let node = root;
+                    let fullPath = '';
+                    path.split('/').filter(Boolean).forEach((part) => {
+                        fullPath = fullPath ? `${fullPath}/${part}` : part;
+                        if (!node.children.has(part)) {
+                            node.children.set(part, { name: part, fullPath, depth: fullPath.split('/').length - 1, children: new Map() });
+                        }
+                        node = node.children.get(part);
+                    });
+                });
+                const flat = [];
+                const walk = (node) => {
+                    [...node.children.values()]
+                        .sort((a, b) => naturalCompare(a.name, b.name))
+                        .forEach((child) => {
+                            flat.push(child);
+                            walk(child);
+                        });
+                };
+                walk(root);
+                return flat;
+            }, [folderOptions]);
 
             useEffect(() => {
                 if (targetFolder && !folderOptions.includes(targetFolder)) setTargetFolder('');
@@ -5647,12 +5680,19 @@ DATA: ${JSON.stringify(data)}`;
                                         <div className="grid grid-cols-[1fr_auto] gap-1">
                                             <select data-review-target value={targetFolder} onChange={(event) => setTargetFolder(event.target.value)} className="w-full bg-slate-800 p-1.5 rounded text-xs text-white border border-slate-700">
                                                 <option value="">{t('Vyberte složku…', 'Choose a folder…')}</option>
-                                                {folderOptions.map((folder) => <option key={folder} value={folder}>{folder}</option>)}
+                                                {folderTreeOptions.map((node) => (
+                                                    <option key={node.fullPath} value={node.fullPath} title={node.fullPath}>
+                                                        {'\u00A0\u00A0'.repeat(node.depth)}{node.depth > 0 ? '└ ' : ''}{node.name}
+                                                    </option>
+                                                ))}
                                             </select>
                                             <button data-review-add-to-folder onClick={addToExistingFolder} disabled={selectedPhotoIds.size === 0 || !targetFolder} className="px-2 py-1 bg-cyan-700 hover:bg-cyan-600 disabled:bg-slate-700 rounded font-bold text-[11px] text-white">
                                                 ➕ {t('Přidat', 'Add')}
                                             </button>
                                         </div>
+                                        {targetFolder && (
+                                            <div className="text-[9px] text-cyan-400 truncate mt-0.5" title={targetFolder}>📁 {targetFolder}</div>
+                                        )}
                                     </div>
                                     <input type="text" data-review-name value={name} onChange={(event) => { setName(event.target.value); setNameDirty(true); }} placeholder={t('Název nové složky…', 'New folder name…')} className="w-full bg-slate-800 p-1.5 rounded text-xs text-white border border-slate-700" />
                                     <input type="text" data-review-location value={location} onChange={(event) => { setLocation(event.target.value); setLocationDirty(true); }} placeholder={t('Lokace (volitelné)…', 'Location (optional)…')} className="w-full bg-slate-800 p-1.5 rounded text-xs text-white border border-slate-700" />

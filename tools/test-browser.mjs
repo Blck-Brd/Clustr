@@ -147,16 +147,16 @@ try {
     await page.locator('[data-cluster-review-canvas="timeline"]').click({ position: { x: 300, y: 16 } });
     await page.waitForTimeout(400);
     assert.ok(await page.locator('[data-photo-id]').count() > 0, 'Heatmap tile should highlight photos in the gallery');
-    await page.locator('[data-review-name]').fill('Heatmap Folder');
+    await page.locator('[data-review-name]').fill('Heatmap/Folder');
     await page.locator('[data-review-create]').click();
     await page.getByText(/Složka vytvořena|Folder created/).waitFor({ timeout: 10000 });
     await page.getByRole('button', { name: 'OK', exact: true }).click();
-    await page.locator('[data-folder-tree]').getByText('Heatmap Folder', { exact: false }).first().waitFor({ timeout: 5000 });
+    await page.locator('[data-folder-tree]').getByText('Heatmap - Folder', { exact: false }).first().waitFor({ timeout: 5000 });
     console.log('Heatmap tile -> folder: OK');
 
     // Add a second heatmap selection to the folder that already exists.
     await page.locator('[data-cluster-group]').first().click();
-    await page.locator('[data-review-target]').selectOption('Heatmap Folder');
+    await page.locator('[data-review-target]').selectOption('Heatmap - Folder');
     await page.locator('[data-review-add-to-folder]').click();
     await page.getByText(/Přidáno do složky|Added to folder/).waitFor({ timeout: 10000 });
     await page.getByRole('button', { name: 'OK', exact: true }).click();
@@ -180,3 +180,4 @@ try {
     server.kill();
     fs.rmSync(photoDir, { recursive: true, force: true });
 }
+

@@ -150,9 +150,12 @@ self.onmessage = async (event) => {
         } catch (error) {}
     }
 
-    // Only fall back to UTIF when no embedded preview exists. UTIF's raw parser
-    // can spin on some maker-specific NEF files, so avoid it when unnecessary.
-    if (!hasEmbeddedThumbnail) {
+    // Only fall back to UTIF when there is no embedded exifr preview. The
+    // vendored UTIF parser has bounds/recursion guards so malformed raw files
+    // return quickly instead of hanging.
+    const ext = String(data.file.name || '').split('.').pop().toLowerCase();
+    const canUseUtif = ['nef', 'cr2', 'arw', 'dng', 'raf', 'orf', 'tif', 'tiff'].includes(ext);
+    if (!hasEmbeddedThumbnail && canUseUtif) {
         try {
             const buffer = await data.file.arrayBuffer();
             collectUtifCandidates(buffer, candidates);
