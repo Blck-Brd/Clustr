@@ -281,6 +281,22 @@ Added after the first checkpoint:
 - Creating a folder from the heatmap updates the sidebar folder tree immediately (browser test now checks the tree node).
 - Service worker cache bumped to `clustr-shell-v11`.
 
+### Fourteenth pass - CI reliability and deployment
+
+- **GitHub Actions `check` failure** after the heatmap-first push:
+  - The workflow ran `npm run test:browser`, which launched Playwright with `channel: 'chrome'`. The Ubuntu runner has no Google Chrome installed, so the browser smoke test failed with exit code 1.
+  - CI now runs `npx playwright install --with-deps chromium`.
+  - `tools/test-browser.mjs` prefers the requested Chrome channel, then falls back to Playwright's bundled Chromium when it is unavailable.
+  - Review/reset waits are navigation/selector based instead of fixed delays, so the bundled headless shell is stable.
+- **Deployment settings** documented in `docs/DEPLOYMENT.md`: Root Directory `app`, Framework `Other`, Build/Output/Install/Dev commands empty, no overrides.
+- **Vercel Web Analytics**: `@vercel/analytics` installed; static `/_vercel/insights/script.js` is injected on non-localhost hosts. Enable Web Analytics in the Vercel dashboard.
+- **Session commits**:
+  - `8c3e0ce` heatmap-first Phase 2, manual cluster ranges, analytics and clustering hardening.
+  - `9bf62ec` CI browser test uses bundled Chromium.
+  - `0511401` heatmap docked at the bottom and density bursts pre-clustered.
+  - `2f5c861` natural folder sorting and stable heatmap inputs.
+- Service worker cache is now `clustr-shell-v11`; deployed clients should hard-reload once.
+
 ### Known limitations / next steps
 
 1. **Timeline coverage matters** - if the Timeline JSON does not cover the photo dates (for example Croatia May 2026 vs a July–October Timeline), those photos have no location. They will be grouped by density into one flat trip folder without stops. Import a Timeline covering those dates for location names/stops.
@@ -297,4 +313,4 @@ Added after the first checkpoint:
 - After deploying, hard-reload once (Ctrl+Shift+R) because the PWA shell cache was bumped to `clustr-shell-v11`.
 - Local run: `npm run dev` → http://127.0.0.1:4173/
 - Tests: `npm run check`, `npm test`, `npm run test:browser`.
-- Next recommended task: run the full `D:\Fotky` library once and tune `randomMinPhotos` / clutter cutoff; then import a Timeline covering the photo dates, then project picker + Vite build.
+- Next recommended task: refine the end-to-end workflow design (see `TODO.md` → Workflow / UX), then run the full `D:\Fotky` library and tune `randomMinPhotos` / clutter cutoff; import a Timeline covering the photo dates; then project picker + Vite build.

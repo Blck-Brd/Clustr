@@ -1,5 +1,14 @@
 # Clustr TODO
 
+## Workflow / UX
+
+- [ ] **Refine workflow design** - make one clear end-to-end path: choose Phase 2 mode → review/paint clusters in the heatmap → name folders → optional AI naming → export. Keep Auto sort as the quick path and the heatmap as the main manual tool.
+  - [ ] Add undo/redo for drawn cluster ranges and created clusters.
+  - [ ] Allow editing an existing cluster’s Start/End directly in the heatmap.
+  - [ ] Support draft clusters (draw several ranges first, then apply them together).
+  - [ ] Keep the folder tree visibly in sync while editing from the heatmap (verify with real data).
+  - [ ] Add keyboard support and clearer empty/loading states in the panel.
+
 ## Next features
 
 - [ ] **Location Tinder** - show a small queue of photos with missing locations (ideally a representative photo from each cluster). The user enters the location manually, and the app applies it to the whole cluster. Extend the same flow to event names if useful.
@@ -45,3 +54,7 @@
 - [x] Heatmap black-screen guards (error boundary, canvas limits, fatal overlay).
 - [x] Phase 2 workflow selector: Auto sort or Manual clusters in heatmap.
 - [x] Manual cluster Start/End ranges and multiple back-to-back clusters from the heatmap.
+- [x] Heatmap pre-clusters visible density bursts.
+- [x] Natural folder sorting (`Trip 9` before `Trip 10`) and stable heatmap inputs.
+- [x] Heatmap docked at the bottom; gallery tiles shrink while it is open.
+- [x] CI fixed to use Playwright’s bundled Chromium; browser smoke test stable on Ubuntu.
