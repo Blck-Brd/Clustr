@@ -2581,7 +2581,7 @@
                 const worker = async () => {
                     while (queue.length > 0) {
                         const p = queue.shift();
-                        if (!p || !p.isRaw) continue;
+                        if (!p || !p.isRaw || p.url) continue;
                         
                         try {
                             const thumbUrl = await withTimeout(generatePreview(p.file), PREVIEW_TIMEOUT);
@@ -2623,19 +2623,42 @@
                     && (!meta.lastModified || meta.lastModified === file.lastModified)
                 ) || parsedMeta.find((meta) => meta.name === file.name);
 
+                const rawExts = ['nef', 'cr2', 'arw', 'dng', 'raf', 'orf', 'heic', 'heif', 'tif', 'tiff'];
+                const stemKey = (file) => {
+                    const relative = file.webkitRelativePath || file.name;
+                    const slash = relative.lastIndexOf('/');
+                    const dir = slash >= 0 ? relative.slice(0, slash) : '';
+                    const base = relative.slice(slash + 1);
+                    const dot = base.lastIndexOf('.');
+                    return `${dir}/${(dot >= 0 ? base.slice(0, dot) : base).toLowerCase()}`;
+                };
+                // A NEF/RAW next to a JPG can use the JPG as its preview instantly.
+                const siblingByStem = new Map();
+                uniqueFiles.forEach((file) => {
+                    const ext = file.name.split('.').pop().toLowerCase();
+                    if (rawExts.includes(ext)) return;
+                    const key = stemKey(file);
+                    const previous = siblingByStem.get(key);
+                    const isJpeg = /^jpe?g$/i.test(ext);
+                    if (!previous || (isJpeg && !/^jpe?g$/i.test(previous.name.split('.').pop()))) {
+                        siblingByStem.set(key, file);
+                    }
+                });
+
                 const loaded = uniqueFiles.map(f => {
                     const existing = findMeta(f);
                     const ext = f.name.split('.').pop().toLowerCase();
-                    const isRaw = ['nef', 'cr2', 'arw', 'dng', 'raf', 'orf', 'heic', 'heif', 'tif', 'tiff'].includes(ext);
+                    const isRaw = rawExts.includes(ext);
+                    const paired = isRaw ? siblingByStem.get(stemKey(f)) : null;
                     
                     return {
                         id: Math.random().toString(36).substr(2, 9),
                         file: f, 
                         name: f.name, 
                         path: f.webkitRelativePath || f.name,
-                        url: isRaw ? null : URL.createObjectURL(f), 
+                        url: paired ? URL.createObjectURL(paired) : (isRaw ? null : URL.createObjectURL(f)), 
                         isRaw: isRaw,
-                        thumbLoading: isRaw,
+                        thumbLoading: Boolean(isRaw && !paired),
                         date: existing ? new Date(existing.date) : new Date(f.lastModified), 
                         hardData: existing?.hardData || null, 
                         aiData: existing?.aiData || null

@@ -42,7 +42,7 @@ It is a single-file React app with no build step and no backend. It can be deplo
 - **Trip or stop AI naming** - Phase 3 can name the top-level trip folders or the stop subfolders, preserving the other level.
 - **Manual cluster edits** - Split selected photos into a new event, or merge events by renaming them together.
 - **Location inheritance** - a manually added location propagates through the event and to nearby photos that have no location of their own (12 h window).
-- **RAW + HEIC previews** - embedded thumbnails via exifr, HEIC conversion via heic2any, TIFF/RAW decoding via UTIF.
+- **RAW + HEIC previews** - paired JPGs are used first, then embedded thumbnails via exifr, scanned embedded JPEG previews, HEIC conversion via heic2any, and TIFF/RAW decoding via UTIF.
 - **Worker pool** - EXIF parsing runs in a pool of dedicated workers; Nominatim geocoding runs in a serialized geocode worker.
 - **Virtualized gallery** - only visible photo tiles are mounted, so 2,000+ photos stay responsive.
 - **AI event names** - strict JSON prompts, output-shape normalization, retries, and clear model errors.
