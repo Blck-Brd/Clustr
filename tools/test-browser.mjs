@@ -40,7 +40,18 @@ let browser;
 
 try {
     await waitForServer();
-    browser = await chromium.launch({ channel: 'chrome', headless: true });
+    const launchBrowser = async () => {
+        const preferred = process.env.PLAYWRIGHT_CHANNEL || (process.platform === 'win32' ? 'chrome' : null);
+        if (preferred) {
+            try {
+                return await chromium.launch({ channel: preferred, headless: true });
+            } catch (error) {
+                console.warn(`Playwright channel "${preferred}" unavailable, using bundled Chromium.`);
+            }
+        }
+        return chromium.launch({ headless: true });
+    };
+    browser = await launchBrowser();
     const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
 
     const pageErrors = [];
@@ -126,8 +137,7 @@ try {
     await page.locator('[data-cluster-group]').first().click();
     await page.locator('[data-review-name]').fill('Test Trip');
     await page.locator('[data-review-apply]').click();
-    await page.waitForTimeout(600);
-    assert.ok(await page.getByText('Test Trip', { exact: false }).count() > 0, 'Renamed cluster should appear in the review list');
+    await page.getByText('Test Trip', { exact: false }).first().waitFor({ timeout: 5000 });
     await page.locator('[data-heatmap-close]').click();
     console.log('Cluster review with clusters: OK');
 
@@ -141,16 +151,16 @@ try {
     await page.locator('[data-review-create]').click();
     await page.getByText(/Složka vytvořena|Folder created/).waitFor({ timeout: 10000 });
     await page.getByRole('button', { name: 'OK', exact: true }).click();
-    await page.waitForTimeout(600);
-    assert.ok(await page.getByText('Heatmap Folder', { exact: false }).count() > 0, 'New folder should appear in the tree');
+    await page.getByText('Heatmap Folder', { exact: false }).first().waitFor({ timeout: 5000 });
     await page.locator('[data-heatmap-close]').click();
     console.log('Heatmap tile -> folder: OK');
 
     // Clean state: reset clears photos/folders and skips the Timeline auto-load once.
     page.once('dialog', (dialog) => dialog.accept());
+    const navigation = page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => null);
     await page.getByRole('button', { name: '🧹' }).click();
-    await page.waitForTimeout(2500);
-    await page.waitForLoadState('domcontentloaded');
+    await navigation;
+    await page.waitForTimeout(1500);
     assert.equal(await page.locator('[data-photo-id]').count(), 0, 'Reset should remove photos');
     assert.equal(await page.getByText(/Timeline \(293\)/).count(), 0, 'Reset should skip the Timeline auto-load on first reload');
     console.log('Clean-state reset: OK');
