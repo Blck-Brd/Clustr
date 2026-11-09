@@ -79,7 +79,7 @@
 
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
-        console.info('Clustr build 2026-11-09.5 (tidy phase 2)');
+        console.info('Clustr build 2026-11-09.6 (heatmap bottom + click clusters)');
 
         // --- HELPERS (Mimo komponentu pro stabilitu) ---
         const geocodeCache = new Map();
@@ -3070,24 +3070,20 @@
                     let tripInfo = null;
 
                     if (isHeatmapWorkflow) {
-                        effectiveClusterSettings = buildClusterSettings(manualClusterSettings);
-                        setLastClusterSettings({ ...effectiveClusterSettings, profile: 'heatmap' });
+                        // Heatmap clustering starts from the density heatmap itself: each
+                        // dense run becomes a separate cluster/folder, ready to edit.
+                        effectiveClusterSettings = buildTripSettings({
+                            ...manualTripSettings,
+                            parentTripGapHours: 12
+                        });
+                        const manualStopSettings = clusteringMode === 'manual' ? buildClusterSettings(manualClusterSettings) : null;
+                        setLastClusterSettings({ profile: 'trips', trip: effectiveClusterSettings, tripMode: 'heatmap', stopMode: clusteringMode });
                         setProgress(t(
-                            'Připravuji fotky pro ruční clustery v heatmapě...',
-                            'Preparing photos for manual clusters in the heatmap...'
+                            'Seskupuji podle heatmapy...',
+                            'Grouping by heatmap...'
                         ));
-                        if (groupablePhotos.length > 0) {
-                            eventGroups.push({
-                                photos: groupablePhotos.slice().sort((a, b) => a.date - b.date),
-                                eventName: 'Uncategorized',
-                                clusterId: 'uncategorized',
-                                clusterNumber: 0,
-                                eventKind: 'misc',
-                                tripId: 'uncategorized',
-                                tripNumber: 0,
-                                stopNumber: 0
-                            });
-                        }
+                        tripInfo = buildHierarchicalEvents(groupablePhotos, homeLocation, effectiveClusterSettings, manualStopSettings);
+                        eventGroups = tripInfo.groups;
                     } else if (isTripsProfile) {
                         effectiveClusterSettings = tripSensitivityMode === 'auto'
                             ? computeAutoTripSettings(normalPhotos, homeLocation)
@@ -3235,8 +3231,8 @@
                     const randomNote = tripInfo?.randomCount > 0 ? t(' a Random', ' and Random') : '';
                     const summaryText = isHeatmapWorkflow
                         ? t(
-                            `Režim heatmapa: ${normalPhotos.length} fotek připraveno. Nakreslete clustery v dolním panelu (táhnutím nebo přes Start/End) a vytvořte složky.`,
-                            `Heatmap mode: ${normalPhotos.length} photos ready. Draw clusters in the bottom panel (drag or use Start/End) and create folders.`
+                            `Heatmap clustering: vytvořeno ${tripInfo.tripCount} clusterů${randomNote} z ${normalPhotos.length} fotek. Upravte je nebo nakreslete další v dolním panelu (klik Start, klik Konec nebo tažení).`,
+                            `Heatmap clustering: created ${tripInfo.tripCount} clusters${randomNote} from ${normalPhotos.length} photos. Edit them or draw more in the bottom panel (click start, click end, or drag).`
                         )
                         : isTripsProfile
                         ? t(
@@ -4223,10 +4219,11 @@ DATA: ${JSON.stringify(data)}`;
                 );
             };
 
-            const GALLERY_GAP = 16;
-            const GALLERY_MIN_TILE = 150;
+            const GALLERY_GAP = showClusterReview ? 8 : 16;
+            const GALLERY_MIN_TILE = showClusterReview ? 92 : 150;
+            const GALLERY_MAX_COLUMNS = showClusterReview ? 12 : 8;
             const galleryContentWidth = Math.max(0, galleryView.width - 48);
-            const galleryColumns = Math.max(1, Math.min(8, Math.floor((galleryContentWidth + GALLERY_GAP) / (GALLERY_MIN_TILE + GALLERY_GAP))));
+            const galleryColumns = Math.max(1, Math.min(GALLERY_MAX_COLUMNS, Math.floor((galleryContentWidth + GALLERY_GAP) / (GALLERY_MIN_TILE + GALLERY_GAP))));
             const galleryComputedTile = galleryColumns > 0
                 ? (galleryContentWidth - GALLERY_GAP * (galleryColumns - 1)) / galleryColumns
                 : GALLERY_MIN_TILE;
@@ -4617,6 +4614,24 @@ DATA: ${JSON.stringify(data)}`;
                                 </div>
                             )}
                         </div>
+
+                        {showClusterReview && (
+                            <ErrorBoundary onReset={() => { setShowClusterReview(false); setHeatmapPhotoIds(new Set()); }}>
+                                <ClusterReviewModal
+                                    photos={photos}
+                                    t={t}
+                                    lang={lang}
+                                    lastClusterSettings={lastClusterSettings}
+                                    onClose={() => { setShowClusterReview(false); setHeatmapPhotoIds(new Set()); }}
+                                    onHighlight={setHeatmapPhotoIds}
+                                    onApplyName={applyClusterNames}
+                                    onApplyLocation={applyClusterLocation}
+                                    onCreateFolder={createFolderFromHeatmap}
+                                    onEditTripWindow={editTripWindowFromGroup}
+                                    startInDrawMode={groupingWorkflow === 'heatmap'}
+                                />
+                            </ErrorBoundary>
+                        )}
                     </div>
 
                     {selectedPhotos.size > 0 && (
@@ -4656,24 +4671,6 @@ DATA: ${JSON.stringify(data)}`;
                                 </div>
                             </div>
                         </div>
-                    )}
-
-                    {showClusterReview && (
-                        <ErrorBoundary onReset={() => { setShowClusterReview(false); setHeatmapPhotoIds(new Set()); }}>
-                            <ClusterReviewModal
-                                photos={photos}
-                                t={t}
-                                lang={lang}
-                                lastClusterSettings={lastClusterSettings}
-                                onClose={() => { setShowClusterReview(false); setHeatmapPhotoIds(new Set()); }}
-                                onHighlight={setHeatmapPhotoIds}
-                                onApplyName={applyClusterNames}
-                                onApplyLocation={applyClusterLocation}
-                                onCreateFolder={createFolderFromHeatmap}
-                                onEditTripWindow={editTripWindowFromGroup}
-                                startInDrawMode={groupingWorkflow === 'heatmap'}
-                            />
-                        </ErrorBoundary>
                     )}
 
                     {tripModal.isOpen && (
@@ -4971,6 +4968,11 @@ DATA: ${JSON.stringify(data)}`;
                 };
             }, [bounds, clusterRange]);
 
+            const clusterRangeStartOffset = useMemo(() => {
+                if (!bounds || !clusterRange?.start) return null;
+                return Math.round((new Date(`${clusterRange.start}T00:00:00`).getTime() - bounds.minDate) / 86400000);
+            }, [bounds, clusterRange]);
+
             const rangePhotoIds = useMemo(() => {
                 const ids = new Set();
                 if (!clusterRange?.start || !clusterRange?.end) return ids;
@@ -5091,6 +5093,17 @@ DATA: ${JSON.stringify(data)}`;
                     ctx.strokeStyle = 'rgba(34, 211, 238, 0.85)';
                     ctx.lineWidth = 1.5;
                     ctx.strokeRect(x, top, w, height - top - 24);
+                } else if (clusterRangeStartOffset !== null && clusterRangeStartOffset >= 0) {
+                    const x = left + clusterRangeStartOffset * dayWidth + dayWidth / 2;
+                    ctx.save();
+                    ctx.strokeStyle = '#67e8f9';
+                    ctx.lineWidth = 2;
+                    ctx.setLineDash([4, 4]);
+                    ctx.beginPath();
+                    ctx.moveTo(x, top);
+                    ctx.lineTo(x, height - top - 24);
+                    ctx.stroke();
+                    ctx.restore();
                 }
 
                 if (dragState) {
@@ -5107,7 +5120,7 @@ DATA: ${JSON.stringify(data)}`;
                 } catch (error) {
                     console.error('Timeline heatmap draw failed', error);
                 }
-            }, [tab, groups, bounds, selectedKeys, tileSelection, dragState, clusterRangeOffsets, timelineRowHeight, timelineHeight]);
+            }, [tab, groups, bounds, selectedKeys, tileSelection, dragState, clusterRangeOffsets, clusterRangeStartOffset, timelineRowHeight, timelineHeight]);
 
             useEffect(() => {
                 if (tab !== 'map' || !mapRef.current) return;
@@ -5187,6 +5200,12 @@ DATA: ${JSON.stringify(data)}`;
                 const offset = Math.floor((x - 190) / timelineDayWidth);
                 return { row, offset, x };
             };
+            const dayKeyAtOffset = (offset) => {
+                if (!bounds) return '';
+                const date = new Date(bounds.minDate);
+                date.setDate(date.getDate() + offset);
+                return dateKey(date);
+            };
 
             const handleTimelineMouseDown = (event) => {
                 if (!timelineRef.current || !bounds || timelineGroups.length === 0) return;
@@ -5199,7 +5218,7 @@ DATA: ${JSON.stringify(data)}`;
                 if (drawMode) {
                     setSelectedKeys(new Set());
                     setTileSelection(new Set());
-                    setDragState({ global: true, row: Math.max(0, row), start: offset, end: offset });
+                    setDragState({ global: true, row: Math.max(0, row), start: offset, end: offset, moved: false });
                     event.preventDefault();
                     return;
                 }
@@ -5213,7 +5232,10 @@ DATA: ${JSON.stringify(data)}`;
                 if (!dragState || !bounds) return;
                 const { offset } = timelineOffsetAt(event);
                 const clamped = Math.max(0, Math.min(bounds.spanDays - 1, offset));
-                if (clamped !== dragState.end) setDragState({ ...dragState, end: clamped });
+                const moved = dragState.moved || clamped !== dragState.start;
+                if (clamped !== dragState.end || moved !== dragState.moved) {
+                    setDragState({ ...dragState, end: clamped, moved });
+                }
             };
 
             const handleTimelineMouseUp = () => {
@@ -5222,13 +5244,21 @@ DATA: ${JSON.stringify(data)}`;
                 const end = Math.min(bounds.spanDays - 1, Math.max(dragState.start, dragState.end));
 
                 if (dragState.global) {
-                    const startDate = new Date(bounds.minDate);
-                    startDate.setDate(startDate.getDate() + start);
-                    const endDate = new Date(bounds.minDate);
-                    endDate.setDate(endDate.getDate() + end);
-                    const startKey = dateKey(startDate);
-                    const endKey = dateKey(endDate);
-                    if (startKey && endKey) setClusterRange({ start: startKey, end: endKey });
+                    const clickedKey = dayKeyAtOffset(start);
+                    if (dragState.moved) {
+                        const startKey = dayKeyAtOffset(start);
+                        const endKey = dayKeyAtOffset(end);
+                        if (startKey && endKey) setClusterRange({ start: startKey, end: endKey });
+                    } else if (clickedKey) {
+                        setClusterRange((previous) => {
+                            if (previous?.start && !previous?.end) {
+                                return previous.start <= clickedKey
+                                    ? { start: previous.start, end: clickedKey }
+                                    : { start: clickedKey, end: previous.start };
+                            }
+                            return { start: clickedKey, end: '' };
+                        });
+                    }
                     setSelectedKeys(new Set());
                     setTileSelection(new Set());
                     setDragState(null);
@@ -5361,9 +5391,14 @@ DATA: ${JSON.stringify(data)}`;
                                     <div className="h-full overflow-auto custom-scrollbar border border-slate-800 rounded-lg p-2 bg-slate-950">
                                         <div className="text-[10px] text-slate-500 mb-1">
                                             {drawMode
-                                                ? t('Táhněte po časové ose (nebo zadejte Start/End) pro nový cluster. Po vytvoření můžete hned nakreslit další.', 'Drag on the timeline (or use Start/End) for a new cluster. After creating it, draw the next one immediately.')
+                                                ? t('Klikněte na začátek, potom na konec clusteru. Nebo táhněte pro rozsah, případně zadejte Start/End. Po vytvoření můžete hned nakreslit další.', 'Click the cluster start, then the end. Or drag a range, or type Start/End. After creating it, draw the next one immediately.')
                                                 : t('Klikněte na den pro výběr fotek, táhněte pro rozsah. Klikněte na název řádku pro celý cluster.', 'Click a day to select its photos, drag for a range. Click the row label for the whole cluster.')}
                                         </div>
+                                        {drawMode && clusterRange?.start && !clusterRange?.end && (
+                                            <div className="text-[10px] text-cyan-300 mb-1">
+                                                {t(`Start: ${clusterRange.start} – klikněte na koncový den.`, `Start: ${clusterRange.start} – click the end day.`)}
+                                            </div>
+                                        )}
                                         {timelineGroups.length < groups.length && (
                                             <div className="text-[10px] text-amber-400 p-1">
                                                 {t(`Heatmapa zobrazuje prvních ${timelineGroups.length} z ${groups.length} clusterů.`, `Heatmap shows the first ${timelineGroups.length} of ${groups.length} clusters.`)}

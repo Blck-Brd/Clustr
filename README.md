@@ -34,7 +34,7 @@ It is a single-file React app with no build step and no backend. It can be deplo
 - **Clean state** - the 🧹 button clears IndexedDB, local settings and cloud metadata.
 - **Manual trip window** - create one trip folder from all photos in a date range (e.g. 2–8 May) with an optional whole-trip location.
 - **Cluster review heatmap** - docked bottom panel; review clusters over time or on a map, click a day tile or drag a range to filter the gallery, then create a folder directly from the selected photos.
-- **Heatmap-first Phase 2** - choose auto sort or manual heatmap clusters; heatmap mode prepares the photos and lets you draw Start/End date ranges and create multiple folders back-to-back.
+- **Heatmap-first Phase 2** - choose auto sort or heatmap clustering; heatmap mode pre-builds one cluster per visible density burst, opens the bottom panel in draw mode, and supports click-start/click-end, drag ranges and Start/End date inputs for adding more folders.
 - **TODO roadmap** - see `TODO.md` for Location Tinder, Ko-fi profile rework, Vercel issues and remaining architecture tasks.
 - **Auto + manual sensitivity** - Auto derives the trip/home or place window from the dataset. Trip sensitivity (gap, home radius, session gap) and stop/place sensitivity (time, space, min photos) are separate.
 - **Trip or stop AI naming** - Phase 3 can name the top-level trip folders or the stop subfolders, preserving the other level.

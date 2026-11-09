@@ -201,7 +201,7 @@ Added after the first checkpoint:
   - Camera dates before 1900 (seen as 1899 in the `D:\Fotky` subset) or after next year fall back to the file's modified date instead of creating a bogus trip.
 - **Heatmap / review verification**:
   - Verified Phase 2 -> Review clusters on a 1,500-file subset of `D:\Fotky`: 57 groups, canvas 980x1286, no page errors.
-  - Empty review after Phase 2 is therefore treated as stale PWA shell or a dataset that is entirely screenshot/clutter. `sw.js` cache bumped to `clustr-shell-v9`; hard-reload once after deploying.
+  - Empty review after Phase 2 is therefore treated as stale PWA shell or a dataset that is entirely screenshot/clutter. `sw.js` cache bumped to `clustr-shell-v10`; hard-reload once after deploying.
 - **Deployment**:
   - Vercel: Root Directory `app`, Framework `Other`, Build/Output/Install/Dev commands empty (no override). Documented in `docs/DEPLOYMENT.md`.
 - **Housekeeping**:
@@ -250,7 +250,7 @@ Added after the first checkpoint:
   - A large `Trip 1` with density gaps can now be split into several named folders directly on the timeline; the remaining photos stay in `Uncategorized` (heatmap mode) or in the original trip (auto mode).
 - **Tests**:
   - Playwright now also covers the heatmap-first flow: select heatmap mode -> prepare -> panel opens in draw mode -> set Start/End -> create a named folder.
-  - Service worker cache bumped to `clustr-shell-v9`.
+  - Service worker cache bumped to `clustr-shell-v10`.
 
 ### Eleventh pass - tidy Phase 2 controls
 
@@ -259,7 +259,20 @@ Added after the first checkpoint:
   - The auto button has a **⚙️** cog that toggles manual clustering settings (profile, sensitivity, min photos, Random min) only when needed.
   - Small secondary actions remain: **Open heatmap** and **Manual trip**.
 - This makes the heatmap the clear core tool and keeps auto tuning out of the way.
-- Service worker cache bumped to `clustr-shell-v9`.
+- Service worker cache bumped to `clustr-shell-v10`.
+
+### Twelfth pass - bottom heatmap, click-start/end clustering
+
+- **Heatmap panel truly at the bottom**:
+  - The panel was accidentally rendered as a sibling of the main column, so the outer flex row pushed it to the right and shrank the gallery. It now lives inside the main column below the gallery: gallery on top, panel across the bottom.
+  - Gallery tile size drops from 150 px / 8 columns to 92 px / up to 12 columns while the heatmap is open, so more photos stay visible above it.
+- **Heatmap clustering now pre-builds the visible bursts**:
+  - Heatmap mode runs the same density segmentation with a 12 h parent gap, so every separate burst in the heatmap becomes its own cluster/folder immediately.
+  - The panel still opens in draw mode for editing or adding more clusters.
+- **Click-start / click-end painting**:
+  - In draw mode, the first click sets the cluster start (dashed marker), the second click sets the end (full band).
+  - A third click starts a new cluster. Dragging still selects a range, and Start/End inputs still work for precision.
+- Service worker cache bumped to `clustr-shell-v10`.
 
 ### Known limitations / next steps
 
@@ -274,7 +287,7 @@ Added after the first checkpoint:
 
 - Repository: https://github.com/Blck-Brd/Clustr
 - Deploy: Vercel Root Directory = `app`; Framework `Other`; Build/Output/Install/Dev commands empty; no overrides.
-- After deploying, hard-reload once (Ctrl+Shift+R) because the PWA shell cache was bumped to `clustr-shell-v9`.
+- After deploying, hard-reload once (Ctrl+Shift+R) because the PWA shell cache was bumped to `clustr-shell-v10`.
 - Local run: `npm run dev` → http://127.0.0.1:4173/
 - Tests: `npm run check`, `npm test`, `npm run test:browser`.
 - Next recommended task: run the full `D:\Fotky` library once and tune `randomMinPhotos` / clutter cutoff; then import a Timeline covering the photo dates, then project picker + Vite build.

@@ -485,6 +485,17 @@ for (let day = 14; day < 17; day += 1) {
 const splitHierarchy = h.buildHierarchicalEvents(splitTripPhotos, '', h.buildTripSettings());
 assert.equal(splitHierarchy.tripCount, 2, 'A multi-day gap should separate parent trips');
 
+// Heatmap mode uses a short parent gap so every visible burst becomes its own cluster.
+const burstPhotos = [];
+for (const day of [0, 10, 20, 30, 40]) {
+    for (let i = 0; i < 10; i += 1) {
+        burstPhotos.push(photo(vacationStart + day * 86400000 + 10 * 3600000 + i * 60000, 'Neznámé místo', ''));
+    }
+}
+const burstHierarchy = h.buildHierarchicalEvents(burstPhotos, '', h.buildTripSettings({ parentTripGapHours: 12 }));
+assert.equal(burstHierarchy.tripCount, 5, 'Each heatmap burst should become its own cluster');
+assert.equal(burstHierarchy.groups.filter((group) => group.eventKind === 'trip').length, 5);
+
 // Manual event edits must never detach a stop from its trip or leave a photo in two events.
 const stopAiData = {
     event_name: 'Trip 1/Stop 1 - Praha',
