@@ -3102,32 +3102,41 @@
                 });
             };
 
+            // Snapshot-based phases must not clobber preview fields that finish
+            // loading while a long parse/grouping/AI step is running.
+            const applyPhotoSnapshot = (nextPhotos) => {
+                setPhotos((previous) => {
+                    if (!Array.isArray(nextPhotos)) return nextPhotos;
+                    const previewById = new Map(previous.map((photo) => [photo.id, { url: photo.url, thumbLoading: photo.thumbLoading }]));
+                    return nextPhotos.map((photo) => {
+                        const latest = previewById.get(photo.id);
+                        return latest ? { ...photo, url: latest.url, thumbLoading: latest.thumbLoading } : photo;
+                    });
+                });
+            };
+
             const runPhase1 = async () => {
                 if (photos.length === 0) return;
                 setIsExtracting(true);
                 setProgress(t('Načítám EXIF...', 'Reading EXIF...'));
 
                 const sortedTimeline = prepareTimeline(timelineData);
-                const updated = [...photos].sort((a, b) => a.date - b.date).map((p) => ({
-                    ...p,
-                    hardData: p.hardData ? { ...p.hardData } : { location: 'Neznámé místo', dateStr: p.date.toLocaleDateString('cs-CZ'), camera: 'Neznámý fotoaparát' },
-                    aiData: p.aiData ? { ...p.aiData, tags: [...(p.aiData.tags || [])] } : { tags: [] }
-                }));
+                const snapshot = [...photos].sort((a, b) => a.date - b.date);
+                const metas = await buildMetadataMap(snapshot, sortedTimeline);
 
-                const metas = await buildMetadataMap(updated, sortedTimeline);
-
-                for (let i = 0; i < updated.length; i++) {
-                    const p = updated[i];
-                    const meta = metas.get(p.id);
-                    if (!meta) continue;
-                    const previousLocation = p.hardData?.location;
+                // Merge into the latest state so previews that finished while EXIF
+                // was parsing are not overwritten with stale url/thumbLoading values.
+                setProgress(t('Aplikuji metadata...', 'Applying metadata...'));
+                setPhotos((previous) => previous.map((photo) => {
+                    const meta = metas.get(photo.id);
+                    if (!meta) return photo;
+                    const previousLocation = photo.hardData?.location;
                     const autoTags = buildAutoTags(meta.date, { location: meta.location, camera: meta.camera });
-
-                    updated[i] = {
-                        ...p,
+                    return {
+                        ...photo,
                         date: meta.date,
                         hardData: {
-                            ...p.hardData,
+                            ...(photo.hardData || { location: 'Neznámé místo', dateStr: photo.date.toLocaleDateString('cs-CZ'), camera: 'Neznámý fotoaparát' }),
                             dateStr: meta.date.toLocaleDateString('cs-CZ'),
                             timeStr: meta.timeStr,
                             location: meta.location,
@@ -3136,15 +3145,13 @@
                             coords: meta.coords || null,
                             camera: meta.camera
                         },
-                        aiData: { ...p.aiData, tags: mergePhotoTags(p.aiData.tags, autoTags, previousLocation) }
+                        aiData: {
+                            ...(photo.aiData || { tags: [] }),
+                            tags: mergePhotoTags(photo.aiData?.tags || [], autoTags, previousLocation)
+                        }
                     };
+                }));
 
-                    if (i % 25 === 0 || i === updated.length - 1) {
-                        setPhotos([...updated]);
-                    }
-                }
-
-                setPhotos([...updated]);
                 setIsExtracting(false);
                 setProgress('');
                 setMessage({ title: t("EXIF aktualizován", "EXIF updated"), text: t("Čas, fotoaparát a lokace byly načteny. Pro seskupení spusťte fázi 2.", "Time, camera and location were loaded. Run phase 2 to group photos.") });
@@ -3195,7 +3202,7 @@
                         };
 
                         if (i % 25 === 0 || i === work.length - 1) {
-                            setPhotos([...work]);
+                            applyPhotoSnapshot(work);
                         }
                     }
 
@@ -3373,7 +3380,7 @@
                     setActiveFilters((prev) => prev.filter((filter) => !filter.startsWith('event-')));
                     setSelectedPhotos(new Set());
                     setHeatmapPhotoIds(new Set());
-                    setPhotos([...work]);
+                    applyPhotoSnapshot(work);
 
                     const knownLocations = new Set(work.map((p) => p.hardData.location).filter((location) => location && location !== 'Neznámé místo'));
                     const modeLabel = clusteringMode === 'auto' ? t('Auto', 'Auto') : t('Ruční', 'Manual');
@@ -3652,7 +3659,7 @@ DATA: ${JSON.stringify(data)}`;
                     });
 
                     setAnalyzingProgress(100);
-                    setPhotos([...updated]);
+                    applyPhotoSnapshot(updated);
                     const fallbackNote = fallbackCount > 0
                         ? t(` ${fallbackCount} událostí dostalo náhradní název podle místa a data.`, ` ${fallbackCount} events received fallback names based on location and date.`)
                         : '';
@@ -3727,10 +3734,10 @@ DATA: ${JSON.stringify(data)}`;
                         console.warn(`Vision tagging failed for ${p.name}:`, e);
                     }
 
-                    if (i % 5 === 0) setPhotos([...updated]);
+                    if (i % 5 === 0) applyPhotoSnapshot(updated);
                 }
 
-                setPhotos([...updated]);
+                applyPhotoSnapshot(updated);
                 setIsMoondreaming(false);
                 setProgress('');
                 setMessage({
@@ -5967,3 +5974,4 @@ DATA: ${JSON.stringify(data)}`;
     </script>
 </body>
 </html>
+
