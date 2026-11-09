@@ -1,4 +1,4 @@
-const CACHE_NAME = 'clustr-shell-v15';
+const CACHE_NAME = 'clustr-shell-v16';
 const APP_SHELL = [
     './',
     './index.html',
@@ -88,5 +88,6 @@ self.addEventListener('fetch', (event) => {
         }))
     );
 });
+
 
 

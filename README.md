@@ -11,7 +11,8 @@ It is a single-file React app with no build step and no backend. It can be deplo
 3. **Phase 2 - Grouping** - choose **Auto sort** (density trips/stops, home sessions, Random) or **Manual clusters in heatmap**. Auto reads EXIF, Timeline and locations and builds the event tree. Heatmap mode prepares the photos and opens the bottom heatmap panel in draw mode; drag a date range or set Start/End and create each cluster/folder manually. The event tree is still available for AI naming and export.
 4. **Phase 3 - AI Names** - sends each event summary (date, time, location, tags) to Ollama or Gemini and replaces the temporary names. Manually named events are left untouched.
 5. **Phase 4 - Visual Tags** - optional batch or single-image tagging with Moondream / Llama Vision through Ollama.
-6. **Review and Export** - use Tinder mode, edit folders/tags, then export photos and XMP sidecars.
+6. **Phase 5 - Data Fill** - walks photos that still lack a location, one at a time. Entering a place applies it to that photo and to nearby photos without a location.
+7. **Review and Export** - use Tinder mode, edit folders/tags, then export photos and XMP sidecars.
 
 ### Cluster-level edits
 
@@ -33,6 +34,7 @@ It is a single-file React app with no build step and no backend. It can be deplo
 - **Duplicate-safe import** - identical files (same name, size and modified time) are loaded once and reported.
 - **Clean state** - the 🧹 button clears IndexedDB, local settings and cloud metadata.
 - **Manual trip window** - create one trip folder from all photos in a date range (e.g. 2–8 May) with an optional whole-trip location.
+- **Data Fill phase** - Tinder-style pass over photos missing a location; entering a place applies it to that photo and to nearby photos without a location.
 - **Cluster review heatmap** - docked bottom panel; review clusters over time or on a map, click a day tile or drag a range to filter the gallery, then create a new folder from the selected photos or add them to an existing folder.
 - **Heatmap-first Phase 2** - choose auto sort or heatmap clustering; heatmap mode pre-builds one cluster per visible density burst, opens the bottom panel in draw mode, and supports click-start/click-end, drag ranges and Start/End date inputs for adding more folders.
 - **TODO roadmap** - see `TODO.md` for Location Tinder, Ko-fi profile rework, Vercel issues and remaining architecture tasks.

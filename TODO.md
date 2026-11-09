@@ -11,7 +11,6 @@
 
 ## Next features
 
-- [ ] **Location Tinder** - show a small queue of photos with missing locations (ideally a representative photo from each cluster). The user enters the location manually, and the app applies it to the whole cluster. Extend the same flow to event names if useful.
 - [ ] **Ko-fi profile rework** - redesign/rework the Ko-fi profile and its link with the app.
 - [ ] **Vercel issues** - document and fix deployment problems (environment variables, PWA/service-worker caching, HTTPS-to-localhost Ollama/CORS, Vercel root directory and headers).
 
@@ -58,3 +57,5 @@
 - [x] Natural folder sorting (`Trip 9` before `Trip 10`) and stable heatmap inputs.
 - [x] Heatmap docked at the bottom; gallery tiles shrink while it is open.
 - [x] CI fixed to use Playwright’s bundled Chromium; browser smoke test stable on Ubuntu.
+- [x] Data Fill phase - Tinder-style location filling that propagates to nearby photos.
+

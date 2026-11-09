@@ -163,6 +163,18 @@ try {
     console.log('Heatmap selection -> existing folder: OK');
     await page.locator('[data-heatmap-close]').click();
 
+    // Phase 5: fill a missing location and let it propagate to nearby photos.
+    await page.locator('[data-start-data-fill]').click();
+    await page.locator('[data-data-fill]').waitFor({ timeout: 10000 });
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+        if (await page.locator('[data-data-fill]').count() === 0) break;
+        await page.locator('[data-data-fill-input]').fill('Testovací místo');
+        await page.locator('[data-data-fill-apply]').click();
+        await page.waitForTimeout(400);
+    }
+    assert.equal(await page.locator('[data-start-data-fill]').isDisabled(), true, 'Data fill should disable once all locations are filled');
+    console.log('Data fill phase: OK');
+
     // Clean state: reset clears photos/folders and skips the Timeline auto-load once.
     page.once('dialog', (dialog) => dialog.accept());
     const navigation = page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => null);
@@ -180,4 +192,6 @@ try {
     server.kill();
     fs.rmSync(photoDir, { recursive: true, force: true });
 }
+
+
 

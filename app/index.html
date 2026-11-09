@@ -631,6 +631,15 @@
 
         const isPlaceholderEventName = (name) => /^(Event|Trip|Stop|Home)\s+\d+\b/i.test(String(name || '').trim());
 
+        const photoNeedsLocation = (photo) => {
+            if (!photo) return false;
+            if (isScreenshotCategory(photo.aiData?.category)) return false;
+            if (photo.aiData?.category === '🗑️ K vymazání') return false;
+            const location = String(photo.hardData?.location || '').trim();
+            if (!location || location === 'Neznámé místo' || location === '#Neznámé místo') return true;
+            return photo.hardData?.locationSource === 'unknown';
+        };
+
         const normalizeLocationName = (name) => String(name || '')
             .toLowerCase()
             .normalize('NFD')
@@ -1471,6 +1480,19 @@
             return targets;
         };
 
+        // Photos near the anchor that still have no real location. This includes
+        // "manual" placeholder locations like "Neznámé místo".
+        const findNeighborsMissingLocation = (photos, anchor, windowMs) => {
+            const maxGap = Number.isFinite(windowMs) ? windowMs : INTERPOLATION_WINDOW_MS;
+            const anchorTime = new Date(anchor.date).getTime();
+            const ids = new Set();
+            photos.forEach((photo) => {
+                if (photo.id === anchor.id || !photoNeedsLocation(photo)) return;
+                if (Math.abs(new Date(photo.date).getTime() - anchorTime) <= maxGap) ids.add(photo.id);
+            });
+            return ids;
+        };
+
         const buildPlaceholderEventName = (index, location) => {
             const suffix = location && location !== 'Neznámé místo' ? ` - ${location}` : '';
             return `Event ${index + 1}${suffix}`;
@@ -2197,6 +2219,11 @@
             const [showTinder, setShowTinder] = useState(false);
             const [tinderIndex, setTinderIndex] = useState(0);
             const [tinderQueue, setTinderQueue] = useState([]);
+            const [showDataFill, setShowDataFill] = useState(false);
+            const [dataFillQueue, setDataFillQueue] = useState([]);
+            const [dataFillIndex, setDataFillIndex] = useState(0);
+            const [dataFillLocation, setDataFillLocation] = useState('');
+            const [dataFillApplied, setDataFillApplied] = useState(0);
             const [renameModal, setRenameModal] = useState({ isOpen: false, oldName: '', newName: '', type: 'tag' });
             const [showExportModal, setShowExportModal] = useState(false);
             const [showHelpModal, setShowHelpModal] = useState(false);
@@ -2296,6 +2323,44 @@
                 window.addEventListener('keydown', handleKeyDown);
                 return () => window.removeEventListener('keydown', handleKeyDown);
             }, [showTinder, tinderIndex, tinderQueue]);
+
+            useEffect(() => {
+                if (!showDataFill) return;
+                const handleKeyDown = (e) => {
+                    if (e.key === 'Escape') {
+                        setShowDataFill(false);
+                    } else if (e.key === 'Enter' && e.target && e.target.dataset && e.target.dataset.dataFillInput !== undefined) {
+                        e.preventDefault();
+                        applyDataFill();
+                    } else if (e.key === 'ArrowRight' && (!e.target || e.target.tagName !== 'INPUT')) {
+                        skipDataFill();
+                    }
+                };
+                window.addEventListener('keydown', handleKeyDown);
+                return () => window.removeEventListener('keydown', handleKeyDown);
+            }, [showDataFill, dataFillIndex, dataFillQueue, dataFillLocation, photos]);
+
+            useEffect(() => {
+                if (!showDataFill) return;
+                if (dataFillQueue.length === 0) {
+                    setShowDataFill(false);
+                    return;
+                }
+                let next = dataFillIndex;
+                while (next < dataFillQueue.length) {
+                    const photo = photos.find((item) => item.id === dataFillQueue[next]);
+                    if (photo && photoNeedsLocation(photo)) break;
+                    next += 1;
+                }
+                if (next >= dataFillQueue.length) {
+                    setShowDataFill(false);
+                    return;
+                }
+                if (next !== dataFillIndex) {
+                    setDataFillIndex(next);
+                    setDataFillLocation('');
+                }
+            }, [showDataFill, dataFillIndex, dataFillQueue, photos]);
 
             useEffect(() => {
                 try {
@@ -3734,6 +3799,86 @@ DATA: ${JSON.stringify(data)}`;
                 else setShowTinder(false);
             };
 
+            // Phase 5: walk photos that still lack a location, one at a time.
+            const startDataFill = () => {
+                const seenDays = new Set();
+                const queue = [];
+                photos
+                    .filter(photoNeedsLocation)
+                    .sort((a, b) => a.date - b.date)
+                    .forEach((photo) => {
+                        const key = dateKey(photo.date) || photo.id;
+                        if (seenDays.has(key)) return;
+                        seenDays.add(key);
+                        queue.push(photo.id);
+                    });
+
+                if (queue.length === 0) {
+                    setMessage({ title: t('Vše doplněno', 'All filled'), text: t('Všechny fotky už mají lokaci.', 'All photos already have a location.') });
+                    return;
+                }
+                setDataFillQueue(queue);
+                setDataFillIndex(0);
+                setDataFillLocation('');
+                setDataFillApplied(0);
+                setShowDataFill(true);
+            };
+
+            const advanceDataFill = () => {
+                if (dataFillIndex + 1 < dataFillQueue.length) {
+                    setDataFillIndex(dataFillIndex + 1);
+                    setDataFillLocation('');
+                } else {
+                    setShowDataFill(false);
+                }
+            };
+
+            const skipDataFill = () => advanceDataFill();
+
+            const applyDataFill = () => {
+                const currentId = dataFillQueue[dataFillIndex];
+                const value = dataFillLocation.trim();
+                if (!currentId || !value) return;
+
+                const anchor = photos.find((photo) => photo.id === currentId);
+                if (!anchor) return;
+                const nearby = findNeighborsMissingLocation(photos, anchor);
+                const targetIds = new Set([currentId, ...nearby]);
+                setDataFillApplied((previous) => previous + targetIds.size);
+
+                setPhotos((previous) => previous.map((photo) => {
+                    if (!targetIds.has(photo.id)) return photo;
+                    const updated = {
+                        ...photo,
+                        hardData: { ...(photo.hardData || {}) },
+                        aiData: { ...(photo.aiData || {}) }
+                    };
+                    const oldLocation = updated.hardData.location;
+                    updated.hardData.location = value;
+                    updated.hardData.locationKey = normalizeLocationName(value);
+                    updated.hardData.locationSource = photo.id === currentId ? 'manual' : 'inherited';
+                    updated.hardData.coords = null;
+                    const tags = (updated.aiData.tags || []).filter((tag) => tag !== oldLocation && tag !== 'Neznámé místo' && tag !== '#Neznámé místo');
+                    tags.push(value);
+                    updated.aiData.tags = [...new Set(tags)];
+
+                    if (updated.aiData.eventNameSource === 'placeholder' && isPlaceholderEventName(updated.aiData.event_name || '')) {
+                        const parentParts = (updated.aiData.event_name || '').split('/').slice(0, -1).map(cleanEventName).filter(Boolean);
+                        if (updated.aiData.eventKind === 'trip') {
+                            updated.aiData.event_name = `Trip ${updated.aiData.tripNumber || 1} - ${value}`;
+                        } else if (updated.aiData.eventKind === 'trip-stop') {
+                            updated.aiData.event_name = [...parentParts, buildPlaceholderStopName((updated.aiData.stopNumber || 1) - 1, value)].join('/');
+                        } else if (updated.aiData.eventKind !== 'home') {
+                            updated.aiData.event_name = [...parentParts, buildPlaceholderEventName(placeholderEventIndex(updated.aiData), value)].join('/');
+                        }
+                    }
+
+                    return updated;
+                }));
+
+                advanceDataFill();
+            };
+
             // EXPORT NA DISK VČETNĚ ADOBE LIGHTROOM XMP SIDECAR SOUBORŮ
             const exportToDisk = async () => {
                 if (!window.showDirectoryPicker) { setMessage({ title: "Chyba", text: "Prohlížeč nepodporuje export." }); return; }
@@ -4296,6 +4441,10 @@ DATA: ${JSON.stringify(data)}`;
                 return res;
             }, [photos, activeFilters, searchQuery, heatmapPhotoIds]);
 
+            const missingLocationCount = photos.filter(photoNeedsLocation).length;
+            const dataFillPhoto = showDataFill ? photos.find((photo) => photo.id === dataFillQueue[dataFillIndex]) : null;
+            const dataFillNearbyCount = dataFillPhoto ? findNeighborsMissingLocation(photos, dataFillPhoto).size : 0;
+
             const allTags = useMemo(() => {
                 const s = new Set();
                 photos.forEach(p => {
@@ -4612,6 +4761,18 @@ DATA: ${JSON.stringify(data)}`;
                                             {isMoondreaming ? (progress || t('Analyzuji...', 'Analyzing...')) : t('🌙 Vizuální tagy', '🌙 Visual Tags')}
                                         </button>
                                     </div>
+                                    <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 space-y-2">
+                                        <div className="flex items-center justify-between">
+                                            <div className="text-[10px] text-slate-500 uppercase font-bold">{t("5. Doplňování dat", "5. Data Fill")}</div>
+                                            <span className="text-[9px] text-slate-500">{missingLocationCount} {t('bez lokace', 'without location')}</span>
+                                        </div>
+                                        <div className="text-[9px] text-slate-500">
+                                            {t('Projdi fotky bez lokace. Přidáním ji aplikuješ i na blízké fotky.', 'Review photos without a location. Adding it also applies to nearby photos.')}
+                                        </div>
+                                        <button data-start-data-fill onClick={startDataFill} disabled={missingLocationCount === 0} className="w-full bg-fuchsia-600 p-2 rounded text-xs font-bold text-white hover:bg-fuchsia-500 disabled:bg-slate-700">
+                                            {t('🧭 Doplnit lokace', '🧭 Fill locations')}
+                                        </button>
+                                    </div>
                                     <div className="flex gap-2">
                                         <button onClick={startTinder} className="flex-1 bg-orange-600 p-2 rounded text-xs text-white font-bold hover:bg-orange-500">{t("🔥 Tinder", "🔥 Tinder")}</button>
                                         <button onClick={() => setShowExportModal(true)} className="flex-1 bg-emerald-600 p-2 rounded text-xs text-white font-bold hover:bg-emerald-500">{t("💾 Export", "💾 Export")}</button>
@@ -4886,6 +5047,59 @@ DATA: ${JSON.stringify(data)}`;
                             <div className="p-12 flex justify-center gap-12 bg-gradient-to-t from-black to-transparent">
                                 <button onClick={() => handleTinderSwipe(false)} className="w-32 h-32 rounded-full bg-rose-600 text-white font-bold text-xl shadow-lg hover:scale-110 transition-transform">🗑️ {t("Zahodit", "Discard")}</button>
                                 <button onClick={() => handleTinderSwipe(true)} className="w-32 h-32 rounded-full bg-emerald-600 text-white font-bold text-xl shadow-lg hover:scale-110 transition-transform">💚 {t("Ponechat", "Keep")}</button>
+                            </div>
+                        </div>
+                    )}
+
+                    {showDataFill && dataFillPhoto && (
+                        <div data-data-fill="true" className="fixed inset-0 bg-black/95 z-[100] flex flex-col">
+                            <div className="p-6 text-white flex justify-between items-center bg-gradient-to-b from-black to-transparent">
+                                <div>
+                                    <h2 className="text-2xl font-bold text-fuchsia-400">🧭 {t('Doplňování dat', 'Data Fill')}</h2>
+                                    <p className="text-xs text-slate-400">{t('Fotka bez lokace – přidej místo a aplikuj ho i na blízké fotky.', 'Photo without a location – add a place and apply it to nearby photos too.')}</p>
+                                </div>
+                                <div className="flex items-center gap-4">
+                                    <span data-data-fill-counter className="text-xs text-slate-400">{dataFillIndex + 1} / {dataFillQueue.length} · {t('doplněno', 'filled')}: {dataFillApplied}</span>
+                                    <button onClick={() => setShowDataFill(false)} className="bg-slate-800 px-4 py-2 rounded-full text-sm">{t('Zavřít', 'Close')}</button>
+                                </div>
+                            </div>
+                            <div className="flex-1 flex flex-col items-center justify-center p-8 gap-4 min-h-0">
+                                {dataFillPhoto.url ? (
+                                    <img src={dataFillPhoto.url} className="max-h-[52vh] max-w-full object-contain rounded-xl shadow-2xl" />
+                                ) : (
+                                    <div className="w-96 h-72 bg-slate-800 rounded-xl flex flex-col items-center justify-center text-slate-400 border border-slate-700 shadow-2xl">
+                                        <span className="text-6xl mb-4">📷</span>
+                                        <span className="text-sm">{dataFillPhoto.thumbLoading ? t('Načítám náhled…', 'Loading preview…') : dataFillPhoto.name}</span>
+                                    </div>
+                                )}
+                                <div className="text-center text-sm text-slate-300">
+                                    <div className="font-bold">{dataFillPhoto.name}</div>
+                                    <div className="text-slate-400">
+                                        {dataFillPhoto.hardData?.dateStr || new Date(dataFillPhoto.date).toLocaleDateString(lang === 'cs' ? 'cs-CZ' : 'en-US')}
+                                        {dataFillPhoto.aiData?.event_name ? ` · ${dataFillPhoto.aiData.event_name}` : ''}
+                                    </div>
+                                    <div className="text-slate-500 mt-1">
+                                        {t('Lokace', 'Location')}: {dataFillPhoto.hardData?.location || t('chybí', 'missing')}
+                                        {' · '}
+                                        {dataFillNearbyCount} {t('blízkých fotek bez lokace', 'nearby photos without location')}
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="p-8 flex flex-col items-center gap-4 bg-gradient-to-t from-black to-transparent">
+                                <input
+                                    key={dataFillPhoto.id}
+                                    data-data-fill-input
+                                    autoFocus
+                                    type="text"
+                                    value={dataFillLocation}
+                                    onChange={(e) => setDataFillLocation(e.target.value)}
+                                    placeholder={t('Zadejte lokaci… (např. Turnov)', 'Enter a location… (e.g. Turnov)')}
+                                    className="w-full max-w-md bg-slate-800 p-3 rounded text-white border border-slate-700 focus:border-fuchsia-500 outline-none"
+                                />
+                                <div className="flex gap-8 items-center">
+                                    <button onClick={skipDataFill} className="w-32 h-20 rounded-full bg-slate-700 text-white font-bold text-lg shadow-lg hover:scale-105 transition-transform">⏭️ {t('Přeskočit', 'Skip')}</button>
+                                    <button data-data-fill-apply onClick={applyDataFill} disabled={!dataFillLocation.trim()} className="w-44 h-20 rounded-full bg-emerald-600 text-white font-bold text-lg shadow-lg hover:scale-105 transition-transform disabled:bg-slate-700 disabled:scale-100">✅ {t('Použít', 'Apply')}</button>
+                                </div>
                             </div>
                         </div>
                     )}

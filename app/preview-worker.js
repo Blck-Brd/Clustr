@@ -133,6 +133,106 @@ const collectUtifCandidates = (buffer, candidates) => {
     }
 };
 
+// Walks JPEG markers from an SOI offset and returns the offset just past EOI.
+const findJpegEnd = (data, start, limit) => {
+    let i = start + 2;
+    while (i + 1 < limit) {
+        if (data[i] !== 0xFF) return -1;
+        let marker = data[i + 1];
+        while (marker === 0xFF && i + 2 < limit) {
+            i += 1;
+            marker = data[i + 1];
+        }
+        if (marker === 0xD8 || marker === 0x01 || (marker >= 0xD0 && marker <= 0xD7)) {
+            i += 2;
+            continue;
+        }
+        if (marker === 0xD9) return i + 2;
+        if (i + 3 >= limit) return -1;
+        const segLen = (data[i + 2] << 8) | data[i + 3];
+        if (segLen < 2) return -1;
+        if (marker === 0xDA) {
+            i += 2 + segLen;
+            while (i + 1 < limit) {
+                if (data[i] === 0xFF) {
+                    const next = data[i + 1];
+                    if (next === 0x00 || next === 0xFF) { i += next === 0xFF ? 1 : 2; continue; }
+                    if (next >= 0xD0 && next <= 0xD7) { i += 2; continue; }
+                    if (next === 0xD9) return i + 2;
+                    break;
+                }
+                i += 1;
+            }
+            continue;
+        }
+        i += 2 + segLen;
+    }
+    return -1;
+};
+
+const readJpegSize = (data, offset, length) => {
+    const limit = offset + length;
+    let i = offset + 2;
+    while (i + 8 < limit) {
+        if (data[i] !== 0xFF) return null;
+        let marker = data[i + 1];
+        while (marker === 0xFF) {
+            i += 1;
+            marker = data[i + 1];
+        }
+        if (marker === 0xD8 || marker === 0x01 || (marker >= 0xD0 && marker <= 0xD7)) {
+            i += 2;
+            continue;
+        }
+        if (marker === 0xD9) return null;
+        if (marker >= 0xC0 && marker <= 0xCF && marker !== 0xC4 && marker !== 0xC8 && marker !== 0xCC) {
+            return {
+                height: (data[i + 5] << 8) | data[i + 6],
+                width: (data[i + 7] << 8) | data[i + 8]
+            };
+        }
+        const segLen = (data[i + 2] << 8) | data[i + 3];
+        if (segLen < 2) return null;
+        i += 2 + segLen;
+    }
+    return null;
+};
+
+// Some raws lack a standard IFD thumbnail but still carry an embedded JPEG
+// preview. Scan for JPEG streams and prefer one close to gallery size.
+const findJpegStreams = (data, maxStreams = 5) => {
+    const streams = [];
+    const length = data.length;
+    let i = 0;
+    while (i + 3 < length) {
+        if (data[i] === 0xFF && data[i + 1] === 0xD8 && data[i + 2] === 0xFF) {
+            const end = findJpegEnd(data, i, length);
+            if (end > i && end - i >= 1024 && end - i <= 40e6) {
+                const size = readJpegSize(data, i, end - i);
+                streams.push({ offset: i, length: end - i, width: size?.width || 0, height: size?.height || 0 });
+                i = end;
+                continue;
+            }
+        }
+        i += 1;
+    }
+
+    const maxEdge = (stream) => Math.max(stream.width, stream.height);
+    const medium = streams.filter((stream) => maxEdge(stream) >= 480 && maxEdge(stream) <= 1600).sort((a, b) => a.length - b.length);
+    const large = streams.filter((stream) => maxEdge(stream) > 1600).sort((a, b) => a.length - b.length);
+    const small = streams.filter((stream) => maxEdge(stream) > 0 && maxEdge(stream) < 480).sort((a, b) => b.length - a.length);
+    const unknown = streams.filter((stream) => maxEdge(stream) === 0).sort((a, b) => b.length - a.length);
+    return [...medium, ...large, ...small, ...unknown].slice(0, maxStreams);
+};
+
+const collectJpegCandidates = (buffer, candidates) => {
+    const data = new Uint8Array(buffer);
+    findJpegStreams(data).forEach(({ offset, length }) => {
+        const copy = data.slice(offset, offset + length);
+        candidates.push({ kind: 'bytes', buffer: copy.buffer, mime: 'image/jpeg' });
+    });
+};
+
 self.onmessage = async (event) => {
     const data = event.data || {};
     if (data.type !== 'preview' || !data.file) return;
@@ -150,15 +250,15 @@ self.onmessage = async (event) => {
         } catch (error) {}
     }
 
-    // Only fall back to UTIF when there is no embedded exifr preview. The
-    // vendored UTIF parser has bounds/recursion guards so malformed raw files
-    // return quickly instead of hanging.
+    // Only fall back when there is no embedded exifr preview. First look for a
+    // larger embedded JPEG preview, then use the guarded UTIF parser.
     const ext = String(data.file.name || '').split('.').pop().toLowerCase();
     const canUseUtif = ['nef', 'cr2', 'arw', 'dng', 'raf', 'orf', 'tif', 'tiff'].includes(ext);
-    if (!hasEmbeddedThumbnail && canUseUtif) {
+    if (!hasEmbeddedThumbnail) {
         try {
             const buffer = await data.file.arrayBuffer();
-            collectUtifCandidates(buffer, candidates);
+            collectJpegCandidates(buffer, candidates);
+            if (canUseUtif) collectUtifCandidates(buffer, candidates);
         } catch (error) {}
     }
 
