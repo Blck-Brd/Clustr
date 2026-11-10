@@ -3457,10 +3457,16 @@ DATA: ${JSON.stringify(data)}`;
                             <div className="w-full max-w-md rounded-2xl border border-amber-700/60 bg-slate-900 p-6 text-center shadow-2xl">
                                 <div className="text-4xl mb-3">🚧</div>
                                 <h2 className="text-xl font-bold text-amber-300 mb-2">{t('Clustr je ve zkušebním provozu', 'Clustr is in early access')}</h2>
-                                <p className="text-sm text-slate-400 leading-relaxed mb-6">
+                                <p className="text-sm text-slate-400 leading-relaxed mb-4">
                                     {t(
                                         'Některé funkce se mohou ještě změnit nebo rozbít. Doporučuji pracovat s kopií fotek a výsledné složky si zkontrolovat. Zpětná vazba, nápady i hlášení chyb jsou vítané.',
                                         'Some features may still change or break. Work from a copy of your photos and check the exported folders. Feedback, ideas and bug reports are welcome.'
+                                    )}
+                                </p>
+                                <p className="text-xs text-slate-500 leading-relaxed mb-6">
+                                    {t(
+                                        'Clustr je primárně určen pro práci na PC s fotkami z fotoaparátu. Použití na mobilu je doplňkové a omezené.',
+                                        'Clustr is primarily built for a PC + camera workflow. Mobile use is secondary and more limited.'
                                     )}
                                 </p>
                                 <div className="flex flex-col gap-2">

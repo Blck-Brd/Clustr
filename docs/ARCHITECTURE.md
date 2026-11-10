@@ -3,8 +3,9 @@
 ## Repository layout
 
 ```text
-app/                 PWA source (single-file React app for now)
-  index.html         UI, EXIF, Timeline, clustering, AI phases, export
+app/                 PWA source (build-free React app)
+  index.html         Desktop UI shell, phases, dialogs and export flow
+  core.js            Shared engine: EXIF, Timeline, clustering, AI and export helpers
   manifest.webmanifest
   sw.js              Service worker (app shell + CDN cache)
   icons/             PWA icons

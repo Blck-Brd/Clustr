@@ -4,7 +4,9 @@
 
 Clustr is a free, ad-free, browser-based photo organizer. It reads EXIF metadata, matches photo times against Google Timeline, groups photos into trip and stop folders using time, place and density heatmaps, and exports a clean folder hierarchy with Adobe Lightroom XMP sidecars. AI event naming and vision tags are optional.
 
-It is a single-file React app with no build step and no backend. Photos are processed locally and are never uploaded. The app can be installed as a PWA on Vercel or GitHub Pages.
+It is a build-free static React app with no backend (`app/index.html` plus the shared `app/core.js` engine). Photos are processed locally and are never uploaded. The app can be installed as a PWA on Vercel or GitHub Pages.
+
+**Intended workflow: PC + camera.** Clustr assumes photos are copied from a camera or memory card to a computer, then sorted and exported there in a Chromium-based desktop browser. Phone use is secondary: mobile browsers restrict folder import, local file export and local AI.
 
 > **Status: early access / zkušební provoz.** Features and file formats may still change or break. Work from a copy of your photos and review the exported folders before deleting anything. Bug reports, ideas and feedback are welcome at **andrejkos2077@gmail.com** or through the ✉️ feedback button in the app header.
 
@@ -185,7 +187,7 @@ Clustr is completely free and ad-free. It was built at home by one person, witho
 ## Notes
 
 - The app loads React, Babel and Tailwind from CDNs, so the first load needs an internet connection. exifr, heic2any and UTIF are vendored for offline previews.
-- Babel transforms JSX in the browser; this is convenient for a single-file tool but slower than a pre-built bundle.
+- Babel transforms JSX in the browser; this is convenient for a build-free tool but slower than a pre-built bundle.
 - Phase 2 resets non-manual names to temporary `Trip N/Stop M - location`, `Home N` or `Event N` names. Manually renamed events (via the tree or bulk editor) are preserved.
 
 ## Documentation
