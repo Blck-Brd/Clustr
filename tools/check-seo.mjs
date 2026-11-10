@@ -43,6 +43,10 @@ assert.ok(index.includes(`<link rel="canonical" href="${origin}/">`), 'index can
 assert.ok(index.includes(`<meta property="og:url" content="${origin}/">`), 'index og:url is missing');
 assert.ok(index.includes(`<meta property="og:image" content="${origin}/seo/og-image.png">`), 'index og:image is missing');
 assert.ok(index.includes('<meta name="twitter:card" content="summary_large_image">'), 'index Twitter card is missing');
+assert.ok(
+    index.includes('<meta name="google-site-verification" content="69xO3w1lHzsVXhXqpg3o4wInsvPhOkpTuymytnRUMCg">'),
+    'index should keep the Google Search Console verification tag'
+);
 assert.ok(index.includes('href="/about"'), 'index should link to the about page');
 assert.ok(graphTypes(indexLd).includes('SoftwareApplication'), 'index JSON-LD should include SoftwareApplication');
 assert.ok(graphTypes(indexLd).includes('WebSite'), 'index JSON-LD should include WebSite');

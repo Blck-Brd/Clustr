@@ -41,6 +41,10 @@ The production origin is `https://clustr-photo.vercel.app/`. `cleanUrls` is enab
 
 `app/robots.txt` and `app/sitemap.xml` are served from the app root. The sitemap lists the app and both landing pages with hreflang alternates. `app/seo/og-image.png` is the 1200×630 social card; regenerate it with `npm run og`.
 
+The Google Search Console HTML verification tag is kept in `app/index.html`
+(`google-site-verification`); `npm run check` fails if it is removed. Add a Bing
+`msvalidate.01` tag next to it only once Bing Webmaster Tools gives you a token.
+
 After each production deploy:
 
 1. Verify the property in Google Search Console (HTML tag or DNS).
