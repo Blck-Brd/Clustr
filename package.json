@@ -2,7 +2,7 @@
   "name": "clustr",
   "version": "0.2.0",
   "private": true,
-  "description": "Clustr - local-first AI photo sorter PWA",
+  "description": "Clustr - local-first cluster and heatmap photo sorter PWA",
   "type": "module",
   "scripts": {
     "dev": "node tools/serve.mjs",
@@ -20,3 +20,4 @@
     "@vercel/analytics": "^2.0.1"
   }
 }
+

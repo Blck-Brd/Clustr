@@ -102,6 +102,10 @@ try {
     await page.locator('input[webkitdirectory]').setInputFiles(photoDir);
     await page.locator('[data-photo-id]').first().waitFor({ timeout: 15000 });
 
+    const allCrumbs = await page.locator('[data-folder-breadcrumbs]').innerText();
+    assert.ok(/All photos|Všechny fotky/.test(allCrumbs), `Breadcrumb should say All photos: ${allCrumbs}`);
+    console.log('All photos breadcrumb: OK');
+
     const initialTiles = await page.locator('[data-photo-id]').count();
     assert.ok(initialTiles > 0, 'Gallery should render tiles');
     assert.ok(initialTiles < 120, `Gallery should virtualize (${initialTiles}/120 tiles rendered)`);
@@ -127,6 +131,16 @@ try {
     await page.locator('[data-auto-clustering]').click();
     await page.getByText(/Seskupeno|Grouped/).waitFor({ timeout: 60000 });
     await page.getByRole('button', { name: 'OK', exact: true }).click();
+
+    assert.ok((await page.locator('[data-phase="2"]').innerText()).includes('✓'), 'Phase 2 should show a completion checkmark');
+    for (const step of [3, 4, 5]) {
+        const card = page.locator(`[data-phase="${step}"]`);
+        const text = await card.innerText();
+        assert.ok(/optional|volitelné/.test(text), `Phase ${step} should be marked optional`);
+        await card.locator('button', { hasText: '⚙️' }).click();
+    }
+    assert.ok(await page.locator('[data-phase="3"] select').first().isVisible(), 'Phase 3 cog should reveal settings');
+    console.log('Phase checkmarks, optional labels and cogs: OK');
     await page.locator('[data-open-heatmap]').click();
     await page.locator('[data-heatmap-panel]').waitFor({ timeout: 10000 });
     await page.locator('[data-cluster-group]').first().waitFor({ timeout: 10000 });
@@ -163,6 +177,11 @@ try {
     console.log('Heatmap selection -> existing folder: OK');
     await page.locator('[data-heatmap-close]').click();
 
+    await page.locator('[data-folder-tree]').getByText('Heatmap - Folder', { exact: false }).first().click();
+    const folderCrumbs = await page.locator('[data-folder-breadcrumbs]').innerText();
+    assert.ok(folderCrumbs.includes('Heatmap - Folder'), `Breadcrumb should show the selected folder: ${folderCrumbs}`);
+    console.log('Folder breadcrumb: OK');
+
     // Phase 5: fill a missing location and let it propagate to nearby photos.
     await page.locator('[data-start-data-fill]').click();
     await page.locator('[data-data-fill]').waitFor({ timeout: 10000 });
@@ -174,6 +193,35 @@ try {
     }
     assert.equal(await page.locator('[data-start-data-fill]').isDisabled(), true, 'Data fill should disable once all locations are filled');
     console.log('Data fill phase: OK');
+
+    // Export: fake the File System Access API and verify progress + Lightroom XMP.
+    await page.evaluate(() => {
+        window.__xmp = [];
+        const dir = {
+            getDirectoryHandle: async () => dir,
+            getFileHandle: async () => ({
+                createWritable: async () => ({
+                    write: async (data) => {
+                        if (typeof data === 'string') window.__xmp.push(data);
+                        await new Promise((resolve) => setTimeout(resolve, 6));
+                    },
+                    close: async () => {}
+                })
+            })
+        };
+        window.showDirectoryPicker = async () => dir;
+    });
+    await page.locator('[data-export-open]').click();
+    await page.locator('[data-export-run]').click();
+    await page.locator('[data-export-progress]').waitFor({ timeout: 10000 });
+    await page.getByText(/Export hotov|Export done/).waitFor({ timeout: 60000 });
+    await page.getByRole('button', { name: 'OK', exact: true }).click();
+    const xmpSidecars = await page.evaluate(() => window.__xmp);
+    assert.ok(xmpSidecars.length > 0, 'XMP sidecars should be written');
+    assert.ok(xmpSidecars[0].includes('<dc:subject>'), 'XMP should contain keywords');
+    assert.ok(xmpSidecars[0].includes('<lr:hierarchicalSubject>'), 'XMP should contain the Lightroom hierarchy');
+    assert.ok(xmpSidecars[0].includes('<Iptc4xmpCore:Location>'), 'XMP should contain the Lightroom location field');
+    console.log('Export progress + Lightroom XMP: OK');
 
     // Clean state: reset clears photos/folders and skips the Timeline auto-load once.
     page.once('dialog', (dialog) => dialog.accept());

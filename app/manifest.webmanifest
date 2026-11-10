@@ -1,7 +1,7 @@
 {
-  "name": "Clustr - AI Photo Sorter",
+  "name": "Clustr - Cluster & Heatmap Photo Sorter",
   "short_name": "Clustr",
-  "description": "Local-first AI photo sorter with EXIF, Google Timeline locations, event clustering and Lightroom export.",
+  "description": "Local-first photo sorter with EXIF, Google Timeline locations, cluster and heatmap grouping, and Lightroom export.",
   "id": "./",
   "start_url": "./",
   "scope": "./",
@@ -24,3 +24,4 @@
     }
   ]
 }
+

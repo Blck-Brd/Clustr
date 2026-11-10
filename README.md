@@ -1,6 +1,6 @@
-# Clustr - AI Photo Sorter
+# Clustr - Cluster & Heatmap Photo Sorter
 
-Clustr is a local-first, browser-based photo organizer. It reads EXIF metadata, matches photo times against Google Timeline, groups photos into events by time and place, names those events with AI, adds visual tags, and exports a folder hierarchy with Adobe Lightroom XMP sidecars.
+Clustr is a local-first, browser-based photo organizer. It reads EXIF metadata, matches photo times against Google Timeline, groups photos into cluster folders using time, place and density heatmaps, and exports a folder hierarchy with Adobe Lightroom XMP sidecars. AI event naming and visual tags are optional extras.
 
 It is a single-file React app with no build step and no backend. It can be deployed as a PWA on Vercel or GitHub Pages.
 
@@ -8,11 +8,14 @@ It is a single-file React app with no build step and no backend. It can be deplo
 
 1. **Upload Folder** - select a photo directory.
 2. **Timeline JSON (optional)** - import Google Timeline so locations can be assigned by photo time.
-3. **Phase 2 - Grouping** - choose **Auto sort** (density trips/stops, home sessions, Random) or **Manual clusters in heatmap**. Auto reads EXIF, Timeline and locations and builds the event tree. Heatmap mode prepares the photos and opens the bottom heatmap panel in draw mode; drag a date range or set Start/End and create each cluster/folder manually. The event tree is still available for AI naming and export.
-4. **Phase 3 - AI Names** - sends each event summary (date, time, location, tags) to Ollama or Gemini and replaces the temporary names. Manually named events are left untouched.
-5. **Phase 4 - Visual Tags** - optional batch or single-image tagging with Moondream / Llama Vision through Ollama.
-6. **Phase 5 - Data Fill** - walks photos that still lack a location, one at a time. Entering a place applies it to that photo and to nearby photos without a location.
-7. **Review and Export** - use Tinder mode, edit folders/tags, then export photos and XMP sidecars.
+3. **Phase 1 - EXIF metadata** - extracts date, camera, GPS and location. The home city setting lives behind the phase cog.
+4. **Phase 2 - Clustering & heatmaps** - choose **Auto clustering** (density trips/stops, home sessions, Random) or **Heatmap clustering**. Auto reads EXIF, Timeline and locations and builds the event tree. Heatmap mode prepares the photos and opens the bottom heatmap panel in draw mode; drag a date range or set Start/End and create each cluster/folder manually. The event tree remains available for naming and export.
+5. **Phase 3 - Event names (optional)** - sends each event summary (date, time, location, tags) to Ollama or Gemini and replaces the temporary names. Manually named events are left untouched. Model settings are behind the cog.
+6. **Phase 4 - Visual Tags (optional)** - batch or single-image tagging with Moondream / Llama Vision through Ollama. Model settings are behind the cog.
+7. **Phase 5 - Data Fill (optional)** - walks photos that still lack a location, one at a time. Entering a place applies it to that photo and to nearby photos without a location; the nearby window is configurable behind the cog.
+8. **Review and Export** - filter with the breadcrumb bar, use Tinder mode, edit folders/tags, then export photos and XMP sidecars with a live progress dialog.
+
+Completed phases display a checkmark. Every phase keeps its settings behind the cog icon so the sidebar stays compact.
 
 ### Cluster-level edits
 
@@ -34,10 +37,12 @@ It is a single-file React app with no build step and no backend. It can be deplo
 - **Duplicate-safe import** - identical files (same name, size and modified time) are loaded once and reported.
 - **Clean state** - the 🧹 button clears IndexedDB, local settings and cloud metadata.
 - **Manual trip window** - create one trip folder from all photos in a date range (e.g. 2–8 May) with an optional whole-trip location.
-- **Data Fill phase** - Tinder-style pass over photos missing a location; entering a place applies it to that photo and to nearby photos without a location.
+- **Data Fill phase** - Tinder-style pass over photos missing a location; entering a place applies it to that photo and to nearby photos without a location, with a configurable time window.
 - **Cluster review heatmap** - docked bottom panel; review clusters over time or on a map, click a day tile or drag a range to filter the gallery, then create a new folder from the selected photos or add them to an existing folder.
+- **Folder breadcrumbs** - the gallery header shows `All photos` or every active folder path (`Trip 1 → Stop 2`) so the current filter is always visible.
+- **Phase progress** - completed phases get a checkmark, optional phases are labelled, and all per-phase settings collapse under a cog icon.
 - **Heatmap-first Phase 2** - choose auto sort or heatmap clustering; heatmap mode pre-builds one cluster per visible density burst, opens the bottom panel in draw mode, and supports click-start/click-end, drag ranges and Start/End date inputs for adding more folders.
-- **TODO roadmap** - see `TODO.md` for Location Tinder, Ko-fi profile rework, Vercel issues and remaining architecture tasks.
+- **TODO roadmap** - see `TODO.md` for Ko-fi profile rework, Vercel issues and remaining architecture tasks.
 - **Auto + manual sensitivity** - Auto derives the trip/home or place window from the dataset. Trip sensitivity (gap, home radius, session gap) and stop/place sensitivity (time, space, min photos) are separate.
 - **Trip or stop AI naming** - Phase 3 can name the top-level trip folders or the stop subfolders, preserving the other level.
 - **Manual cluster edits** - Split selected photos into a new event, or merge events by renaming them together.
@@ -49,7 +54,7 @@ It is a single-file React app with no build step and no backend. It can be deplo
 - **Vision tagging** - short image descriptions converted into cleaned keyword tags.
 - **Folder tree** - nested folders with drag & drop, rename, wrap, and bulk editing.
 - **Tinder mode** - fast keep / discard review with arrow keys.
-- **Lightroom export** - Windows-safe folder/file names, duplicate handling, and escaped XMP keywords and city metadata.
+- **Lightroom export** - Windows-safe folder/file names, duplicate handling, and a progress dialog. XMP sidecars write `dc:subject` keywords, `lr:hierarchicalSubject` folder paths, `photoshop:City` and `Iptc4xmpCore:Location`.
 - **PWA** - installable app shell with a service worker and offline caching for the app and CDN libraries.
 - **CZ / EN UI** and persisted settings (models, home location, folders).
 
@@ -137,10 +142,12 @@ Small vision models such as Moondream do not follow keyword instructions reliabl
 
 ## Notes
 
-- The app loads React, Babel, Tailwind, exifr, heic2any, and UTIF from CDNs, so the first load needs an internet connection.
+- The app loads React, Babel and Tailwind from CDNs, so the first load needs an internet connection. exifr, heic2any and UTIF are vendored for offline previews.
 - Babel transforms JSX in the browser; this is convenient for a single-file tool but slower than a pre-built bundle.
 - Phase 2 resets non-manual names to temporary `Trip N/Stop M - location`, `Home N` or `Event N` names. Manually renamed events (via the tree or bulk editor) are preserved.
 
 ## Continue here
 
-See `docs/DEVLOG.md` for the current checkpoint, test results and next tasks.
+- Tutorial (English): `docs/TUTORIAL.md`
+- Tutorial (Czech): `docs/TUTORIAL.cs.md`
+- Current checkpoint, test results and next tasks: `docs/DEVLOG.md`

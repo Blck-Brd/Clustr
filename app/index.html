@@ -4,14 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#0f172a">
-    <meta name="description" content="Clustr - local-first AI photo sorter. EXIF, Google Timeline, event clustering, AI names and Lightroom export.">
+    <meta name="description" content="Clustr - local-first photo sorter with clusters and heatmaps. EXIF, Google Timeline, event folders, previews and Lightroom export.">
     <link rel="manifest" href="manifest.webmanifest">
     <link rel="icon" type="image/png" href="icons/favicon.png">
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Clustr">
-    <title>Clustr - AI Photo Sorter</title>
+    <title>Clustr - Cluster & Heatmap Photo Sorter</title>
     <!-- Vercel Web Analytics (static host). Enable it in the Vercel dashboard. -->
     <script>
         (function () {
@@ -2226,6 +2226,7 @@
             const [dataFillApplied, setDataFillApplied] = useState(0);
             const [renameModal, setRenameModal] = useState({ isOpen: false, oldName: '', newName: '', type: 'tag' });
             const [showExportModal, setShowExportModal] = useState(false);
+            const [exportProgress, setExportProgress] = useState(null);
             const [showHelpModal, setShowHelpModal] = useState(false);
             const [showClusterReview, setShowClusterReview] = useState(false);
             const [heatmapPhotoIds, setHeatmapPhotoIds] = useState(() => new Set());
@@ -2259,6 +2260,12 @@
             const [groupingProfile, setGroupingProfile] = useState(initialSettings.groupingProfile || 'trips');
             const [groupingWorkflow, setGroupingWorkflow] = useState(initialSettings.groupingWorkflow || 'auto');
             const [showGroupingSettings, setShowGroupingSettings] = useState(false);
+            const [showPhase1Settings, setShowPhase1Settings] = useState(false);
+            const [showNamingSettings, setShowNamingSettings] = useState(false);
+            const [showVisionSettings, setShowVisionSettings] = useState(false);
+            const [showDataFillSettings, setShowDataFillSettings] = useState(false);
+            const [completedSteps, setCompletedSteps] = useState(() => (initialSettings.completedSteps && typeof initialSettings.completedSteps === 'object') ? initialSettings.completedSteps : {});
+            const [dataFillWindowHours, setDataFillWindowHours] = useState(Number(initialSettings.dataFillWindowHours) || 12);
             const [tripSensitivityMode, setTripSensitivityMode] = useState(initialSettings.tripSensitivityMode || 'auto');
             const [clusteringMode, setClusteringMode] = useState(initialSettings.clusteringMode || 'auto');
             const [manualClusterSettings, setManualClusterSettings] = useState({
@@ -2378,10 +2385,12 @@
                         tripGapHours: manualTripSettings.tripGapHours,
                         homeRadiusKm: manualTripSettings.homeRadiusKm,
                         homeSessionGapHours: manualTripSettings.homeSessionGapHours,
-                        tripRandomMinPhotos: manualTripSettings.randomMinPhotos
+                        tripRandomMinPhotos: manualTripSettings.randomMinPhotos,
+                        completedSteps,
+                        dataFillWindowHours
                     }));
                 } catch (e) {}
-            }, [lang, namingLevel, textModel, textModelCustom, geminiModelCustom, homeLocation, visionModel, visionModelCustom, customFolders, groupingProfile, groupingWorkflow, tripSensitivityMode, clusteringMode, manualClusterSettings, manualTripSettings]);
+            }, [lang, namingLevel, textModel, textModelCustom, geminiModelCustom, homeLocation, visionModel, visionModelCustom, customFolders, groupingProfile, groupingWorkflow, tripSensitivityMode, clusteringMode, manualClusterSettings, manualTripSettings, completedSteps, dataFillWindowHours]);
 
             useEffect(() => {
                 if (modelAutoFixRef.current || ollamaModels.length === 0) return;
@@ -2677,6 +2686,7 @@
                 setNeedsRelink(false);
                 setLocalMetadata(null);
                 setCloudMetadata(null);
+                setCompletedSteps({});
                 processThumbnails(loaded);
 
                 if (deduped.duplicates > 0) {
@@ -3177,6 +3187,7 @@
 
                 setIsExtracting(false);
                 setProgress('');
+                setCompletedSteps((previous) => ({ ...previous, 1: true }));
                 setMessage({ title: t("EXIF aktualizován", "EXIF updated"), text: t("Čas, fotoaparát a lokace byly načteny. Pro seskupení spusťte fázi 2.", "Time, camera and location were loaded. Run phase 2 to group photos.") });
             };
 
@@ -3423,6 +3434,7 @@
                             `Created ${eventGroups.length} events from ${normalPhotos.length} photos (${knownLocations.size} locations). ${modeLabel} mode: ${effectiveClusterSettings.epsTimeHours.toFixed(1)} h / ${effectiveClusterSettings.epsSpaceKm.toFixed(1)} km, min ${effectiveClusterSettings.minPoints} photos.`
                         );
                     setMessage({ title: isHeatmapWorkflow ? t('Heatmapa připravena', 'Heatmap ready') : t("Seskupeno", "Grouped"), text: summaryText });
+                    setCompletedSteps((previous) => ({ ...previous, 1: true, 2: true }));
                     if (isHeatmapWorkflow) setShowClusterReview(true);
                 } catch (e) {
                     setMessage({ title: t("Chyba seskupení", "Grouping error"), text: e.message });
@@ -3694,6 +3706,7 @@ DATA: ${JSON.stringify(data)}`;
                             `AI named ${clusters.length - fallbackCount} ${levelLabel}. Updated ${changesCount} photos.${fallbackNote}`
                         )
                     });
+                    setCompletedSteps((previous) => ({ ...previous, 3: true }));
                 } catch (e) {
                     setMessage({ title: t("Chyba AI", "AI Error"), text: e.message });
                 }
@@ -3763,6 +3776,7 @@ DATA: ${JSON.stringify(data)}`;
                 applyPhotoSnapshot(updated);
                 setIsMoondreaming(false);
                 setProgress('');
+                setCompletedSteps((previous) => ({ ...previous, 4: true }));
                 setMessage({
                     title: t("Vizuální tagy", "Visual Tags"),
                     text: t(
@@ -3844,6 +3858,7 @@ DATA: ${JSON.stringify(data)}`;
                     });
 
                 if (queue.length === 0) {
+                    setCompletedSteps((previous) => ({ ...previous, 5: true }));
                     setMessage({ title: t('Vše doplněno', 'All filled'), text: t('Všechny fotky už mají lokaci.', 'All photos already have a location.') });
                     return;
                 }
@@ -3872,9 +3887,10 @@ DATA: ${JSON.stringify(data)}`;
 
                 const anchor = photos.find((photo) => photo.id === currentId);
                 if (!anchor) return;
-                const nearby = findNeighborsMissingLocation(photos, anchor);
+                const nearby = findNeighborsMissingLocation(photos, anchor, dataFillWindowHours * 3600000);
                 const targetIds = new Set([currentId, ...nearby]);
                 setDataFillApplied((previous) => previous + targetIds.size);
+                setCompletedSteps((previous) => ({ ...previous, 5: true }));
 
                 setPhotos((previous) => previous.map((photo) => {
                     if (!targetIds.has(photo.id)) return photo;
@@ -3912,14 +3928,30 @@ DATA: ${JSON.stringify(data)}`;
             // EXPORT NA DISK VČETNĚ ADOBE LIGHTROOM XMP SIDECAR SOUBORŮ
             const exportToDisk = async () => {
                 if (!window.showDirectoryPicker) { setMessage({ title: "Chyba", text: "Prohlížeč nepodporuje export." }); return; }
+
+                let rootHandle;
                 try {
-                    const rootHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+                    rootHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+                } catch (e) {
+                    if (e?.name !== 'AbortError') setMessage({ title: t('Chyba exportu', 'Export error'), text: e.message });
+                    return;
+                }
+
+                const exportPhotos = photos.filter((p) => p.aiData?.category !== '🗑️ K vymazání' && p.file);
+                if (exportPhotos.length === 0) {
+                    setMessage({ title: t('Nic k exportu', 'Nothing to export'), text: t('Nejsou vybrány žádné fotky k exportu.', 'There are no photos to export.') });
+                    return;
+                }
+
+                setExportProgress({ done: 0, total: exportPhotos.length, current: '' });
+
+                try {
                     const usedNamesByFolder = new Map();
                     let exportedCount = 0;
 
-                    for (const p of photos) {
-                        if (p.aiData?.category === '🗑️ K vymazání') continue;
-                        if (!p.file) continue;
+                    for (let index = 0; index < exportPhotos.length; index += 1) {
+                        const p = exportPhotos[index];
+                        setExportProgress({ done: index, total: exportPhotos.length, current: p.name });
 
                         let folderPath = p.aiData?.event_name || p.hardData?.location || "Ostatní";
                         if (isScreenshotCategory(p.aiData?.category) || p.aiData?.tags?.includes('Screenshot')) {
@@ -3947,25 +3979,39 @@ DATA: ${JSON.stringify(data)}`;
                         await writable.write(p.file);
                         await writable.close();
 
-                        // 2. Vygenerování a uložení .XMP sidecar souboru pro Lightroom
-                        const tags = [...new Set(p.aiData?.tags || [])];
+                        // 2. XMP sidecar that Lightroom can read: flat keywords + hierarchy + location.
                         const location = p.hardData?.location || '';
                         const eventName = p.aiData?.event_name || '';
-                        const tagItems = tags.map(tag => `<rdf:li>${escapeXml(tag)}</rdf:li>`);
-                        if (eventName) tagItems.push(`<rdf:li>${escapeXml(eventName)}</rdf:li>`);
+                        const eventLeaf = eventName.split('/').filter(Boolean).pop() || '';
+                        const keywords = new Set(p.aiData?.tags || []);
+                        if (eventLeaf) keywords.add(eventLeaf);
+                        if (location) keywords.add(location);
+
+                        const keywordItems = [...keywords].map(tag => `<rdf:li>${escapeXml(tag)}</rdf:li>`);
+                        const hierarchyItems = eventName
+                            ? [`<rdf:li>${escapeXml(eventName.split('/').filter(Boolean).join('|'))}</rdf:li>`]
+                            : [];
 
                         const xmpContent = `<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>
 <x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="Adobe XMP Core 7.0-c000 1.000000, 2021/01/01-00:00:00">
  <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
   <rdf:Description rdf:about=""
     xmlns:dc="http://purl.org/dc/elements/1.1/"
-    xmlns:photoshop="http://ns.adobe.com/photoshop/1.0/">
+    xmlns:photoshop="http://ns.adobe.com/photoshop/1.0/"
+    xmlns:lr="http://ns.adobe.com/lightroom/1.0/"
+    xmlns:Iptc4xmpCore="http://iptc.org/std/Iptc4xmpCore/1.0/xmlns/">
    <dc:subject>
     <rdf:Bag>
-     ${tagItems.join('\n     ')}
+     ${keywordItems.join('\n     ')}
     </rdf:Bag>
-   </dc:subject>
+   </dc:subject>${hierarchyItems.length ? `
+   <lr:hierarchicalSubject>
+    <rdf:Bag>
+     ${hierarchyItems.join('\n     ')}
+    </rdf:Bag>
+   </lr:hierarchicalSubject>` : ''}
    <photoshop:City>${escapeXml(location)}</photoshop:City>
+   <Iptc4xmpCore:Location>${escapeXml(location)}</Iptc4xmpCore:Location>
   </rdf:Description>
  </rdf:RDF>
 </x:xmpmeta>
@@ -3978,11 +4024,23 @@ DATA: ${JSON.stringify(data)}`;
                         await xmpWritable.write(xmpContent);
                         await xmpWritable.close();
                         exportedCount += 1;
+
+                        // Let React paint the progress bar between files.
+                        await new Promise((resolve) => setTimeout(resolve, 0));
                     }
 
+                    setExportProgress({ done: exportPhotos.length, total: exportPhotos.length, current: '' });
+                    await new Promise((resolve) => setTimeout(resolve, 350));
                     setShowExportModal(false);
-                    setMessage({ title: "Export hotov!", text: `Uloženo ${exportedCount} fotek včetně Adobe Lightroom XMP souborů.` });
-                } catch (e) { setMessage({ title: "Chyba exportu", text: e.message }); }
+                    setExportProgress(null);
+                    setMessage({
+                        title: t('Export hotov!', 'Export done!'),
+                        text: t(`Uloženo ${exportedCount} fotek včetně Adobe Lightroom XMP souborů.`, `Saved ${exportedCount} photos including Adobe Lightroom XMP sidecars.`)
+                    });
+                } catch (e) {
+                    setExportProgress(null);
+                    setMessage({ title: t('Chyba exportu', 'Export error'), text: e.message });
+                }
             };
 
             const handleRename = () => {
@@ -4473,7 +4531,38 @@ DATA: ${JSON.stringify(data)}`;
 
             const missingLocationCount = photos.filter(photoNeedsLocation).length;
             const dataFillPhoto = showDataFill ? photos.find((photo) => photo.id === dataFillQueue[dataFillIndex]) : null;
-            const dataFillNearbyCount = dataFillPhoto ? findNeighborsMissingLocation(photos, dataFillPhoto).size : 0;
+            const dataFillNearbyCount = dataFillPhoto ? findNeighborsMissingLocation(photos, dataFillPhoto, dataFillWindowHours * 3600000).size : 0;
+            const activeFolderPaths = useMemo(() => {
+                const paths = activeFilters
+                    .filter((filter) => filter.startsWith('event-'))
+                    .map((filter) => filter.slice('event-'.length));
+                return [...new Set(paths)].sort(naturalCompare);
+            }, [activeFilters]);
+
+            const phaseDone = {
+                1: Boolean(completedSteps[1]) || photos.some((photo) => photo.hardData?.dateStr),
+                2: Boolean(completedSteps[2]) || photos.some((photo) => photo.aiData?.event_name),
+                3: Boolean(completedSteps[3]),
+                4: Boolean(completedSteps[4]),
+                5: Boolean(completedSteps[5]) || (photos.length > 0 && missingLocationCount === 0)
+            };
+
+            const phaseHeader = (step, title, optional, isDone, isOpen, onToggle) => (
+                <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] text-slate-400 uppercase font-bold flex items-center gap-1.5 min-w-0">
+                        <span className={`inline-flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-bold shrink-0 ${isDone ? 'bg-emerald-500 text-white' : 'bg-slate-800 text-slate-500 border border-slate-700'}`}>
+                            {isDone ? '✓' : step}
+                        </span>
+                        <span className="truncate">{title}</span>
+                        {optional && <span className="text-[9px] text-slate-500 normal-case font-medium">({t('volitelné', 'optional')})</span>}
+                    </span>
+                    <button
+                        onClick={onToggle}
+                        title={t('Nastavení fáze', 'Phase settings')}
+                        className={`text-xs px-1.5 py-0.5 rounded shrink-0 ${isOpen ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'}`}
+                    >⚙️</button>
+                </div>
+            );
 
             const allTags = useMemo(() => {
                 const s = new Set();
@@ -4567,7 +4656,7 @@ DATA: ${JSON.stringify(data)}`;
                     <div className="w-80 bg-slate-900 border-r border-slate-800 flex flex-col">
                         <div className="p-6 border-b border-slate-800">
                             <h1 className="text-xl font-bold text-orange-400">⚡ Clustr</h1>
-                            <p className="text-[10px] text-slate-500 uppercase tracking-wider">{t("AI třídění fotek", "AI Photo Sorter")}</p>
+                            <p className="text-[10px] text-slate-500 uppercase tracking-wider">{t("Třídění podle clusterů a heatmap", "Cluster & heatmap sorter")}</p>
                         </div>
                         <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar">
                             <div className="space-y-2">
@@ -4581,18 +4670,22 @@ DATA: ${JSON.stringify(data)}`;
                             
                             {photos.length > 0 && (
                                 <div className="space-y-4">
-                                    <div className="p-3 bg-slate-950 rounded-lg border border-slate-800">
-                                        <div className="text-[10px] text-slate-500 mb-2 uppercase font-bold">{t("1. EXIF metadata (volitelné)", "1. EXIF metadata (optional)")}</div>
+                                    <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 space-y-2" data-phase="1">
+                                        {phaseHeader(1, t('EXIF metadata', 'EXIF metadata'), false, phaseDone[1], showPhase1Settings, () => setShowPhase1Settings(v => !v))}
                                         <button onClick={runPhase1} disabled={isExtracting} className="w-full bg-blue-600 p-2 rounded text-xs text-white hover:bg-blue-500 disabled:bg-slate-700">
                                             {isExtracting ? (progress || t('Zpracovávám...', 'Processing...')) : t('📍 Načíst EXIF', '📍 Extract EXIF')}
                                         </button>
+                                        {showPhase1Settings && (
+                                            <div className="space-y-2 border-t border-slate-800 pt-2">
+                                                <div className="text-[10px] text-slate-500 font-bold">{t('🏡 Kde je domov? (proti falešným výletům)', '🏡 Where is home?')}</div>
+                                                <input type="text" value={homeLocation} onChange={e => setHomeLocation(e.target.value)} placeholder={t("Město (např. Praha)...", "City (e.g. Prague)...")} className="w-full bg-slate-800 p-1.5 rounded text-xs text-white border border-slate-700" />
+                                                <div className="text-[9px] text-slate-500">{t('Pomáhá rozpoznat domácí focení a falešné výlety.', 'Helps recognise home sessions and false trips.')}</div>
+                                            </div>
+                                        )}
                                     </div>
 
-                                    <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 space-y-2">
-                                        <div className="flex items-center justify-between">
-                                            <span className="text-[10px] text-slate-500 uppercase font-bold">{t("2. Fáze 2 – Seskupení", "2. Phase 2 – Grouping")}</span>
-                                            <button onClick={() => setShowGroupingSettings(v => !v)} title={t('Ruční nastavení clusteringu', 'Manual clustering settings')} className={`text-xs px-1.5 py-0.5 rounded ${showGroupingSettings ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'}`}>⚙️</button>
-                                        </div>
+                                    <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 space-y-2" data-phase="2">
+                                        {phaseHeader(2, t('Clustering & heatmaps', 'Clustering & heatmaps'), false, phaseDone[2], showGroupingSettings, () => setShowGroupingSettings(v => !v))}
 
                                         <button data-heatmap-clustering onClick={() => runPhase2('heatmap')} disabled={isGrouping} className="w-full bg-cyan-600 p-2 rounded text-xs font-bold text-white hover:bg-cyan-500 disabled:bg-slate-700 disabled:cursor-wait">
                                             {isGrouping ? (progress || t('⏳ Zpracovávám...', '⏳ Working...')) : t('📊 Heatmap clustering', '📊 Heatmap clustering')}
@@ -4601,12 +4694,9 @@ DATA: ${JSON.stringify(data)}`;
                                             {t('Nakreslete clustery přímo v časové heatmapě.', 'Draw clusters directly on the time heatmap.')}
                                         </div>
 
-                                        <div className="flex gap-1">
-                                            <button data-auto-clustering onClick={() => runPhase2('auto')} disabled={isGrouping} className="flex-1 bg-slate-800 p-2 rounded text-xs text-slate-200 hover:bg-slate-700 disabled:bg-slate-700 disabled:cursor-wait">
-                                                {isGrouping ? (progress || t('⏳ Seskupuji...', '⏳ Grouping...')) : t('⚡ Auto clustering', '⚡ Auto clustering')}
-                                            </button>
-                                            <button onClick={() => setShowGroupingSettings(v => !v)} title={t('Ruční nastavení clusteringu', 'Manual clustering settings')} className="px-2 bg-slate-800 hover:bg-slate-700 rounded text-slate-300">⚙️</button>
-                                        </div>
+                                        <button data-auto-clustering onClick={() => runPhase2('auto')} disabled={isGrouping} className="w-full bg-slate-800 p-2 rounded text-xs text-slate-200 hover:bg-slate-700 disabled:bg-slate-700 disabled:cursor-wait">
+                                            {isGrouping ? (progress || t('⏳ Seskupuji...', 'Grouping...')) : t('⚡ Auto clustering', '⚡ Auto clustering')}
+                                        </button>
 
                                         {showGroupingSettings && (
                                             <div className="space-y-2 border-t border-slate-800 pt-2">
@@ -4723,9 +4813,11 @@ DATA: ${JSON.stringify(data)}`;
                                         </div>
                                     </div>
 
-                                    <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 space-y-2">
-                                        <div className="text-[10px] text-slate-500 mb-1 uppercase font-bold">{t("3. AI názvy událostí (volitelné)", "3. AI Event Names (optional)")}</div>
+                                    <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 space-y-2" data-phase="3">
+                                        {phaseHeader(3, t('Event names', 'Event names'), true, phaseDone[3], showNamingSettings, () => setShowNamingSettings(v => !v))}
 
+                                        {showNamingSettings && (
+                                            <div className="space-y-2 border-t border-slate-800 pt-2">
                                         <select value={namingLevel} onChange={e => setNamingLevel(e.target.value)} className="w-full bg-slate-800 text-xs p-1 rounded border border-slate-700 text-white">
                                             <option value="trips">{t("AI názvy: Cesty (hlavní složky)", "AI names: Trips (folders)")}</option>
                                             <option value="stops">{t("AI názvy: Zastávky (vnořené složky)", "AI names: Stops (subfolders)")}</option>
@@ -4746,9 +4838,6 @@ DATA: ${JSON.stringify(data)}`;
                                             <option value="gemini-custom">{t("Google Gemini: Vlastní model...", "Google Gemini: Custom model...")}</option>
                                         </select>
 
-                                        <div className="text-[10px] text-slate-500 mt-2 mb-1 font-bold">{t("🏡 Kde je domov? (proti falešným výletům)", "🏡 Where is home?")}</div>
-                                        <input type="text" value={homeLocation} onChange={e => setHomeLocation(e.target.value)} placeholder={t("Město (např. Praha)...", "City (e.g. Prague)...")} className="w-full bg-slate-800 p-1.5 rounded text-xs text-white border border-slate-700" />
-
                                         {textModel === 'custom' && (
                                             <input type="text" value={textModelCustom} onChange={e => setTextModelCustom(e.target.value)} placeholder={t("Název Ollama modelu...", "Ollama model name...")} className="w-full bg-slate-800 p-1 rounded text-xs text-white border border-slate-700 mt-2" />
                                         )}
@@ -4759,6 +4848,8 @@ DATA: ${JSON.stringify(data)}`;
 
                                         {isGeminiSelection(textModel) && (
                                             <input type="password" value={geminiApiKey} onChange={e => setGeminiApiKey(e.target.value)} placeholder={t("Zadejte Gemini API klíč...", "Enter Gemini API key...")} className="w-full bg-slate-800 p-1 rounded text-xs text-white border border-slate-700 mt-2" />
+                                        )}
+                                            </div>
                                         )}
 
                                         <button onClick={runPhase3} disabled={isAnalyzing} className="relative w-full bg-rose-600 p-2 rounded text-xs text-white hover:bg-rose-500 disabled:bg-slate-700 disabled:cursor-wait group overflow-hidden mt-2">
@@ -4774,8 +4865,10 @@ DATA: ${JSON.stringify(data)}`;
                                         </button>
                                     </div>
 
-                                    <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 space-y-2">
-                                        <div className="text-[10px] text-slate-500 mb-1 uppercase font-bold">{t("4. Vizuální tagy", "4. Visual Tags")}</div>
+                                    <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 space-y-2" data-phase="4">
+                                        {phaseHeader(4, t('Visual tags', 'Visual tags'), true, phaseDone[4], showVisionSettings, () => setShowVisionSettings(v => !v))}
+                                        {showVisionSettings && (
+                                            <div className="space-y-2 border-t border-slate-800 pt-2">
                                         <select value={visionModel} onChange={e => setVisionModel(e.target.value)} className="w-full bg-slate-800 text-xs p-1 rounded border border-slate-700 text-white">
                                             <option value="moondream">Moondream</option>
                                             <option value="llama3.2-vision">Llama 3.2 Vision</option>
@@ -4787,14 +4880,17 @@ DATA: ${JSON.stringify(data)}`;
                                         {visionModel === 'custom' && (
                                             <input type="text" value={visionModelCustom} onChange={e => setVisionModelCustom(e.target.value)} placeholder={t("Název modelu...", "Model name...")} className="w-full bg-slate-800 p-1 rounded text-xs text-white border border-slate-700" />
                                         )}
+                                            </div>
+                                        )}
                                         <button onClick={runPhase4} disabled={isMoondreaming} className="w-full bg-amber-600 p-2 rounded text-xs text-white hover:bg-amber-500 disabled:bg-slate-700">
                                             {isMoondreaming ? (progress || t('Analyzuji...', 'Analyzing...')) : t('🌙 Vizuální tagy', '🌙 Visual Tags')}
                                         </button>
                                     </div>
-                                    <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 space-y-2">
-                                        <div className="flex items-center justify-between">
-                                            <div className="text-[10px] text-slate-500 uppercase font-bold">{t("5. Doplňování dat", "5. Data Fill")}</div>
-                                            <span className="text-[9px] text-slate-500">{missingLocationCount} {t('bez lokace', 'without location')}</span>
+                                    <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 space-y-2" data-phase="5">
+                                        {phaseHeader(5, t('Data fill', 'Data fill'), true, phaseDone[5], showDataFillSettings, () => setShowDataFillSettings(v => !v))}
+                                        <div className="flex items-center justify-between text-[9px] text-slate-500">
+                                            <span>{t('Chybějící lokace', 'Missing locations')}</span>
+                                            <span>{missingLocationCount} {t('bez lokace', 'without location')}</span>
                                         </div>
                                         <div className="text-[9px] text-slate-500">
                                             {t('Projdi fotky bez lokace. Přidáním ji aplikuješ i na blízké fotky.', 'Review photos without a location. Adding it also applies to nearby photos.')}
@@ -4802,10 +4898,17 @@ DATA: ${JSON.stringify(data)}`;
                                         <button data-start-data-fill onClick={startDataFill} disabled={missingLocationCount === 0} className="w-full bg-fuchsia-600 p-2 rounded text-xs font-bold text-white hover:bg-fuchsia-500 disabled:bg-slate-700">
                                             {t('🧭 Doplnit lokace', '🧭 Fill locations')}
                                         </button>
+                                        {showDataFillSettings && (
+                                            <div className="space-y-2 border-t border-slate-800 pt-2">
+                                                <div className="text-[10px] text-slate-500 font-bold">{t('Blízké okno (hodiny)', 'Nearby window (hours)')}</div>
+                                                <input type="number" min="1" max="72" step="1" value={dataFillWindowHours} onChange={e => setDataFillWindowHours(Math.max(1, Number(e.target.value) || 12))} className="w-full bg-slate-800 p-1 rounded text-xs text-white border border-slate-700" />
+                                                <div className="text-[9px] text-slate-500">{t('Lokace se aplikuje na fotky v tomto časovém okně.', 'The location is applied to photos within this time window.')}</div>
+                                            </div>
+                                        )}
                                     </div>
                                     <div className="flex gap-2">
                                         <button onClick={startTinder} className="flex-1 bg-orange-600 p-2 rounded text-xs text-white font-bold hover:bg-orange-500">{t("🔥 Tinder", "🔥 Tinder")}</button>
-                                        <button onClick={() => setShowExportModal(true)} className="flex-1 bg-emerald-600 p-2 rounded text-xs text-white font-bold hover:bg-emerald-500">{t("💾 Export", "💾 Export")}</button>
+                                        <button data-export-open onClick={() => setShowExportModal(true)} className="flex-1 bg-emerald-600 p-2 rounded text-xs text-white font-bold hover:bg-emerald-500">{t("💾 Export", "💾 Export")}</button>
                                     </div>
                                 </div>
                             )}
@@ -4891,6 +4994,36 @@ DATA: ${JSON.stringify(data)}`;
                                 )}
                             </div>
                         </div>
+                        {photos.length > 0 && (
+                            <div data-folder-breadcrumbs className="px-6 py-2 bg-slate-900/60 border-b border-slate-800 space-y-1 shrink-0">
+                                {activeFolderPaths.length === 0 ? (
+                                    <div className="flex items-center gap-1.5 text-[11px]">
+                                        <span className="text-slate-500 shrink-0">🖼️</span>
+                                        <span className="text-slate-300 font-bold">{t('Všechny fotky', 'All photos')}</span>
+                                    </div>
+                                ) : activeFolderPaths.map((path) => {
+                                    const parts = path.split('/').filter(Boolean);
+                                    return (
+                                        <div key={path} className="flex items-center gap-1.5 text-[11px] min-w-0">
+                                            <span className="text-slate-500 shrink-0">📁</span>
+                                            <div className="flex items-center gap-1.5 min-w-0 overflow-x-auto custom-scrollbar whitespace-nowrap">
+                                                {parts.map((part, index) => (
+                                                    <React.Fragment key={`${path}-${index}`}>
+                                                        {index > 0 && <span className="text-slate-600">→</span>}
+                                                        <span className={index === parts.length - 1 ? 'text-orange-300 font-bold' : 'text-slate-400'}>{part}</span>
+                                                    </React.Fragment>
+                                                ))}
+                                            </div>
+                                            <button
+                                                onClick={() => setActiveFilters((previous) => previous.filter((filter) => filter !== `event-${path}`))}
+                                                className="text-slate-500 hover:text-rose-400 shrink-0"
+                                                title={t('Zrušit filtr složky', 'Clear folder filter')}
+                                            >×</button>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
                         <div ref={galleryRef} data-gallery="true" className="flex-1 min-h-0 overflow-y-auto p-6 custom-scrollbar pb-32">
                             {filteredPhotos.length > 0 && (
                                 <div style={{ height: `${galleryTotalHeight}px`, position: 'relative' }}>
@@ -5136,14 +5269,33 @@ DATA: ${JSON.stringify(data)}`;
 
                     {showExportModal && (
                         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-                            <div className="bg-slate-900 p-6 rounded-xl border border-slate-700 w-full max-w-xs text-center">
+                            <div className="bg-slate-900 p-6 rounded-xl border border-slate-700 w-full max-w-sm text-center">
                                 <div className="text-2xl mb-2">💾</div>
                                 <div className="font-bold mb-2">{t("Export na disk", "Export to Disk")}</div>
-                                <div className="text-sm text-slate-400 mb-6">{t("Fotky a Adobe Lightroom XMP sidecar soubory budou uloženy do hierarchických složek.", "Photos and Adobe Lightroom XMP sidecar files will be saved into hierarchical folders.")}</div>
-                                <div className="flex flex-col gap-2">
-                                    <button onClick={exportToDisk} className="bg-emerald-600 py-2 rounded text-white font-bold hover:bg-emerald-500">{t("Vybrat složku a spustit", "Select folder and run")}</button>
-                                    <button onClick={() => setShowExportModal(false)} className="text-slate-500 text-sm">{t("Zrušit", "Cancel")}</button>
-                                </div>
+                                {exportProgress ? (
+                                    <div data-export-progress className="space-y-3 mt-4">
+                                        <div className="flex justify-between text-xs text-slate-400">
+                                            <span>{t('Exportuji…', 'Exporting…')}</span>
+                                            <span className="font-bold text-slate-200">{exportProgress.done} / {exportProgress.total}</span>
+                                        </div>
+                                        <div className="w-full bg-slate-800 rounded-full h-3 overflow-hidden border border-slate-700">
+                                            <div
+                                                className="bg-emerald-500 h-3 transition-all duration-200"
+                                                style={{ width: `${exportProgress.total > 0 ? Math.round((exportProgress.done / exportProgress.total) * 100) : 0}%` }}
+                                            />
+                                        </div>
+                                        <div className="text-[10px] text-slate-500 truncate h-4">{exportProgress.current || ' '}</div>
+                                        <div className="text-[10px] text-slate-500">{t('Fotky a XMP sidecary se ukládají do složek.', 'Photos and XMP sidecars are being written to folders.')}</div>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <div className="text-sm text-slate-400 mb-6">{t("Fotky a Adobe Lightroom XMP sidecar soubory budou uloženy do hierarchických složek.", "Photos and Adobe Lightroom XMP sidecar files will be saved into hierarchical folders.")}</div>
+                                        <div className="flex flex-col gap-2">
+                                            <button data-export-run onClick={exportToDisk} className="bg-emerald-600 py-2 rounded text-white font-bold hover:bg-emerald-500">{t("Vybrat složku a spustit", "Select folder and run")}</button>
+                                            <button onClick={() => setShowExportModal(false)} className="text-slate-500 text-sm">{t("Zrušit", "Cancel")}</button>
+                                        </div>
+                                    </>
+                                )}
                             </div>
                         </div>
                     )}

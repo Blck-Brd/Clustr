@@ -314,3 +314,24 @@ Added after the first checkpoint:
 - Local run: `npm run dev` → http://127.0.0.1:4173/
 - Tests: `npm run check`, `npm test`, `npm run test:browser`.
 - Next recommended task: refine the end-to-end workflow design (see `TODO.md` → Workflow / UX), then run the full `D:\Fotky` library and tune `randomMinPhotos` / clutter cutoff; import a Timeline covering the photo dates; then project picker + Vite build.
+
+### Fifteenth pass - phase UI, export progress and Lightroom metadata
+
+- Phase design refresh:
+  - Every phase now shows a completion checkmark; Phases 3, 4 and 5 are labelled optional.
+  - All per-phase settings live behind a cog icon: home city (Phase 1), grouping sensitivity (Phase 2), naming model (Phase 3), vision model (Phase 4), nearby window (Phase 5).
+  - Phase 2 is titled **Clustering & heatmaps**; the app subtitle and metadata no longer position it as an AI sorter.
+- Gallery breadcrumbs:
+  - Always shows **All photos** when no folder filter is active.
+  - Shows one row per active folder as `Parent -> Child -> Stop`, with a clear button.
+  - Multiple selected folders produce multiple breadcrumb rows.
+- Export:
+  - After choosing a destination, the export dialog shows the current file, count and a progress bar.
+  - XMP sidecars now write `dc:subject`, `lr:hierarchicalSubject`, `photoshop:City` and `Iptc4xmpCore:Location`, so Lightroom reads keywords, folder hierarchy and location.
+- Previews:
+  - Raw preview extraction now prefers same-name JPG siblings, then exifr/embedded JPEG scanning, nested IFDs, multi-strip JPEGs and guarded UTIF decoding.
+  - Preview workers run with a timeout so malformed raws cannot block the queue.
+- Documentation:
+  - README, manifest and package descriptions updated for the cluster/heatmap positioning.
+  - English and Czech tutorials added in `docs/` and copied to `C:\Users\andre\Documents\TheraDiary`.
+- Tests: `npm run check`, `npm test`, and `npm run test:browser` cover breadcrumbs, phase checkmarks/cogs, data fill, export progress and XMP output.
