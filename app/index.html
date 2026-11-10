@@ -176,6 +176,13 @@
                 }
             });
             const [showMobileSidebar, setShowMobileSidebar] = useState(false);
+            const [isStandalone] = useState(() => {
+                try {
+                    return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+                } catch (e) {
+                    return false;
+                }
+            });
             
             const fileInputRef = useRef(null);
             const photoInputRef = useRef(null);
@@ -206,6 +213,12 @@
             }, []);
 
             useEffect(() => {
+                if (isMobileLayout) {
+                    setOllamaStatus('unavailable');
+                    setOllamaModels([]);
+                    return;
+                }
+
                 let cancelled = false;
                 let inFlight = false;
 
@@ -234,7 +247,14 @@
                     cancelled = true;
                     clearInterval(intervalId);
                 };
-            }, []);
+            }, [isMobileLayout]);
+
+            // Ollama only listens on the desktop's localhost. On phones fall back to Gemini.
+            useEffect(() => {
+                if (!isMobileLayout) return;
+                if (textModel === 'gemini-custom' || isGeminiSelection(textModel)) return;
+                setTextModel('gemini-3.8-flash');
+            }, [isMobileLayout]);
 
             useEffect(() => {
                 const handleKeyDown = (e) => {
@@ -685,6 +705,7 @@
                     setHeatmapPhotoIds(new Set());
                 }
                 processThumbnails(loaded);
+                try { navigator.storage?.persist?.(); } catch (e) {}
 
                 if (loaded.length === 0 && skippedDuplicates > 0) {
                     setMessage({
@@ -3050,14 +3071,18 @@ DATA: ${JSON.stringify(data)}`;
                                         </select>
 
                                         <select value={textModel} onChange={e => setTextModel(e.target.value)} className="w-full bg-slate-800 text-xs p-1 rounded border border-slate-700 text-white">
-                                            <option value="llama3.2">Ollama: Llama 3.2</option>
-                                            <option value="phi3">Ollama: Phi-3</option>
-                                            <option value="qwen2.5">Ollama: Qwen 2.5</option>
-                                            <option value="custom">{t("Ollama: Vlastní model...", "Ollama: Custom model...")}</option>
-                                            {ollamaModels
-                                                .filter((m) => !['llama3.2', 'phi3', 'qwen2.5'].includes(m))
-                                                .filter((m) => !/^(moondream|llava|llama3\.2-vision|bakllava|minicpm-v)/i.test(m))
-                                                .map((m) => <option key={m} value={m}>{`Ollama: ${m}`}</option>)}
+                                            {!isMobileLayout && (
+                                                <>
+                                                    <option value="llama3.2">Ollama: Llama 3.2</option>
+                                                    <option value="phi3">Ollama: Phi-3</option>
+                                                    <option value="qwen2.5">Ollama: Qwen 2.5</option>
+                                                    <option value="custom">{t("Ollama: Vlastní model...", "Ollama: Custom model...")}</option>
+                                                    {ollamaModels
+                                                        .filter((m) => !['llama3.2', 'phi3', 'qwen2.5'].includes(m))
+                                                        .filter((m) => !/^(moondream|llava|llama3\.2-vision|bakllava|minicpm-v)/i.test(m))
+                                                        .map((m) => <option key={m} value={m}>{`Ollama: ${m}`}</option>)}
+                                                </>
+                                            )}
                                             <option value="gemini-3.8-flash">Google Gemini (3.8 Flash)</option>
                                             <option value="gemini-3.5-flash-lite">Google Gemini (3.5 Flash-Lite)</option>
                                             <option value="gemini-3.1-pro-preview">Google Gemini (3.1 Pro Preview)</option>
@@ -3095,21 +3120,27 @@ DATA: ${JSON.stringify(data)}`;
                                         {phaseHeader(4, t('Visual tags', 'Visual tags'), true, phaseDone[4], showVisionSettings, () => setShowVisionSettings(v => !v))}
                                         {showVisionSettings && (
                                             <div className="space-y-2 border-t border-slate-800 pt-2">
-                                        <select value={visionModel} onChange={e => setVisionModel(e.target.value)} className="w-full bg-slate-800 text-xs p-1 rounded border border-slate-700 text-white">
-                                            <option value="moondream">Moondream</option>
-                                            <option value="llama3.2-vision">Llama 3.2 Vision</option>
-                                            <option value="custom">{t("Vlastní model...", "Custom model...")}</option>
-                                            {ollamaModels
-                                                .filter((m) => !['moondream', 'llama3.2-vision'].includes(m))
-                                                .map((m) => <option key={m} value={m}>{m}</option>)}
-                                        </select>
-                                        {visionModel === 'custom' && (
-                                            <input type="text" value={visionModelCustom} onChange={e => setVisionModelCustom(e.target.value)} placeholder={t("Název modelu...", "Model name...")} className="w-full bg-slate-800 p-1 rounded text-xs text-white border border-slate-700" />
-                                        )}
+                                                {isMobileLayout ? (
+                                                    <div className="text-[10px] text-slate-500">{t('Vizuální tagy vyžadují Ollama na PC.', 'Visual tags require Ollama on a desktop.')}</div>
+                                                ) : (
+                                                    <>
+                                                        <select value={visionModel} onChange={e => setVisionModel(e.target.value)} className="w-full bg-slate-800 text-xs p-1 rounded border border-slate-700 text-white">
+                                                            <option value="moondream">Moondream</option>
+                                                            <option value="llama3.2-vision">Llama 3.2 Vision</option>
+                                                            <option value="custom">{t("Vlastní model...", "Custom model...")}</option>
+                                                            {ollamaModels
+                                                                .filter((m) => !['moondream', 'llama3.2-vision'].includes(m))
+                                                                .map((m) => <option key={m} value={m}>{m}</option>)}
+                                                        </select>
+                                                        {visionModel === 'custom' && (
+                                                            <input type="text" value={visionModelCustom} onChange={e => setVisionModelCustom(e.target.value)} placeholder={t("Název modelu...", "Model name...")} className="w-full bg-slate-800 p-1 rounded text-xs text-white border border-slate-700" />
+                                                        )}
+                                                    </>
+                                                )}
                                             </div>
                                         )}
-                                        <button onClick={runPhase4} disabled={isMoondreaming} className="w-full bg-amber-600 p-2 rounded text-xs text-white hover:bg-amber-500 disabled:bg-slate-700">
-                                            {isMoondreaming ? (progress || t('Analyzuji...', 'Analyzing...')) : t('🌙 Vizuální tagy', '🌙 Visual Tags')}
+                                        <button onClick={runPhase4} disabled={isMoondreaming || isMobileLayout} title={isMobileLayout ? t('Vizuální tagy vyžadují Ollama na PC.', 'Visual tags require Ollama on a desktop.') : ''} className="w-full bg-amber-600 p-2 rounded text-xs text-white hover:bg-amber-500 disabled:bg-slate-700">
+                                            {isMobileLayout ? t('🌙 Vizuální tagy (jen PC)', '🌙 Visual Tags (desktop only)') : (isMoondreaming ? (progress || t('Analyzuji...', 'Analyzing...')) : t('🌙 Vizuální tagy', '🌙 Visual Tags'))}
                                         </button>
                                     </div>
                                     <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 space-y-2" data-phase="5" data-tour="phase-5">
@@ -3179,7 +3210,12 @@ DATA: ${JSON.stringify(data)}`;
                                     </div>
                                 </div>
                             )}
-                            <div className="text-[10px] text-slate-500 text-center">Ollama: {ollamaStatus}</div>
+                            <div className="text-[10px] text-slate-500 text-center">{isMobileLayout ? t('AI: Gemini (Ollama jen na PC)', 'AI: Gemini (Ollama on desktop only)') : `Ollama: ${ollamaStatus}`}</div>
+                            {isMobileLayout && !isStandalone && (
+                                <div className="rounded-lg border border-cyan-900/60 bg-cyan-950/30 p-2 text-[10px] leading-relaxed text-cyan-200/80">
+                                    📲 {t('Pro offline použití přidejte Clustr na plochu: Sdílet → Přidat na plochu.', 'For offline use, add Clustr to your Home Screen: Share → Add to Home Screen.')}
+                                </div>
+                            )}
                         </div>
                     </div>
 
@@ -3452,33 +3488,33 @@ DATA: ${JSON.stringify(data)}`;
 
                     {showTinder && (
                         <div className="fixed inset-0 bg-black/95 z-[100] flex flex-col">
-                            <div className="p-6 text-white flex justify-between items-center bg-gradient-to-b from-black to-transparent">
-                                <div><h2 className="text-2xl font-bold text-orange-400">🔥 Tinder Mode</h2><p className="text-xs text-slate-400">{t("Šipky vlevo/vpravo pro rychlé třídění", "Left/Right arrows for quick sorting")}</p></div>
+                            <div className={`text-white flex justify-between items-center gap-2 bg-gradient-to-b from-black to-transparent ${isMobileLayout ? 'p-4' : 'p-6'}`}>
+                                <div><h2 className={`font-bold text-orange-400 ${isMobileLayout ? 'text-xl' : 'text-2xl'}`}>🔥 Tinder Mode</h2><p className="text-xs text-slate-400">{isMobileLayout ? t('Použijte tlačítka níže.', 'Use the buttons below.') : t("Šipky vlevo/vpravo pro rychlé třídění", "Left/Right arrows for quick sorting")}</p></div>
                                 <button onClick={() => setShowTinder(false)} className="bg-slate-800 px-4 py-2 rounded-full text-sm">{t("Zavřít", "Close")}</button>
                             </div>
-                            <div className="flex-1 flex items-center justify-center p-8">
+                            <div className={`flex-1 flex items-center justify-center ${isMobileLayout ? 'p-3' : 'p-8'}`}>
                                 {tinderQueue[tinderIndex]?.url ? (
                                     <img src={tinderQueue[tinderIndex]?.url} className="max-h-full max-w-full object-contain rounded-xl shadow-2xl" />
                                 ) : (
-                                    <div className="w-96 h-96 bg-slate-800 rounded-xl flex flex-col items-center justify-center text-slate-400 border border-slate-700 shadow-2xl">
+                                    <div className={`bg-slate-800 rounded-xl flex flex-col items-center justify-center text-slate-400 border border-slate-700 shadow-2xl ${isMobileLayout ? 'w-64 h-64' : 'w-96 h-96'}`}>
                                         <span className="text-6xl mb-4">📷</span>
                                         <span className="text-xl font-bold">RAW Formát</span>
                                         <span className="text-sm mt-2">{tinderQueue[tinderIndex]?.name}</span>
                                     </div>
                                 )}
                             </div>
-                            <div className="p-12 flex justify-center gap-12 bg-gradient-to-t from-black to-transparent">
-                                <button onClick={() => handleTinderSwipe(false)} className="w-32 h-32 rounded-full bg-rose-600 text-white font-bold text-xl shadow-lg hover:scale-110 transition-transform">🗑️ {t("Zahodit", "Discard")}</button>
-                                <button onClick={() => handleTinderSwipe(true)} className="w-32 h-32 rounded-full bg-emerald-600 text-white font-bold text-xl shadow-lg hover:scale-110 transition-transform">💚 {t("Ponechat", "Keep")}</button>
+                            <div className={`flex justify-center bg-gradient-to-t from-black to-transparent ${isMobileLayout ? 'p-4 gap-6' : 'p-12 gap-12'}`}>
+                                <button onClick={() => handleTinderSwipe(false)} className={`rounded-full bg-rose-600 text-white font-bold shadow-lg hover:scale-110 transition-transform ${isMobileLayout ? 'w-24 h-24 text-base' : 'w-32 h-32 text-xl'}`}>🗑️ {t("Zahodit", "Discard")}</button>
+                                <button onClick={() => handleTinderSwipe(true)} className={`rounded-full bg-emerald-600 text-white font-bold shadow-lg hover:scale-110 transition-transform ${isMobileLayout ? 'w-24 h-24 text-base' : 'w-32 h-32 text-xl'}`}>💚 {t("Ponechat", "Keep")}</button>
                             </div>
                         </div>
                     )}
 
                     {showDataFill && dataFillPhoto && (
                         <div data-data-fill="true" className="fixed inset-0 bg-black/95 z-[100] flex flex-col">
-                            <div className="p-6 text-white flex justify-between items-center bg-gradient-to-b from-black to-transparent">
+                            <div className={`text-white flex justify-between items-center gap-2 bg-gradient-to-b from-black to-transparent ${isMobileLayout ? 'p-4 flex-wrap' : 'p-6'}`}>
                                 <div>
-                                    <h2 className="text-2xl font-bold text-fuchsia-400">🧭 {t('Doplňování dat', 'Data Fill')}</h2>
+                                    <h2 className={`font-bold text-fuchsia-400 ${isMobileLayout ? 'text-xl' : 'text-2xl'}`}>🧭 {t('Doplňování dat', 'Data Fill')}</h2>
                                     <p className="text-xs text-slate-400">{t('Fotka bez lokace – přidej místo a aplikuj ho i na blízké fotky.', 'Photo without a location – add a place and apply it to nearby photos too.')}</p>
                                 </div>
                                 <div className="flex items-center gap-4">
@@ -3486,11 +3522,11 @@ DATA: ${JSON.stringify(data)}`;
                                     <button onClick={() => setShowDataFill(false)} className="bg-slate-800 px-4 py-2 rounded-full text-sm">{t('Zavřít', 'Close')}</button>
                                 </div>
                             </div>
-                            <div className="flex-1 flex flex-col items-center justify-center p-8 gap-4 min-h-0">
+                            <div className={`flex-1 flex flex-col items-center justify-center gap-4 min-h-0 ${isMobileLayout ? 'p-4' : 'p-8'}`}>
                                 {dataFillPhoto.url ? (
                                     <img src={dataFillPhoto.url} className="max-h-[52vh] max-w-full object-contain rounded-xl shadow-2xl" />
                                 ) : (
-                                    <div className="w-96 h-72 bg-slate-800 rounded-xl flex flex-col items-center justify-center text-slate-400 border border-slate-700 shadow-2xl">
+                                    <div className={`bg-slate-800 rounded-xl flex flex-col items-center justify-center text-slate-400 border border-slate-700 shadow-2xl ${isMobileLayout ? 'w-64 h-56 max-w-full' : 'w-96 h-72'}`}>
                                         <span className="text-6xl mb-4">📷</span>
                                         <span className="text-sm">{dataFillPhoto.thumbLoading ? t('Načítám náhled…', 'Loading preview…') : dataFillPhoto.name}</span>
                                     </div>
@@ -3508,7 +3544,7 @@ DATA: ${JSON.stringify(data)}`;
                                     </div>
                                 </div>
                             </div>
-                            <div className="p-8 flex flex-col items-center gap-4 bg-gradient-to-t from-black to-transparent">
+                            <div className={`flex flex-col items-center gap-4 bg-gradient-to-t from-black to-transparent ${isMobileLayout ? 'p-4' : 'p-8'}`}>
                                 <input
                                     key={dataFillPhoto.id}
                                     data-data-fill-input

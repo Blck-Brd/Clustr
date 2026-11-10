@@ -41,6 +41,10 @@ This serves the app at **http://127.0.0.1:4173/** and exposes the root `Timeline
 
 Completed phases display a checkmark, optional phases are labelled, and every phase keeps its settings behind the cog icon. The UI starts in Czech for Czech browser locales or the `Europe/Prague` timezone, and in English otherwise; the 🇬🇧/🇨🇿 button switches language at any time.
 
+### Mobile
+
+On a phone the same app runs as an installed PWA or a normal browser tab. Use **Add photos** to import from the camera roll, run the same phases, then **Export** to create a ZIP with the photos and XMP sidecars that can be saved to Files or shared. The folder tree, heatmap and Tinder review are touch-enabled. Mobile is still secondary to the PC + camera workflow: local Ollama is unavailable, and very large exports are limited by phone memory.
+
 ### Cluster-level edits
 
 - Phase 2 creates `Trip N` folders with `Stop N - location` subfolders, plus `Home N` sessions. Rename `Trip N` to “Vacation”.
@@ -96,12 +100,14 @@ Completed phases display a checkmark, optional phases are labelled, and every ph
 - **Feedback dialog** — the ✉️ button opens a dialog with the contact email, a copy button and an optional mailto link.
 - **Support dialog** — the floating coffee button opens a short support dialog with an optional Ko-fi link; a friendly reminder can appear after a while (at most once a day) and when an export starts.
 - **PWA** — installable app shell with a service worker and offline caching for the app and CDN libraries.
+- **Mobile shell** — responsive drawer, camera-roll import, touch heatmap ranges and ZIP export with XMP sidecars.
 - **CZ / EN UI** — automatic default language plus persisted settings (models, home location, folders).
 
 ## Requirements
 
-- A Chromium-based browser (the export uses the File System Access API).
-- Optional: [Ollama](https://ollama.com/) running at `http://localhost:11434` for local AI.
+- A Chromium-based browser on desktop (the folder export uses the File System Access API).
+- Optional: a phone for camera-roll import and ZIP export.
+- Optional: [Ollama](https://ollama.com/) running at `http://localhost:11434` for local AI (desktop only).
 - Optional: a Gemini API key for cloud text analysis.
 
 The event-naming model must be installed in Ollama. The app detects installed models and lists them in the dropdown, but the built-in preset names still require an explicit pull (for example `ollama pull llama3.2` or `ollama pull gemma2:2b`).
@@ -123,8 +129,9 @@ See `docs/DEPLOYMENT.md` for details.
 
 ```powershell
 npm run check         # Babel transform, worker syntax, JSON validation
-npm test              # clustering, Timeline and trip-fuzz tests
-npm run test:browser  # Playwright smoke test (uses installed Chrome when available)
+npm test              # clustering, Timeline, trip-fuzz and core-parity tests
+npm run test:browser  # Playwright desktop smoke test (uses installed Chrome when available)
+npm run test:mobile   # Playwright iPhone smoke test: import, export, heatmap
 npm run icons         # regenerate PWA icons
 ```
 
@@ -188,6 +195,7 @@ Clustr is completely free and ad-free. It was built at home by one person, witho
 
 - The app loads React, Babel and Tailwind from CDNs, so the first load needs an internet connection. exifr, heic2any and UTIF are vendored for offline previews.
 - Babel transforms JSX in the browser; this is convenient for a build-free tool but slower than a pre-built bundle.
+- Mobile limitations: iOS may transcode HEIC on import, files cannot be relinked by re-selecting a folder after a reload, local Ollama is unreachable, and ZIP export is built in memory (~1 GB practical cap).
 - Phase 2 resets non-manual names to temporary `Trip N/Stop M - location`, `Home N` or `Event N` names. Manually renamed events (via the tree or bulk editor) are preserved.
 
 ## Documentation
