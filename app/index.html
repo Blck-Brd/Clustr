@@ -2,7 +2,7 @@
 <html lang="cs">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="theme-color" content="#0f172a">
     <meta name="description" content="Clustr - local-first photo sorter with clusters and heatmaps. EXIF, Google Timeline, event folders, previews and Lightroom export.">
     <link rel="manifest" href="manifest.webmanifest">
@@ -63,7 +63,7 @@
     <script src="core.js"></script>
 
     <style>
-        body { font-family: 'Inter', sans-serif; background-color: #0f172a; color: #e2e8f0; margin: 0; overflow: hidden; }
+        body { font-family: 'Inter', sans-serif; background-color: #0f172a; color: #e2e8f0; margin: 0; overflow: hidden; -webkit-tap-highlight-color: transparent; }
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: #1e293b; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
@@ -167,8 +167,17 @@
             const [showEarlyAccess, setShowEarlyAccess] = useState(false);
             const [showFeedback, setShowFeedback] = useState(false);
             const [feedbackCopied, setFeedbackCopied] = useState(false);
+            const [isMobileLayout, setIsMobileLayout] = useState(() => {
+                try {
+                    return window.matchMedia('(max-width: 767px), (pointer: coarse) and (max-height: 500px)').matches;
+                } catch (e) {
+                    return false;
+                }
+            });
+            const [showMobileSidebar, setShowMobileSidebar] = useState(false);
             
             const fileInputRef = useRef(null);
+            const photoInputRef = useRef(null);
             const timelineInputRef = useRef(null);
             const galleryRef = useRef(null);
             const [galleryView, setGalleryView] = useState({ scrollTop: 0, width: 0, height: 0 });
@@ -177,6 +186,23 @@
             const modelAutoFixRef = useRef(false);
             const previewRetriedRef = useRef(new Set());
             const supportShownRef = useRef(false);
+
+            useEffect(() => {
+                const query = '(max-width: 767px), (pointer: coarse) and (max-height: 500px)';
+                let media;
+                try { media = window.matchMedia(query); } catch (e) { return; }
+                const update = () => {
+                    setIsMobileLayout(media.matches);
+                    if (!media.matches) setShowMobileSidebar(false);
+                };
+                update();
+                if (media.addEventListener) media.addEventListener('change', update);
+                else media.addListener(update);
+                return () => {
+                    if (media.removeEventListener) media.removeEventListener('change', update);
+                    else media.removeListener(update);
+                };
+            }, []);
 
             useEffect(() => {
                 let cancelled = false;
@@ -258,13 +284,13 @@
             }, [showDataFill, dataFillIndex, dataFillQueue, photos]);
 
             useEffect(() => {
-                if (photos.length === 0 || showTour || showEarlyAccess) return;
+                if (isMobileLayout || photos.length === 0 || showTour || showEarlyAccess) return;
                 let seen = false;
                 try { seen = localStorage.getItem('clustr-tour-seen') === '1'; } catch (e) {}
                 if (seen) return;
                 const timer = window.setTimeout(() => setShowTour(true), 900);
                 return () => window.clearTimeout(timer);
-            }, [photos.length, showTour, showEarlyAccess]);
+            }, [isMobileLayout, photos.length, showTour, showEarlyAccess]);
 
             useEffect(() => {
                 let seen = false;
@@ -569,14 +595,17 @@
                 }
             };
 
-            const handleFolder = (e) => {
+            const loadPhotoFiles = (fileList, { replace = false } = {}) => {
                 const allowedExts = ['jpg','jpeg','png','webp','heic','heif','nef','cr2','arw','dng','orf','raf', 'tif', 'tiff'];
-                const files = Array.from(e.target.files).filter(f => {
+                const files = Array.from(fileList || []).filter(f => {
                     const ext = f.name.split('.').pop().toLowerCase();
                     return f.type.startsWith('image/') || allowedExts.includes(ext);
                 });
                 const deduped = dedupeFilesBySignature(files);
-                const uniqueFiles = deduped.files;
+                const signatureOf = (file) => `${String(file?.name || '').toLowerCase()}|${file?.size || 0}|${file?.lastModified || 0}`;
+                const existingKeys = replace ? new Set() : new Set(photos.map((photo) => signatureOf(photo.file)).filter(Boolean));
+                const uniqueFiles = deduped.files.filter((file) => !existingKeys.has(signatureOf(file)));
+                const skippedDuplicates = deduped.duplicates + (deduped.files.length - uniqueFiles.length);
                 
                 const parsedMeta = [];
                 if (Array.isArray(localMetadata)) parsedMeta.push(...localMetadata);
@@ -634,29 +663,55 @@
                 }).sort((a, b) => b.date - a.date);
                 
                 setPhotos(prev => {
-                    prev.forEach(p => {
-                        if (p.url && p.url.startsWith('blob:')) URL.revokeObjectURL(p.url);
-                    });
-                    return loaded;
+                    if (replace) {
+                        prev.forEach(p => {
+                            if (p.url && p.url.startsWith('blob:')) URL.revokeObjectURL(p.url);
+                        });
+                        return loaded;
+                    }
+                    return [...prev, ...loaded].sort((a, b) => b.date - a.date);
                 });
-                setActiveFilters([]);
-                setSelectedPhotos(new Set());
-                setHeatmapPhotoIds(new Set());
-                setNeedsRelink(false);
-                setLocalMetadata(null);
-                setCloudMetadata(null);
-                setCompletedSteps({});
+                if (replace) {
+                    setActiveFilters([]);
+                    setSelectedPhotos(new Set());
+                    setHeatmapPhotoIds(new Set());
+                    setNeedsRelink(false);
+                    setLocalMetadata(null);
+                    setCloudMetadata(null);
+                    setCompletedSteps({});
+                } else if (loaded.length > 0) {
+                    setSelectedPhotos(new Set());
+                    setHeatmapPhotoIds(new Set());
+                }
                 processThumbnails(loaded);
 
-                if (deduped.duplicates > 0) {
+                if (loaded.length === 0 && skippedDuplicates > 0) {
                     setMessage({
-                        title: t('Duplicity přeskočeny', 'Duplicates skipped'),
+                        title: t('Nic nového', 'Nothing new'),
                         text: t(
-                            `Načteno ${loaded.length} fotek. Přeskočeno ${deduped.duplicates} identických kopií (stejný název, velikost i čas).`,
-                            `Loaded ${loaded.length} photos. Skipped ${deduped.duplicates} identical copies (same name, size and modified time).`
+                            `Všechny vybrané fotky už jsou načtené (${skippedDuplicates} duplicit).`,
+                            `All selected photos are already loaded (${skippedDuplicates} duplicates).`
+                        )
+                    });
+                } else if (skippedDuplicates > 0 || !replace) {
+                    setMessage({
+                        title: replace ? t('Duplicity přeskočeny', 'Duplicates skipped') : t('Fotky přidány', 'Photos added'),
+                        text: t(
+                            `Načteno ${loaded.length} fotek. Přeskočeno ${skippedDuplicates} identických kopií (stejný název, velikost i čas).`,
+                            `Loaded ${loaded.length} photos. Skipped ${skippedDuplicates} identical copies (same name, size and modified time).`
                         )
                     });
                 }
+            };
+
+            const handleFolder = (e) => {
+                loadPhotoFiles(e.target.files, { replace: true });
+                if (e.target) e.target.value = '';
+            };
+
+            const handlePhotoFiles = (e) => {
+                loadPhotoFiles(e.target.files, { replace: photos.length === 0 });
+                if (e.target) e.target.value = '';
             };
 
             const handleTimeline = (e) => {
@@ -2703,9 +2758,15 @@ DATA: ${JSON.stringify(data)}`;
             const galleryTotalHeight = Math.max(0, galleryRowCount * galleryRowHeight - GALLERY_GAP);
 
             return (
-                <div className="flex h-screen overflow-hidden">
-                    <div className="w-80 bg-slate-900 border-r border-slate-800 flex flex-col">
-                        <div className="p-6 border-b border-slate-800">
+                <div className="flex h-screen overflow-hidden" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
+                    {isMobileLayout && showMobileSidebar && (
+                        <div className="fixed inset-0 z-[120] bg-black/60" onClick={() => setShowMobileSidebar(false)} />
+                    )}
+                    <div className={`bg-slate-900 border-r border-slate-800 flex flex-col ${isMobileLayout ? `fixed inset-y-0 left-0 z-[130] w-80 max-w-[85vw] shadow-2xl transition-transform duration-200 ${showMobileSidebar ? 'translate-x-0' : '-translate-x-full'}` : 'w-80'}`} style={isMobileLayout ? { paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' } : undefined}>
+                        <div className="relative p-6 border-b border-slate-800">
+                            {isMobileLayout && (
+                                <button onClick={() => setShowMobileSidebar(false)} aria-label={t('Zavřít menu', 'Close menu')} className="absolute top-3 right-3 w-9 h-9 rounded-full bg-slate-800 text-slate-300 text-xl leading-none flex items-center justify-center">×</button>
+                            )}
                             <div className="flex items-center gap-2">
                                 <h1 className="text-xl font-bold text-orange-400">⚡ Clustr</h1>
                                 <span className="rounded-full border border-amber-700 bg-amber-950/60 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-amber-300">
@@ -2717,7 +2778,15 @@ DATA: ${JSON.stringify(data)}`;
                         <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar">
                             <div className="space-y-2">
                                 <input type="file" ref={fileInputRef} webkitdirectory="" directory="" multiple className="hidden" onChange={handleFolder} />
-                                <button data-tour="upload" onClick={() => fileInputRef.current.click()} className="w-full bg-slate-800 p-2 rounded text-sm text-white hover:bg-slate-700">{t("📂 Nahrát složku", "📂 Upload Folder")}</button>
+                                <input type="file" ref={photoInputRef} accept="image/*,.heic,.heif,.nef,.cr2,.arw,.dng,.orf,.raf,.tif,.tiff" multiple className="hidden" onChange={handlePhotoFiles} />
+                                {isMobileLayout ? (
+                                    <button data-tour="upload" onClick={() => photoInputRef.current.click()} className="w-full bg-orange-600 p-2.5 rounded text-sm font-bold text-white hover:bg-orange-500">{t("📷 Přidat fotky", "📷 Add photos")}</button>
+                                ) : (
+                                    <>
+                                        <button data-tour="upload" onClick={() => fileInputRef.current.click()} className="w-full bg-slate-800 p-2 rounded text-sm text-white hover:bg-slate-700">{t("📂 Nahrát složku", "📂 Upload Folder")}</button>
+                                        <button onClick={() => photoInputRef.current.click()} className="w-full bg-slate-800/70 p-2 rounded text-xs text-slate-300 hover:bg-slate-700">{t("➕ Přidat fotky", "➕ Add photos")}</button>
+                                    </>
+                                )}
                                 <input type="file" ref={timelineInputRef} accept=".json" className="hidden" onChange={handleTimeline} />
                                 <button data-tour="timeline" onClick={() => timelineInputRef.current.click()} disabled={isTimelineLoading} className="w-full bg-emerald-900/40 p-2 rounded text-sm text-emerald-200 hover:bg-emerald-800/50 disabled:opacity-50 transition-opacity">
                                     {isTimelineLoading ? t("⏳ Zpracovávám JSON...", "⏳ Processing JSON...") : (timelineData ? t(`🌍 Timeline (${timelineData.length})`, `🌍 Timeline (${timelineData.length})`) : t("🌍 Timeline JSON", "🌍 Timeline JSON"))}
@@ -3013,23 +3082,26 @@ DATA: ${JSON.stringify(data)}`;
                         </div>
                     </div>
 
-                    <div className="flex-1 bg-slate-950 flex flex-col relative">
+                    <div className="flex-1 min-w-0 bg-slate-950 flex flex-col relative">
                         {needsRelink && (
                             <div className="bg-blue-900 text-blue-100 p-2 text-center text-xs font-bold shadow-md animate-pulse">
-                                💾 {t("Byla nalezena data z předchozí relace. Klikněte vlevo na 'Nahrát složku' a vyberte původní složku pro obnovení.", "Previous session data found. Click 'Upload Folder' on the left and select the original folder to restore.")}
+                                💾 {t("Byla nalezena data z předchozí relace. Nahrajte původní fotky (Nahrát složku, nebo Přidat fotky na mobilu) pro obnovení.", "Previous session data found. Re-add the original photos (Upload Folder, or Add photos on mobile) to restore.")}
                             </div>
                         )}
-                        <div className="h-16 border-b border-slate-800 flex items-center justify-between px-6 bg-slate-900/50">
-                            <input type="text" placeholder={t("Hledat v událostech a fotkách...", "Search events and photos...")} value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full max-w-md bg-slate-800 border border-slate-700 rounded-full py-2 px-4 text-sm text-white" />
+                        <div className={`border-b border-slate-800 flex items-center bg-slate-900/50 ${isMobileLayout ? 'flex-wrap gap-2 px-3 py-2' : 'h-16 justify-between px-6'}`}>
+                            {isMobileLayout && (
+                                <button onClick={() => setShowMobileSidebar(true)} aria-label={t('Otevřít menu', 'Open menu')} className="w-9 h-9 rounded-full bg-slate-800 border border-slate-700 text-slate-200 text-lg flex items-center justify-center shrink-0">☰</button>
+                            )}
+                            <input type="text" placeholder={t("Hledat v událostech a fotkách...", "Search events and photos...")} value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className={`bg-slate-800 border border-slate-700 rounded-full py-2 px-4 text-sm text-white ${isMobileLayout ? 'flex-1 min-w-0' : 'w-full max-w-md'}`} />
                             
-                            <div className="flex items-center gap-3">
+                            <div className={`flex items-center ${isMobileLayout ? 'w-full gap-2 overflow-x-auto custom-scrollbar pb-1' : 'gap-3'}`}>
                                 {heatmapPhotoIds.size > 0 && (
-                                    <div className="text-xs flex items-center gap-1 font-bold text-cyan-300 bg-cyan-950/50 border border-cyan-800 rounded-full px-3 py-1">
+                                    <div className="text-xs flex items-center gap-1 font-bold text-cyan-300 bg-cyan-950/50 border border-cyan-800 rounded-full px-3 py-1 shrink-0">
                                         📊 {heatmapPhotoIds.size} {t('z heatmapy', 'from heatmap')}
                                         <button onClick={() => setHeatmapPhotoIds(new Set())} className="text-cyan-100 hover:text-white ml-1" title={t('Zrušit výběr heatmapy', 'Clear heatmap selection')}>×</button>
                                     </div>
                                 )}
-                                {photos.length > 0 && !needsRelink && (
+                                {!isMobileLayout && photos.length > 0 && !needsRelink && (
                                     <div className={`text-xs mr-2 flex items-center gap-1 font-bold ${(isLocalSaving || isCloudSyncing) ? 'text-amber-400 animate-pulse' : 'text-slate-600'}`}>
                                         💾 {(isLocalSaving || isCloudSyncing) ? t("Ukládání...", "Saving...") : t("Uloženo", "Saved")}
                                     </div>
@@ -3043,10 +3115,10 @@ DATA: ${JSON.stringify(data)}`;
                                 <button data-tour="feedback" onClick={() => setShowFeedback(true)} title={t("Poslat zpětnou vazbu", "Send feedback")} className="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-bold w-9 h-9 rounded-full transition-colors flex items-center justify-center shadow-md text-sm">
                                     ✉️
                                 </button>
-                                <button onClick={() => setLang(lang === 'cs' ? 'en' : 'cs')} className="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-bold px-4 py-2 rounded-full transition-colors flex items-center gap-2 text-sm shadow-md">
+                                <button onClick={() => setLang(lang === 'cs' ? 'en' : 'cs')} className={`bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-bold rounded-full transition-colors flex items-center gap-2 text-sm shadow-md shrink-0 ${isMobileLayout ? 'px-3 py-2' : 'px-4 py-2'}`}>
                                     {lang === 'cs' ? '🇬🇧 EN' : '🇨🇿 CS'}
                                 </button>
-                                {filteredPhotos.length > 0 && (
+                                {!isMobileLayout && filteredPhotos.length > 0 && (
                                     <button onClick={toggleSelectAll} className="text-sm bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 px-4 py-2 rounded-full transition-colors">
                                         {selectedPhotos.size === filteredPhotos.length ? t('Zrušit výběr', 'Deselect all') : t('Vybrat vše viditelné', 'Select all visible')}
                                     </button>
@@ -3083,7 +3155,28 @@ DATA: ${JSON.stringify(data)}`;
                                 })}
                             </div>
                         )}
-                        <div ref={galleryRef} data-gallery="true" className="flex-1 min-h-0 overflow-y-auto p-6 custom-scrollbar pb-32">
+                        <div ref={galleryRef} data-gallery="true" className={`flex-1 min-h-0 overflow-y-auto custom-scrollbar ${isMobileLayout ? 'p-3 pb-40' : 'p-6 pb-32'}`}>
+                            {photos.length === 0 && (
+                                <div className="h-full min-h-[45vh] flex flex-col items-center justify-center text-center px-6">
+                                    <div className="text-4xl mb-3">📷</div>
+                                    <div className="text-lg font-bold text-slate-200">{t('Zatím žádné fotky', 'No photos yet')}</div>
+                                    <div className="text-xs text-slate-500 max-w-xs mt-2 mb-5 leading-relaxed">
+                                        {t('Nahrajte složku z fotoaparátu na PC, nebo přidejte fotky z telefonu.', 'Upload a camera folder on desktop, or add photos from your phone.')}
+                                    </div>
+                                    <button onClick={() => (isMobileLayout ? photoInputRef.current.click() : fileInputRef.current.click())} className="rounded-full bg-orange-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-orange-500">
+                                        {isMobileLayout ? t('📷 Přidat fotky', '📷 Add photos') : t('📂 Nahrát složku', '📂 Upload folder')}
+                                    </button>
+                                </div>
+                            )}
+                            {photos.length > 0 && filteredPhotos.length === 0 && (
+                                <div className="h-full min-h-[45vh] flex flex-col items-center justify-center text-center px-6">
+                                    <div className="text-4xl mb-3">🔍</div>
+                                    <div className="text-lg font-bold text-slate-200">{t('Žádné fotky neodpovídají filtru', 'No photos match the filter')}</div>
+                                    <button onClick={() => { setActiveFilters([]); setSearchQuery(''); }} className="mt-4 rounded-full bg-slate-800 border border-slate-700 px-4 py-2 text-sm text-slate-200 hover:bg-slate-700">
+                                        {t('Zrušit filtry', 'Clear filters')}
+                                    </button>
+                                </div>
+                            )}
                             {filteredPhotos.length > 0 && (
                                 <div style={{ height: `${galleryTotalHeight}px`, position: 'relative' }}>
                                     <div
@@ -3178,7 +3271,7 @@ DATA: ${JSON.stringify(data)}`;
                     </div>
 
                     {selectedPhotos.size > 0 && (
-                        <div className={`fixed ${showClusterReview ? 'bottom-[calc(38vh+1rem)]' : 'bottom-8'} left-[calc(50%+10rem)] -translate-x-1/2 bg-slate-800 border border-slate-700 shadow-2xl shadow-black rounded-full px-4 py-3 flex items-center gap-3 z-[60] animate-bounce-short`}>
+                        <div style={isMobileLayout ? { marginBottom: 'env(safe-area-inset-bottom)' } : undefined} className={`fixed ${showClusterReview ? (isMobileLayout ? 'bottom-2' : 'bottom-[calc(38vh+1rem)]') : (isMobileLayout ? 'bottom-2' : 'bottom-8')} ${isMobileLayout ? 'left-1/2 max-w-[calc(100vw-1rem)] flex-wrap justify-center rounded-2xl px-2 py-2 gap-1' : 'left-[calc(50%+10rem)] rounded-full px-4 py-3 gap-3'} -translate-x-1/2 bg-slate-800 border border-slate-700 shadow-2xl shadow-black flex items-center z-[60] animate-bounce-short`}>
                             <span className="text-white font-bold text-sm bg-slate-950 border border-slate-700 px-4 py-1.5 rounded-full">{selectedPhotos.size} {t("vybráno", "selected")}</span>
                             <div className="w-px h-6 bg-slate-600 mx-1"></div>
                             <button onClick={() => setBulkModal({isOpen: true, type: 'parent-event', value: ''})} className="text-sm font-bold text-orange-300 hover:text-orange-100 hover:bg-slate-700 px-4 py-1.5 rounded-full transition-colors" title="Zařadí události pod hlavní složku">📁+ {t("Zabalit pod", "Group in")}</button>
@@ -3491,10 +3584,10 @@ DATA: ${JSON.stringify(data)}`;
                             data-support-button
                             onClick={() => { setSupportReason('button'); setShowSupport(true); }}
                             title={t('Podpořit Clustr', 'Support Clustr')}
-                            className="fixed bottom-5 right-5 z-[140] flex items-center gap-2 rounded-full bg-[#ff5e5b] px-4 py-2.5 text-sm font-bold text-white shadow-2xl shadow-black/50 transition-transform hover:scale-105"
+                            className={`fixed z-[140] flex items-center rounded-full bg-[#ff5e5b] font-bold text-white shadow-2xl shadow-black/50 transition-transform hover:scale-105 ${isMobileLayout ? 'bottom-[calc(1rem+env(safe-area-inset-bottom))] right-3 h-12 w-12 justify-center text-lg' : 'bottom-5 right-5 gap-2 px-4 py-2.5 text-sm'}`}
                         >
                             <span aria-hidden="true">☕</span>
-                            <span>{t('Buy me a coffee', 'Buy me a coffee')}</span>
+                            {!isMobileLayout && <span>{t('Buy me a coffee', 'Buy me a coffee')}</span>}
                         </button>
                     )}
 
