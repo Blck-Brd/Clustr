@@ -2228,6 +2228,7 @@
             const [showExportModal, setShowExportModal] = useState(false);
             const [exportProgress, setExportProgress] = useState(null);
             const [showHelpModal, setShowHelpModal] = useState(false);
+            const [showTour, setShowTour] = useState(false);
             const [showClusterReview, setShowClusterReview] = useState(false);
             const [heatmapPhotoIds, setHeatmapPhotoIds] = useState(() => new Set());
             
@@ -2368,6 +2369,15 @@
                     setDataFillLocation('');
                 }
             }, [showDataFill, dataFillIndex, dataFillQueue, photos]);
+
+            useEffect(() => {
+                if (photos.length === 0 || showTour) return;
+                let seen = false;
+                try { seen = localStorage.getItem('clustr-tour-seen') === '1'; } catch (e) {}
+                if (seen) return;
+                const timer = window.setTimeout(() => setShowTour(true), 900);
+                return () => window.clearTimeout(timer);
+            }, [photos.length, showTour]);
 
             useEffect(() => {
                 try {
@@ -3843,6 +3853,11 @@ DATA: ${JSON.stringify(data)}`;
                 else setShowTinder(false);
             };
 
+            const closeTour = () => {
+                setShowTour(false);
+                try { localStorage.setItem('clustr-tour-seen', '1'); } catch (e) {}
+            };
+
             // Phase 5: walk photos that still lack a location, one at a time.
             const startDataFill = () => {
                 const seenDays = new Set();
@@ -4564,6 +4579,89 @@ DATA: ${JSON.stringify(data)}`;
                 </div>
             );
 
+            const tourSteps = useMemo(() => {
+                const tr = (cs, en) => lang === 'cs' ? cs : en;
+                const labels = {
+                    skipLabel: tr('Přeskočit', 'Skip'),
+                    backLabel: tr('Zpět', 'Back'),
+                    nextLabel: tr('Další', 'Next'),
+                    doneLabel: tr('Hotovo', 'Done')
+                };
+                const steps = [
+                    {
+                        title: tr('Vítejte v Clustru', 'Welcome to Clustr'),
+                        body: tr('Krátká prohlídka na minutu. Kdykoli ji můžete přeskočit a později znovu spustit pomocí otazníku.', 'A one-minute tour. Skip it any time and replay it later from the question mark.')
+                    },
+                    {
+                        target: '[data-tour="upload"]',
+                        title: tr('Nahrát složku', 'Upload folder'),
+                        body: tr('Tady začnete. Vyberte složku s fotkami; Clustr je přečte přímo v prohlížeči a nikam je nenahraje.', 'Start here. Choose your photo folder; Clustr reads it in the browser and never uploads it.')
+                    },
+                    {
+                        target: '[data-tour="timeline"]',
+                        title: tr('Timeline je volitelná', 'Timeline is optional'),
+                        body: tr('Import Google Timeline přiřadí lokace podle času fotky. Bez něj Clustr použije GPS nebo ruční doplnění.', 'Import Google Timeline to assign places by photo time. Without it, Clustr uses GPS or manual filling.')
+                    }
+                ];
+                if (photos.length > 0) {
+                    steps.push(
+                        {
+                            target: '[data-tour="phase-1"]',
+                            title: tr('Fáze 1 – EXIF metadata', 'Phase 1 - EXIF metadata'),
+                            body: tr('Načte datum, fotoaparát a lokaci. Pod ozubeným kolem nastavíte domovské město.', 'Reads date, camera and location. Set your home city behind the cog.')
+                        },
+                        {
+                            target: '[data-tour="phase-2"]',
+                            title: tr('Fáze 2 – Clustering a heatmapy', 'Phase 2 - Clustering and heatmaps'),
+                            body: tr('Hlavní třídění. Zvolte automatické clustery, nebo kreslete vlastní v heatmapě. Nastavení je pod ozubeným kolem.', 'The main sorting step. Use auto clustering or draw your own clusters in the heatmap. Settings live behind the cog.')
+                        },
+                        {
+                            target: '[data-folder-tree]',
+                            title: tr('Strom složek', 'Folder tree'),
+                            body: tr('Kliknutím na složku filtrujete galerii. Nad fotkami se pak ukáže celá cesta, například Trip 1 → Stop 2.', 'Click a folder to filter the gallery. The full path appears above the photos, for example Trip 1 → Stop 2.')
+                        },
+                        {
+                            target: '[data-tour="phase-3"]',
+                            title: tr('Fáze 3 – Názvy (volitelné)', 'Phase 3 - Event names (optional)'),
+                            body: tr('Nechá AI nebo model pojmenovat události. Ručně zadané názvy zůstanou nedotčené.', 'Let AI or a model name your events. Names you typed yourself stay untouched.')
+                        },
+                        {
+                            target: '[data-tour="phase-4"]',
+                            title: tr('Fáze 4 – Vizuální tagy (volitelné)', 'Phase 4 - Visual tags (optional)'),
+                            body: tr('Přidá klíčová slova z obsahu fotek. Potřebuje Ollama; klidně tuto fázi přeskočte.', 'Adds keywords from photo content. It needs Ollama; feel free to skip it.')
+                        },
+                        {
+                            target: '[data-tour="phase-5"]',
+                            title: tr('Fáze 5 – Doplňování dat (volitelné)', 'Phase 5 - Data fill (optional)'),
+                            body: tr('Ukazuje fotky bez lokace. Zadané místo aplikuje i na blízké fotky; okno nastavíte pod ozubeným kolem.', 'Shows photos without a location. A place you enter also applies to nearby photos; set the window behind the cog.')
+                        },
+                        {
+                            target: '[data-gallery]',
+                            title: tr('Galerie a drobečky', 'Gallery and breadcrumbs'),
+                            body: tr('Nad fotkami vidíte Všechny fotky nebo vybrané cesty. Výběr fotek najdete v Heatmapě, Tinderu i hromadné úpravě.', 'Above the photos you see All photos or the selected paths. Select photos in the heatmap, Tinder or bulk edit.')
+                        }
+                    );
+                } else {
+                    steps.push({
+                        title: tr('Fáze se objeví po nahrání', 'Phases appear after loading'),
+                        body: tr('Po výběru složky se vlevo zobrazí fáze 1 až 5. Každá má fajfku po dokončení a ozubené kolo s nastavením.', 'After you choose a folder, phases 1 to 5 appear on the left. Each gets a checkmark when done and a cog for settings.')
+                    });
+                }
+                steps.push(
+                    {
+                        target: '[data-tour="export"]',
+                        title: tr('Export s průběhem', 'Export with progress'),
+                        body: tr('Vyberte cílovou složku. Uvidíte ukazatel průběhu a Clustr zapíše fotky i XMP sidecary pro Lightroom.', 'Choose a destination. You will see a progress bar while Clustr writes photos and Lightroom XMP sidecars.')
+                    },
+                    {
+                        target: '[data-tour="help"]',
+                        title: tr('Prohlídku lze zopakovat', 'Replay the tour'),
+                        body: tr('Tady kdykoli otevřete nápovědu a tlačítkem Spustit prohlídku si ji pustíte znovu.', 'Open help here any time and use Start tour to replay this walkthrough.')
+                    }
+                );
+                return steps.map((step) => ({ ...labels, ...step }));
+            }, [lang, photos.length]);
+
             const allTags = useMemo(() => {
                 const s = new Set();
                 photos.forEach(p => {
@@ -4661,16 +4759,16 @@ DATA: ${JSON.stringify(data)}`;
                         <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar">
                             <div className="space-y-2">
                                 <input type="file" ref={fileInputRef} webkitdirectory="" directory="" multiple className="hidden" onChange={handleFolder} />
-                                <button onClick={() => fileInputRef.current.click()} className="w-full bg-slate-800 p-2 rounded text-sm text-white hover:bg-slate-700">{t("📂 Nahrát složku", "📂 Upload Folder")}</button>
+                                <button data-tour="upload" onClick={() => fileInputRef.current.click()} className="w-full bg-slate-800 p-2 rounded text-sm text-white hover:bg-slate-700">{t("📂 Nahrát složku", "📂 Upload Folder")}</button>
                                 <input type="file" ref={timelineInputRef} accept=".json" className="hidden" onChange={handleTimeline} />
-                                <button onClick={() => timelineInputRef.current.click()} disabled={isTimelineLoading} className="w-full bg-emerald-900/40 p-2 rounded text-sm text-emerald-200 hover:bg-emerald-800/50 disabled:opacity-50 transition-opacity">
+                                <button data-tour="timeline" onClick={() => timelineInputRef.current.click()} disabled={isTimelineLoading} className="w-full bg-emerald-900/40 p-2 rounded text-sm text-emerald-200 hover:bg-emerald-800/50 disabled:opacity-50 transition-opacity">
                                     {isTimelineLoading ? t("⏳ Zpracovávám JSON...", "⏳ Processing JSON...") : (timelineData ? t(`🌍 Timeline (${timelineData.length})`, `🌍 Timeline (${timelineData.length})`) : t("🌍 Timeline JSON", "🌍 Timeline JSON"))}
                                 </button>
                             </div>
                             
                             {photos.length > 0 && (
                                 <div className="space-y-4">
-                                    <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 space-y-2" data-phase="1">
+                                    <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 space-y-2" data-phase="1" data-tour="phase-1">
                                         {phaseHeader(1, t('EXIF metadata', 'EXIF metadata'), false, phaseDone[1], showPhase1Settings, () => setShowPhase1Settings(v => !v))}
                                         <button onClick={runPhase1} disabled={isExtracting} className="w-full bg-blue-600 p-2 rounded text-xs text-white hover:bg-blue-500 disabled:bg-slate-700">
                                             {isExtracting ? (progress || t('Zpracovávám...', 'Processing...')) : t('📍 Načíst EXIF', '📍 Extract EXIF')}
@@ -4684,7 +4782,7 @@ DATA: ${JSON.stringify(data)}`;
                                         )}
                                     </div>
 
-                                    <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 space-y-2" data-phase="2">
+                                    <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 space-y-2" data-phase="2" data-tour="phase-2">
                                         {phaseHeader(2, t('Clustering & heatmaps', 'Clustering & heatmaps'), false, phaseDone[2], showGroupingSettings, () => setShowGroupingSettings(v => !v))}
 
                                         <button data-heatmap-clustering onClick={() => runPhase2('heatmap')} disabled={isGrouping} className="w-full bg-cyan-600 p-2 rounded text-xs font-bold text-white hover:bg-cyan-500 disabled:bg-slate-700 disabled:cursor-wait">
@@ -4813,7 +4911,7 @@ DATA: ${JSON.stringify(data)}`;
                                         </div>
                                     </div>
 
-                                    <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 space-y-2" data-phase="3">
+                                    <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 space-y-2" data-phase="3" data-tour="phase-3">
                                         {phaseHeader(3, t('Event names', 'Event names'), true, phaseDone[3], showNamingSettings, () => setShowNamingSettings(v => !v))}
 
                                         {showNamingSettings && (
@@ -4865,7 +4963,7 @@ DATA: ${JSON.stringify(data)}`;
                                         </button>
                                     </div>
 
-                                    <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 space-y-2" data-phase="4">
+                                    <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 space-y-2" data-phase="4" data-tour="phase-4">
                                         {phaseHeader(4, t('Visual tags', 'Visual tags'), true, phaseDone[4], showVisionSettings, () => setShowVisionSettings(v => !v))}
                                         {showVisionSettings && (
                                             <div className="space-y-2 border-t border-slate-800 pt-2">
@@ -4886,7 +4984,7 @@ DATA: ${JSON.stringify(data)}`;
                                             {isMoondreaming ? (progress || t('Analyzuji...', 'Analyzing...')) : t('🌙 Vizuální tagy', '🌙 Visual Tags')}
                                         </button>
                                     </div>
-                                    <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 space-y-2" data-phase="5">
+                                    <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 space-y-2" data-phase="5" data-tour="phase-5">
                                         {phaseHeader(5, t('Data fill', 'Data fill'), true, phaseDone[5], showDataFillSettings, () => setShowDataFillSettings(v => !v))}
                                         <div className="flex items-center justify-between text-[9px] text-slate-500">
                                             <span>{t('Chybějící lokace', 'Missing locations')}</span>
@@ -4908,7 +5006,7 @@ DATA: ${JSON.stringify(data)}`;
                                     </div>
                                     <div className="flex gap-2">
                                         <button onClick={startTinder} className="flex-1 bg-orange-600 p-2 rounded text-xs text-white font-bold hover:bg-orange-500">{t("🔥 Tinder", "🔥 Tinder")}</button>
-                                        <button data-export-open onClick={() => setShowExportModal(true)} className="flex-1 bg-emerald-600 p-2 rounded text-xs text-white font-bold hover:bg-emerald-500">{t("💾 Export", "💾 Export")}</button>
+                                        <button data-export-open data-tour="export" onClick={() => setShowExportModal(true)} className="flex-1 bg-emerald-600 p-2 rounded text-xs text-white font-bold hover:bg-emerald-500">{t("💾 Export", "💾 Export")}</button>
                                     </div>
                                 </div>
                             )}
@@ -4981,7 +5079,7 @@ DATA: ${JSON.stringify(data)}`;
                                 <button onClick={resetWorkspace} title={t("Smazat lokální data", "Reset local data")} className="bg-slate-800 hover:bg-rose-900/60 border border-slate-700 text-slate-300 font-bold w-9 h-9 rounded-full transition-colors flex items-center justify-center shadow-md text-sm">
                                     🧹
                                 </button>
-                                <button onClick={() => setShowHelpModal(true)} title={t("Nápověda k aplikaci", "Application Help")} className="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-bold w-9 h-9 rounded-full transition-colors flex items-center justify-center shadow-md text-sm">
+                                <button data-tour="help" onClick={() => setShowHelpModal(true)} title={t("Nápověda k aplikaci", "Application Help")} className="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-bold w-9 h-9 rounded-full transition-colors flex items-center justify-center shadow-md text-sm">
                                     ❓
                                 </button>
                                 <button onClick={() => setLang(lang === 'cs' ? 'en' : 'cs')} className="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-bold px-4 py-2 rounded-full transition-colors flex items-center gap-2 text-sm shadow-md">
@@ -5190,6 +5288,8 @@ DATA: ${JSON.stringify(data)}`;
                         </div>
                     )}
 
+                    {showTour && <TourOverlay steps={tourSteps} onClose={closeTour} />}
+
                     {showTinder && (
                         <div className="fixed inset-0 bg-black/95 z-[100] flex flex-col">
                             <div className="p-6 text-white flex justify-between items-center bg-gradient-to-b from-black to-transparent">
@@ -5305,6 +5405,11 @@ DATA: ${JSON.stringify(data)}`;
                             <div className="bg-slate-900 p-8 rounded-xl border border-slate-700 w-full max-w-2xl max-h-[85vh] overflow-y-auto custom-scrollbar shadow-2xl relative text-slate-300">
                                 <button onClick={() => setShowHelpModal(false)} className="absolute top-4 right-4 text-slate-500 hover:text-white text-2xl leading-none">&times;</button>
                                 <h2 className="text-2xl font-bold text-orange-400 mb-6 flex items-center gap-2"><span>📖</span> {t('Nápověda k aplikaci Clustr', 'Clustr User Guide')}</h2>
+                                <button
+                                    data-start-tour
+                                    onClick={() => { setShowHelpModal(false); setShowTour(true); }}
+                                    className="mb-6 inline-flex items-center gap-2 rounded-full bg-cyan-600 px-4 py-2 text-sm font-bold text-white hover:bg-cyan-500"
+                                >▶ {t('Spustit prohlídku', 'Start tour')}</button>
                                 
                                 <div className="space-y-6 text-sm">
                                     <section>
@@ -6134,6 +6239,109 @@ DATA: ${JSON.stringify(data)}`;
             };
 
 
+        const TourOverlay = ({ steps, onClose }) => {
+            const [index, setIndex] = useState(0);
+            const [rect, setRect] = useState(null);
+            const step = steps[Math.min(index, steps.length - 1)];
+
+            useEffect(() => {
+                let timer;
+                let settleTimer;
+                const measure = () => {
+                    if (!step?.target) {
+                        setRect(null);
+                        return;
+                    }
+                    const selectors = step.target.split(',').map((selector) => selector.trim());
+                    let element = null;
+                    for (const selector of selectors) {
+                        element = document.querySelector(selector);
+                        if (element) break;
+                    }
+                    if (!element) {
+                        setRect(null);
+                        return;
+                    }
+                    element.scrollIntoView({ block: 'center', inline: 'center', behavior: 'smooth' });
+                    setRect(element.getBoundingClientRect());
+                    settleTimer = window.setTimeout(() => {
+                        setRect(element?.getBoundingClientRect() ?? null);
+                    }, 320);
+                };
+                measure();
+                const onScroll = () => {
+                    window.clearTimeout(timer);
+                    timer = window.setTimeout(measure, 80);
+                };
+                window.addEventListener('resize', measure);
+                window.addEventListener('scroll', onScroll, true);
+                return () => {
+                    window.clearTimeout(timer);
+                    window.clearTimeout(settleTimer);
+                    window.removeEventListener('resize', measure);
+                    window.removeEventListener('scroll', onScroll, true);
+                };
+            }, [index, step]);
+
+            const targetHigh = !rect || rect.top + rect.height / 2 < window.innerHeight * 0.62;
+            const cardTop = Boolean(rect) && !targetHigh;
+            const isLast = index >= steps.length - 1;
+
+            return (
+                <div className="fixed inset-0 z-[200]" data-app-tour="true">
+                    <div className="absolute inset-0" aria-hidden="true" />
+                    {rect && (
+                        <div
+                            className="pointer-events-none fixed z-[201] rounded-2xl border-2 border-white/90 transition-all duration-300"
+                            style={{
+                                top: rect.top - 6,
+                                left: rect.left - 6,
+                                width: rect.width + 12,
+                                height: rect.height + 12,
+                                boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.62)'
+                            }}
+                        />
+                    )}
+                    <div className={`fixed inset-x-0 z-[202] px-4 ${cardTop ? 'top-8' : 'bottom-8'}`}>
+                        <div className="mx-auto w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900/95 p-5 shadow-2xl backdrop-blur-xl text-slate-200">
+                            <div className="flex items-start justify-between gap-3">
+                                <div className="flex items-center gap-2">
+                                    <span className="flex h-9 w-9 items-center justify-center rounded-full bg-cyan-950 text-cyan-300 text-lg">
+                                        {targetHigh ? '▲' : '▼'}
+                                    </span>
+                                    <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+                                        {index + 1} / {steps.length}
+                                    </span>
+                                </div>
+                                <button onClick={onClose} className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-[11px] font-semibold text-slate-400 hover:bg-slate-800" data-tour-skip>
+                                    × {step?.skipLabel || 'Skip'}
+                                </button>
+                            </div>
+                            <h3 className="mt-3 text-xl font-bold text-orange-300">{step?.title}</h3>
+                            <p className="mt-2 text-sm leading-relaxed text-slate-300">{step?.body}</p>
+                            <div className="mt-4 flex items-center justify-between gap-2">
+                                <button
+                                    onClick={() => setIndex((current) => Math.max(0, current - 1))}
+                                    disabled={index === 0}
+                                    className="inline-flex items-center gap-1 rounded-full border border-slate-700 px-4 py-2.5 text-xs font-semibold text-slate-300 hover:bg-slate-800 disabled:opacity-30"
+                                >{'◀'} {step?.backLabel || 'Back'}</button>
+                                <div className="flex items-center gap-1.5">
+                                    {steps.map((_, dot) => (
+                                        <span key={dot} className={`h-1.5 rounded-full transition-all ${dot === index ? 'w-4 bg-cyan-400' : 'w-1.5 bg-slate-700'}`} />
+                                    ))}
+                                </div>
+                                <button
+                                    onClick={() => { if (isLast) onClose(); else setIndex((current) => Math.min(steps.length - 1, current + 1)); }}
+                                    className="inline-flex items-center gap-1 rounded-full bg-cyan-600 px-4 py-2.5 text-xs font-semibold text-white hover:bg-cyan-500"
+                                    data-tour-next
+                                >{isLast ? (step?.doneLabel || 'Done') : (step?.nextLabel || 'Next')} {'▶'}</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
     </script>
@@ -6149,5 +6357,6 @@ DATA: ${JSON.stringify(data)}`;
     </script>
 </body>
 </html>
+
 
 

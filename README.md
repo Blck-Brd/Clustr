@@ -41,6 +41,7 @@ Completed phases display a checkmark. Every phase keeps its settings behind the 
 - **Cluster review heatmap** - docked bottom panel; review clusters over time or on a map, click a day tile or drag a range to filter the gallery, then create a new folder from the selected photos or add them to an existing folder.
 - **Folder breadcrumbs** - the gallery header shows `All photos` or every active folder path (`Trip 1 → Stop 2`) so the current filter is always visible.
 - **Phase progress** - completed phases get a checkmark, optional phases are labelled, and all per-phase settings collapse under a cog icon.
+- **Guided tour** - first-run spotlight walkthrough of the upload, Timeline, phases, folder tree and export; skippable and replayable from the help dialog.
 - **Heatmap-first Phase 2** - choose auto sort or heatmap clustering; heatmap mode pre-builds one cluster per visible density burst, opens the bottom panel in draw mode, and supports click-start/click-end, drag ranges and Start/End date inputs for adding more folders.
 - **TODO roadmap** - see `TODO.md` for Ko-fi profile rework, Vercel issues and remaining architecture tasks.
 - **Auto + manual sensitivity** - Auto derives the trip/home or place window from the dataset. Trip sensitivity (gap, home radius, session gap) and stop/place sensitivity (time, space, min photos) are separate.

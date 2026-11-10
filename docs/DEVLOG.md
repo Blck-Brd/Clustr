@@ -333,5 +333,15 @@ Added after the first checkpoint:
   - Preview workers run with a timeout so malformed raws cannot block the queue.
 - Documentation:
   - README, manifest and package descriptions updated for the cluster/heatmap positioning.
-  - English and Czech tutorials added in `docs/` and copied to `C:\Users\andre\Documents\TheraDiary`.
+  - English and Czech tutorials added in `docs/`, modelled after the So Far So Good user manual.
 - Tests: `npm run check`, `npm test`, and `npm run test:browser` cover breadcrumbs, phase checkmarks/cogs, data fill, export progress and XMP output.
+
+### Sixteenth pass - guided spotlight tour
+
+- Added a first-run interactive tour modelled after the So Far So Good app walkthrough:
+  - Spotlights the upload button, Timeline import, Phases 1-5, folder tree, gallery and export button with a dimmed backdrop and arrow pointer.
+  - Explains each area in plain language, with Back/Next/Skip and progress dots.
+  - Opens automatically on the first folder load; the seen flag is stored in localStorage.
+  - Can be replayed any time from the help dialog with **Start tour**.
+- Tutorial docs (EN/CZ) now mention the guided tour and the replay path.
+- Browser test covers auto-open, skip and replay from help.

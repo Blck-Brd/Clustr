@@ -106,6 +106,17 @@ try {
     assert.ok(/All photos|Všechny fotky/.test(allCrumbs), `Breadcrumb should say All photos: ${allCrumbs}`);
     console.log('All photos breadcrumb: OK');
 
+    // First-run tour auto-opens; skip it, then replay it from the help dialog.
+    await page.locator('[data-app-tour]').waitFor({ timeout: 6000 });
+    await page.locator('[data-tour-next]').click();
+    await page.locator('[data-tour-skip]').click();
+    await page.locator('[data-app-tour]').waitFor({ state: 'detached', timeout: 5000 });
+    await page.locator('[data-tour="help"]').click();
+    await page.locator('[data-start-tour]').click();
+    await page.locator('[data-app-tour]').waitFor({ timeout: 5000 });
+    await page.locator('[data-tour-skip]').click();
+    console.log('App tour: OK');
+
     const initialTiles = await page.locator('[data-photo-id]').count();
     assert.ok(initialTiles > 0, 'Gallery should render tiles');
     assert.ok(initialTiles < 120, `Gallery should virtualize (${initialTiles}/120 tiles rendered)`);
