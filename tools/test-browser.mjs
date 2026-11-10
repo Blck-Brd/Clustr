@@ -236,7 +236,12 @@ try {
     if (await supportModal.count()) {
         await supportModal.getByRole('button', { name: /Maybe later|Možná později/ }).click();
     }
-    assert.equal(await page.locator('[data-support-button]').getAttribute('href'), 'https://ko-fi.com/andrewblackbird', 'Support button should link to Ko-fi');
+    await page.locator('[data-support-button]').click();
+    await supportModal.waitFor({ timeout: 5000 });
+    assert.equal(await supportModal.locator('a').getAttribute('href'), 'https://ko-fi.com/andrewblackbird', 'Support CTA should link to Ko-fi');
+    assert.ok(await supportModal.getByRole('link', { name: /To podporuji|I support that|Koupit mi kávu|Buy me a coffee/ }).isVisible(), 'Support modal should show the CTA');
+    await supportModal.getByRole('button', { name: /Maybe later|Možná později/ }).click();
+    await supportModal.waitFor({ state: 'detached', timeout: 5000 });
     const xmpSidecars = await page.evaluate(() => window.__xmp);
     assert.ok(xmpSidecars.length > 0, 'XMP sidecars should be written');
     assert.ok(xmpSidecars[0].includes('<dc:subject>'), 'XMP should contain keywords');

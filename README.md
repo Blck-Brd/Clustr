@@ -136,7 +136,7 @@ Small vision models such as Moondream do not follow keyword instructions reliabl
 
 ## Support
 
-Clustr is completely free. It was built at home by one person, without a budget, and is given to everyone with no fees. If it helps you, you can support the author on Ko-fi: <https://ko-fi.com/andrewblackbird>. The app also shows a floating coffee button, a friendly reminder after a while (at most once a day), and one when an export starts.
+Clustr is completely free and ad-free. It was built at home by one person, without a budget, and is given to everyone with no fees. If it helps you, you can support the author on Ko-fi: <https://ko-fi.com/andrewblackbird>. The app also shows a floating coffee button (with a short support dialog), a friendly reminder after a while (at most once a day), and one when an export starts.
 
 ## Data & privacy
 

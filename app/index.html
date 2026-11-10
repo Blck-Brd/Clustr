@@ -4012,12 +4012,10 @@ DATA: ${JSON.stringify(data)}`;
                 }
 
                 setExportProgress({ done: 0, total: exportPhotos.length, current: '' });
-                window.setTimeout(() => {
-                    supportShownRef.current = true;
-                    try { localStorage.setItem('clustr-support-last', String(Date.now())); } catch (e) {}
-                    setSupportReason('export');
-                    setShowSupport(true);
-                }, 500);
+                supportShownRef.current = true;
+                try { localStorage.setItem('clustr-support-last', String(Date.now())); } catch (e) {}
+                setSupportReason('export');
+                setShowSupport(true);
 
                 try {
                     const usedNamesByFolder = new Map();
@@ -5518,17 +5516,16 @@ DATA: ${JSON.stringify(data)}`;
                     )}
 
                     {!showDataFill && !showClusterReview && (
-                        <a
+                        <button
+                            type="button"
                             data-support-button
-                            href="https://ko-fi.com/andrewblackbird"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            title={t('Podpořit autora na Ko-fi', 'Support the author on Ko-fi')}
+                            onClick={() => { setSupportReason('button'); setShowSupport(true); }}
+                            title={t('Podpořit Clustr', 'Support Clustr')}
                             className="fixed bottom-5 right-5 z-[140] flex items-center gap-2 rounded-full bg-[#ff5e5b] px-4 py-2.5 text-sm font-bold text-white shadow-2xl shadow-black/50 transition-transform hover:scale-105"
                         >
                             <span aria-hidden="true">☕</span>
                             <span>{t('Buy me a coffee', 'Buy me a coffee')}</span>
-                        </a>
+                        </button>
                     )}
 
                     {showSupport && (
@@ -5538,12 +5535,14 @@ DATA: ${JSON.stringify(data)}`;
                                 <h2 className="text-xl font-bold text-white mb-2">
                                     {supportReason === 'export'
                                         ? t('Export běží. Líbí se vám Clustr?', 'Export is running. Enjoying Clustr?')
-                                        : t('Líbí se vám Clustr?', 'Enjoying Clustr?')}
+                                        : supportReason === 'button'
+                                            ? t('Podpořte Clustr', 'Support Clustr')
+                                            : t('Líbí se vám Clustr?', 'Enjoying Clustr?')}
                                 </h2>
                                 <p className="text-sm text-slate-400 leading-relaxed mb-6">
                                     {t(
-                                        'Clustr je zcela zdarma. Vytvořil jsem ho doma, sám a bez rozpočtu, a dávám ho všem k dispozici bez poplatků. Pokud se vám hodí, můžete mě podpořit na Ko-fi — pomůže to dalšímu vývoji.',
-                                        'Clustr is completely free. I built it at home, alone and without a budget, and I give it to everyone with no fees. If it helps you, consider supporting me on Ko-fi — it helps fund the next updates.'
+                                        'Clustr je zcela zdarma a bez reklam. Vytvořil jsem ho doma, sám a bez rozpočtu, a dávám ho všem k dispozici bez poplatků. Autor bude vděčný za jakoukoli podporu — pomůže to dalšímu vývoji.',
+                                        'Clustr is completely free and ad-free. I built it at home, alone and without a budget, and I give it to everyone with no fees. The author would appreciate any support — it helps fund the next updates.'
                                     )}
                                 </p>
                                 <div className="flex flex-col gap-2">
@@ -5554,7 +5553,7 @@ DATA: ${JSON.stringify(data)}`;
                                         onClick={() => setShowSupport(false)}
                                         className="rounded-lg bg-[#ff5e5b] px-4 py-2.5 font-bold text-white hover:brightness-110"
                                     >
-                                        ☕ {t('Koupit mi kávu', 'Buy me a coffee')}
+                                        ☕ {supportReason === 'button' ? t('To podporuji', 'I support that') : t('Koupit mi kávu', 'Buy me a coffee')}
                                     </a>
                                     <button onClick={() => setShowSupport(false)} className="text-sm text-slate-500 hover:text-slate-300">
                                         {t('Možná později', 'Maybe later')}
