@@ -2304,6 +2304,7 @@
             const [lastClusterSettings, setLastClusterSettings] = useState(null);
             const [showSupport, setShowSupport] = useState(false);
             const [supportReason, setSupportReason] = useState('timer');
+            const [showEarlyAccess, setShowEarlyAccess] = useState(false);
             
             const fileInputRef = useRef(null);
             const timelineInputRef = useRef(null);
@@ -2395,13 +2396,24 @@
             }, [showDataFill, dataFillIndex, dataFillQueue, photos]);
 
             useEffect(() => {
-                if (photos.length === 0 || showTour) return;
+                if (photos.length === 0 || showTour || showEarlyAccess) return;
                 let seen = false;
                 try { seen = localStorage.getItem('clustr-tour-seen') === '1'; } catch (e) {}
                 if (seen) return;
                 const timer = window.setTimeout(() => setShowTour(true), 900);
                 return () => window.clearTimeout(timer);
-            }, [photos.length, showTour]);
+            }, [photos.length, showTour, showEarlyAccess]);
+
+            useEffect(() => {
+                let seen = false;
+                try { seen = localStorage.getItem('clustr-early-access-seen') === '1'; } catch (e) {}
+                if (seen || showTour || showEarlyAccess) return;
+                const timer = window.setTimeout(() => {
+                    try { localStorage.setItem('clustr-early-access-seen', '1'); } catch (e) {}
+                    setShowEarlyAccess(true);
+                }, 2200);
+                return () => window.clearTimeout(timer);
+            }, [showTour, showEarlyAccess]);
 
             useEffect(() => {
                 if (photos.length === 0 || showTour || showSupport || showClusterReview || showDataFill || supportShownRef.current) return;
@@ -4810,7 +4822,12 @@ DATA: ${JSON.stringify(data)}`;
                 <div className="flex h-screen overflow-hidden">
                     <div className="w-80 bg-slate-900 border-r border-slate-800 flex flex-col">
                         <div className="p-6 border-b border-slate-800">
-                            <h1 className="text-xl font-bold text-orange-400">⚡ Clustr</h1>
+                            <div className="flex items-center gap-2">
+                                <h1 className="text-xl font-bold text-orange-400">⚡ Clustr</h1>
+                                <span className="rounded-full border border-amber-700 bg-amber-950/60 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-amber-300">
+                                    {t('Raný přístup', 'Early access')}
+                                </span>
+                            </div>
                             <p className="text-[10px] text-slate-500 uppercase tracking-wider">{t("Třídění podle clusterů a heatmap", "Cluster & heatmap sorter")}</p>
                         </div>
                         <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar">
@@ -5139,6 +5156,9 @@ DATA: ${JSON.stringify(data)}`;
                                 <button data-tour="help" onClick={() => setShowHelpModal(true)} title={t("Nápověda k aplikaci", "Application Help")} className="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-bold w-9 h-9 rounded-full transition-colors flex items-center justify-center shadow-md text-sm">
                                     ❓
                                 </button>
+                                <a data-tour="feedback" href="mailto:andrejkos2077@gmail.com?subject=Clustr%20feedback" title={t("Poslat zpětnou vazbu", "Send feedback")} className="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-bold w-9 h-9 rounded-full transition-colors flex items-center justify-center shadow-md text-sm">
+                                    ✉️
+                                </a>
                                 <button onClick={() => setLang(lang === 'cs' ? 'en' : 'cs')} className="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-bold px-4 py-2 rounded-full transition-colors flex items-center gap-2 text-sm shadow-md">
                                     {lang === 'cs' ? '🇬🇧 EN' : '🇨🇿 CS'}
                                 </button>
@@ -5510,6 +5530,33 @@ DATA: ${JSON.stringify(data)}`;
                                 <div className="flex justify-end gap-2">
                                     <button onClick={() => setRenameModal({ isOpen: false })} className="px-3 py-1 text-sm text-slate-400">{t("Zrušit", "Cancel")}</button>
                                     <button onClick={handleRename} className="px-3 py-1 bg-blue-600 rounded text-sm text-white">{t("Uložit", "Save")}</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {showEarlyAccess && (
+                        <div data-early-access-modal className="fixed inset-0 z-[160] flex items-center justify-center bg-black/70 p-4" onClick={(e) => { if (e.target === e.currentTarget) setShowEarlyAccess(false); }}>
+                            <div className="w-full max-w-md rounded-2xl border border-amber-700/60 bg-slate-900 p-6 text-center shadow-2xl">
+                                <div className="text-4xl mb-3">🚧</div>
+                                <h2 className="text-xl font-bold text-amber-300 mb-2">{t('Clustr je v raném přístupu', 'Clustr is in early access')}</h2>
+                                <p className="text-sm text-slate-400 leading-relaxed mb-6">
+                                    {t(
+                                        'Některé funkce se mohou ještě změnit nebo rozbít. Doporučuji pracovat s kopií fotek a výsledné složky si zkontrolovat. Zpětná vazba, nápady i hlášení chyb jsou vítané.',
+                                        'Some features may still change or break. Work from a copy of your photos and check the exported folders. Feedback, ideas and bug reports are welcome.'
+                                    )}
+                                </p>
+                                <div className="flex flex-col gap-2">
+                                    <a
+                                        href="mailto:andrejkos2077@gmail.com?subject=Clustr%20feedback"
+                                        onClick={() => setShowEarlyAccess(false)}
+                                        className="rounded-lg bg-amber-500 px-4 py-2.5 font-bold text-slate-950 hover:bg-amber-400"
+                                    >
+                                        ✉️ {t('Poslat zpětnou vazbu', 'Send feedback')}
+                                    </a>
+                                    <button onClick={() => setShowEarlyAccess(false)} className="text-sm text-slate-500 hover:text-slate-300">
+                                        {t('Pokračovat', 'Continue')}
+                                    </button>
                                 </div>
                             </div>
                         </div>

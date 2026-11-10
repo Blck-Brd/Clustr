@@ -1,62 +1,75 @@
 # Clustr - Cluster & Heatmap Photo Sorter
 
-Clustr is a local-first, browser-based photo organizer. It reads EXIF metadata, matches photo times against Google Timeline, groups photos into cluster folders using time, place and density heatmaps, and exports a folder hierarchy with Adobe Lightroom XMP sidecars. AI event naming and visual tags are optional extras.
+Clustr is a local-first, browser-based photo organizer. It reads EXIF metadata, matches photo times against Google Timeline, groups photos into trip/stop folders using time, place and density heatmaps, and exports a folder hierarchy with Adobe Lightroom XMP sidecars. AI event naming and visual tags are optional extras.
 
-It is a single-file React app with no build step and no backend. It can be deployed as a PWA on Vercel or GitHub Pages.
+It is a single-file React app with no build step and no backend. Everything runs in the browser, and it can be installed as a PWA on Vercel or GitHub Pages.
+
+> **Early access.** Clustr is still in early access. Features and file formats may change or break. Work from a copy of your photos and review the exported folders before deleting anything. Bug reports, ideas and feedback are welcome at **andrejkos2077@gmail.com** or via the ✉️ button in the app header.
 
 ## Workflow
 
-1. **Upload Folder** - select a photo directory.
+1. **Upload Folder** - select a photo directory (JPG, PNG, WebP, HEIC/HEIF, NEF, CR2, ARW, DNG, ORF, RAF, TIF/TIFF).
 2. **Timeline JSON (optional)** - import Google Timeline so locations can be assigned by photo time.
 3. **Phase 1 - EXIF metadata** - extracts date, camera, GPS and location. The home city setting lives behind the phase cog.
-4. **Phase 2 - Clustering & heatmaps** - choose **Auto clustering** (density trips/stops, home sessions, Random) or **Heatmap clustering**. Auto reads EXIF, Timeline and locations and builds the event tree. Heatmap mode prepares the photos and opens the bottom heatmap panel in draw mode; drag a date range or set Start/End and create each cluster/folder manually. The event tree remains available for naming and export.
-5. **Phase 3 - Event names (optional)** - sends each event summary (date, time, location, tags) to Ollama or Gemini and replaces the temporary names. Manually named events are left untouched. Model settings are behind the cog.
-6. **Phase 4 - Visual Tags (optional)** - batch or single-image tagging with Moondream / Llama Vision through Ollama. Model settings are behind the cog.
+4. **Phase 2 - Clustering & heatmaps** - choose **Auto clustering** (density trips/stops, home sessions, Random) or **Heatmap clustering**. Auto reads EXIF, Timeline and locations and builds the event tree. Heatmap mode prepares the photos and opens the docked heatmap panel in draw mode; click a start day and end day, drag a range, or type Start/End, then create each cluster/folder manually.
+5. **Phase 3 - Event names (optional)** - sends each event summary (date, time, location, tags) to Ollama or Gemini and replaces the temporary names. Manually named events are left untouched. Model settings live behind the cog.
+6. **Phase 4 - Visual tags (optional)** - batch or single-image tagging with Moondream / Llama Vision through Ollama. Model settings live behind the cog.
 7. **Phase 5 - Data Fill (optional)** - walks photos that still lack a location, one at a time. Entering a place applies it to that photo and to nearby photos without a location; the nearby window is configurable behind the cog.
 8. **Review and Export** - filter with the breadcrumb bar, use Tinder mode, edit folders/tags, then export photos and XMP sidecars with a live progress dialog.
 
-Completed phases display a checkmark. Every phase keeps its settings behind the cog icon so the sidebar stays compact.
+Completed phases display a checkmark, optional phases are labelled, and every phase keeps its settings behind the cog icon. The UI starts in Czech for Czech browser locales or the `Europe/Prague` timezone, and in English otherwise; the 🇬🇧/🇨🇿 button switches language at any time.
 
 ### Cluster-level edits
 
 - Phase 2 creates `Trip N` folders with `Stop N - location` subfolders, plus `Home N` sessions. Rename `Trip N` to “Vacation”.
 - Selecting a photo and changing its **location** or **event name** in the bulk editor applies the change to every photo in the same stop/event. A single stop rename keeps its trip folder; selecting multiple events merges them into one event.
-- Renaming a folder in the tree also marks the affected event as manually named, so phase 3 will not overwrite it.
+- Renaming a folder in the tree marks the affected event as manually named, so Phase 3 will not overwrite it.
 - Wrapping events in a parent folder keeps AI naming available for the leaf events.
 - Phase 2 preserves manually named events (including their cluster/trip identity) when it is run again.
 
 ## Features
 
+### Import and metadata
+
 - **EXIF extraction** - capture date, camera, GPS, and automatic season / time-of-day tags.
-- **Timeline matching** - imports visits, activities and timeline paths, binary-searches by EXIF time, and resolves unnamed coordinates to the nearest named Timeline location before falling back to GPS/Nominatim.
+- **Timeline matching** - imports visits, activities and Timeline paths, binary-searches by EXIF time, and resolves unnamed coordinates to the nearest named Timeline location before falling back to GPS/Nominatim.
 - **Local persistence** - photo metadata and Timeline data are saved to IndexedDB and relinked after a refresh by file name, size and modified time.
+- **Duplicate-safe import** - identical files (same name, size and modified time) are loaded once and reported.
+- **Clean state** - the 🧹 button clears IndexedDB, local settings and cloud metadata.
+- **Worker pool** - EXIF parsing runs in dedicated workers; Nominatim geocoding runs in a serialized geocode worker.
+- **RAW + HEIC previews** - paired JPGs are used first, then embedded thumbnails via exifr, scanned embedded JPEG previews, HEIC conversion via heic2any, and TIFF/RAW decoding via UTIF. Thumbnails that fail to decode trigger a fresh embedded scan, and large files get a longer worker timeout.
+
+### Clustering
+
 - **Trips + home hierarchy (default)** - a smoothed **daily photo-density heatmap** finds active days and rest valleys, so one vacation becomes one trip folder. Nearby density episodes are merged into one parent trip; internal segments become stop subfolders only when there are enough located photos. Stops use a spatiotemporal **grid heatmap**.
 - **Places/density profile** - the same grid heatmap used as flat place events if you do not want trip folders.
 - **Screenshot / Clutter folder** - Czech/English screenshots, lossless images without camera/location, very small no-EXIF images, Downloads/meme paths and similar clutter go to `Screenshot-Clutter`, outside the clustering.
 - **Random category** - small, short, location-less bursts and leftovers go to one `Random` folder instead of creating a full event per burst; `randomMinPhotos` is adjustable.
-- **Duplicate-safe import** - identical files (same name, size and modified time) are loaded once and reported.
-- **Clean state** - the 🧹 button clears IndexedDB, local settings and cloud metadata.
+- **Auto + manual sensitivity** - Auto derives the trip/home or place window from the dataset. Trip sensitivity (gap, home radius, session gap) and stop/place sensitivity (time, space, min photos) are separate.
 - **Manual trip window** - create one trip folder from all photos in a date range (e.g. 2–8 May) with an optional whole-trip location.
 - **Data Fill phase** - Tinder-style pass over photos missing a location; entering a place applies it to that photo and to nearby photos without a location, with a configurable time window.
+
+### Review and editing
+
 - **Cluster review heatmap** - docked bottom panel; review clusters over time or on a map, click a day tile or drag a range to filter the gallery, then create a new folder from the selected photos or add them to an existing folder.
-- **Folder breadcrumbs** - the gallery header shows `All photos` or every active folder path (`Trip 1 → Stop 2`) so the current filter is always visible.
-- **Phase progress** - completed phases get a checkmark, optional phases are labelled, and all per-phase settings collapse under a cog icon.
-- **Guided tour** - first-run spotlight walkthrough of the upload, Timeline, phases, folder tree and export; skippable and replayable from the help dialog.
-- **Heatmap-first Phase 2** - choose auto sort or heatmap clustering; heatmap mode pre-builds one cluster per visible density burst, opens the bottom panel in draw mode, and supports click-start/click-end, drag ranges and Start/End date inputs for adding more folders.
 - **Heatmap help** - a `?` button in the heatmap header opens a bilingual guide explaining the header controls, time and map views, the right panel, and the recommended workflow.
-- **TODO roadmap** - see `TODO.md` for Ko-fi profile rework, Vercel issues and remaining architecture tasks.
-- **Auto + manual sensitivity** - Auto derives the trip/home or place window from the dataset. Trip sensitivity (gap, home radius, session gap) and stop/place sensitivity (time, space, min photos) are separate.
-- **Trip or stop AI naming** - Phase 3 can name the top-level trip folders or the stop subfolders, preserving the other level.
-- **Manual cluster edits** - Split selected photos into a new event, or merge events by renaming them together.
+- **Manual cluster edits** - split selected photos into a new event, or merge events by renaming them together. A selected trip can open its date-window editor.
 - **Location inheritance** - a manually added location propagates through the event and to nearby photos that have no location of their own (12 h window).
-- **RAW + HEIC previews** - paired JPGs are used first, then embedded thumbnails via exifr, scanned embedded JPEG previews, HEIC conversion via heic2any, and TIFF/RAW decoding via UTIF. Thumbnails that fail to decode trigger a fresh embedded scan, and large files get a longer worker timeout.
-- **Worker pool** - EXIF parsing runs in a pool of dedicated workers; Nominatim geocoding runs in a serialized geocode worker.
-- **Virtualized gallery** - only visible photo tiles are mounted, so 2,000+ photos stay responsive.
-- **AI event names** - strict JSON prompts, output-shape normalization, retries, and clear model errors.
-- **Vision tagging** - short image descriptions converted into cleaned keyword tags.
 - **Folder tree** - nested folders with drag & drop, rename, wrap, and bulk editing.
+- **Folder breadcrumbs** - the gallery header shows `All photos` or every active folder path (`Trip 1 → Stop 2`) so the current filter is always visible.
+- **Virtualized gallery** - only visible photo tiles are mounted, so 2,000+ photos stay responsive.
 - **Tinder mode** - fast keep / discard review with arrow keys.
+
+### AI
+
+- **AI event names** - strict JSON prompts, output-shape normalization, retries, and clear model errors. Phase 3 can name the top-level trip folders or the stop subfolders, preserving the other level.
+- **Vision tagging** - short image descriptions converted into cleaned keyword tags.
+
+### Export and app
+
 - **Lightroom export** - Windows-safe folder/file names, duplicate handling, and a progress dialog. XMP sidecars write `dc:subject` keywords, `lr:hierarchicalSubject` folder paths, `photoshop:City` and `Iptc4xmpCore:Location`.
+- **Guided tour** - first-run spotlight walkthrough of the upload, Timeline, phases, folder tree and export; skippable and replayable from the help dialog.
+- **Early-access notice** - a short first-visit popup plus a persistent “Early access” badge in the sidebar.
 - **PWA** - installable app shell with a service worker and offline caching for the app and CDN libraries.
 - **CZ / EN UI** and persisted settings (models, home location, folders).
 
@@ -80,18 +93,12 @@ npm run dev
 
 This serves the app at **http://127.0.0.1:4173/** and exposes the root `Timeline.json` at `/Timeline.json`; when present, the app imports it automatically on load. The personal file stays ignored by Git.
 
-Browser smoke test (requires installed Chrome):
+Checks and tests:
 
 ```powershell
-npm run test:browser
-```
-
-## Repository layout
-
-```text
-app/                  PWA source and assets
-tools/                Checks, tests and icon generation
-docs/                 Architecture, deployment, Timeline format and DEVLOG
+npm run check         # Babel transform, worker syntax, JSON validation
+npm test              # clustering, Timeline and trip-fuzz tests
+npm run test:browser  # Playwright smoke test (uses installed Chrome when available)
 ```
 
 For Ollama from a local file or local server:
@@ -104,6 +111,14 @@ ollama serve
 See `docs/DEPLOYMENT.md` for details.
 
 > Note: When the app is served over HTTPS, browsers may restrict HTTP requests to `http://localhost` because of mixed-content / Private Network Access rules. Local AI through Ollama is most reliable when the app is opened locally (`index.html`, `http://localhost`, or `vercel dev`) rather than from the public HTTPS deployment.
+
+## Repository layout
+
+```text
+app/                  PWA source and assets
+tools/                Checks, tests and icon generation
+docs/                 Architecture, deployment, Timeline format and DEVLOG
+```
 
 ## Troubleshooting
 
@@ -130,13 +145,20 @@ Important: the imported Timeline must cover the **photo dates**. If it does not,
 
 They should be routed to `Screenshot-Clutter`. Detection covers English and Czech “screenshot/obrazovky” names, `Screenshots`/clutter folder paths, and PNG/WebP/GIF images with no camera and no location. Re-run Phase 2 after updating.
 
+**A RAW/HEIC tile says “No preview”**
+
+The file has no embedded preview and no same-name JPG. It still sorts and exports normally. Files with a damaged embedded thumbnail are retried with a fresh scan; very slow, large files also get a longer worker timeout.
+
 **Vision tags are poor**
 
 Small vision models such as Moondream do not follow keyword instructions reliably, so the app asks for a short description and extracts keywords locally. Tags are limited to 8 and cleaned of stopwords. Use a stronger vision model for better results.
 
-## Support
+## Support and feedback
 
-Clustr is completely free and ad-free. It was built at home by one person, without a budget, and is given to everyone with no fees. If it helps you, you can support the author on Ko-fi: <https://ko-fi.com/andrewblackbird>. The app also shows a floating coffee button (with a short support dialog), a friendly reminder after a while (at most once a day), and one when an export starts.
+Clustr is completely free and ad-free. It was built at home by one person, without a budget, and is given to everyone with no fees.
+
+- **Feedback** - email **andrejkos2077@gmail.com** or use the ✉️ button in the app header. Bug reports, ideas and questions are welcome, especially during early access.
+- **Support** - the floating coffee button opens a short support dialog; its “I support that” button opens <https://ko-fi.com/andrewblackbird>. A friendly reminder can also appear after a while (at most once a day) and when an export starts.
 
 ## Data & privacy
 
@@ -157,3 +179,4 @@ Clustr is completely free and ad-free. It was built at home by one person, witho
 - Tutorial (English): `docs/TUTORIAL.md`
 - Tutorial (Czech): `docs/TUTORIAL.cs.md`
 - Current checkpoint, test results and next tasks: `docs/DEVLOG.md`
+- Roadmap: `TODO.md`

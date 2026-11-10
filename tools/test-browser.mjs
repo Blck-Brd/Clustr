@@ -66,6 +66,14 @@ try {
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
     await page.getByText('Clustr', { exact: false }).first().waitFor({ timeout: 20000 });
 
+    const earlyAccessModal = page.locator('[data-early-access-modal]');
+    await earlyAccessModal.waitFor({ timeout: 5000 }).catch(() => {});
+    if (await earlyAccessModal.count()) {
+        await earlyAccessModal.getByRole('button', { name: /Continue|Pokračovat/ }).click();
+        await earlyAccessModal.waitFor({ state: 'detached', timeout: 5000 });
+    }
+    assert.equal(await page.locator('[data-tour="feedback"]').getAttribute('href'), 'mailto:andrejkos2077@gmail.com?subject=Clustr%20feedback', 'Feedback button should open an email');
+
     if (fs.existsSync(path.join(root, 'Timeline.json'))) {
         await page.getByText(/Timeline \(293\)/).waitFor({ timeout: 10000 });
         console.log('Timeline auto-load: OK');
