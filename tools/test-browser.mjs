@@ -72,7 +72,13 @@ try {
         await earlyAccessModal.getByRole('button', { name: /Continue|Pokračovat/ }).click();
         await earlyAccessModal.waitFor({ state: 'detached', timeout: 5000 });
     }
-    assert.equal(await page.locator('[data-tour="feedback"]').getAttribute('href'), 'mailto:andrejkos2077@gmail.com?subject=Clustr%20feedback', 'Feedback button should open an email');
+    await page.locator('[data-tour="feedback"]').click();
+    const feedbackModal = page.locator('[data-feedback-modal]');
+    await feedbackModal.waitFor({ timeout: 5000 });
+    assert.equal((await feedbackModal.locator('[data-feedback-email]').innerText()).trim(), 'andrejkos2077@gmail.com', 'Feedback dialog should show the email address');
+    await feedbackModal.getByRole('button', { name: /Close|Zavřít/ }).click();
+    await feedbackModal.waitFor({ state: 'detached', timeout: 5000 });
+    console.log('Feedback dialog: OK');
 
     if (fs.existsSync(path.join(root, 'Timeline.json'))) {
         await page.getByText(/Timeline \(293\)/).waitFor({ timeout: 10000 });
