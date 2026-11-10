@@ -3030,7 +3030,7 @@ DATA: ${JSON.stringify(data)}`;
                                         )}
 
                                         <div className="grid grid-cols-2 gap-1 pt-1">
-                                            <button data-open-heatmap onClick={() => setShowClusterReview(true)} disabled={photos.length === 0} className="bg-slate-800 p-2 rounded text-[11px] text-slate-200 hover:bg-slate-700 border border-slate-700 disabled:opacity-50">
+                                            <button data-open-heatmap onClick={() => { setShowClusterReview(true); setShowMobileSidebar(false); }} disabled={photos.length === 0} className="bg-slate-800 p-2 rounded text-[11px] text-slate-200 hover:bg-slate-700 border border-slate-700 disabled:opacity-50">
                                                 📊 {t('Otevřít heatmapu', 'Open heatmap')}
                                             </button>
                                             <button onClick={openTripModal} className="bg-slate-800 p-2 rounded text-[11px] text-slate-200 hover:bg-slate-700 border border-slate-700">
@@ -3366,6 +3366,7 @@ DATA: ${JSON.stringify(data)}`;
                                     onAddToFolder={addPhotosToExistingFolder}
                                     onEditTripWindow={editTripWindowFromGroup}
                                     startInDrawMode={groupingWorkflow === 'heatmap'}
+                                    isMobile={isMobileLayout}
                                 />
                             </ErrorBoundary>
                         )}
@@ -3756,7 +3757,8 @@ DATA: ${JSON.stringify(data)}`;
             onCreateFolder,
             onAddToFolder,
             onEditTripWindow,
-            startInDrawMode = false
+            startInDrawMode = false,
+            isMobile = false
         }) => {
             const [level, setLevel] = useState('trips');
             const [tab, setTab] = useState('timeline');
@@ -3774,6 +3776,13 @@ DATA: ${JSON.stringify(data)}`;
             const [showHeatmapHelp, setShowHeatmapHelp] = useState(false);
             const timelineRef = useRef(null);
             const mapRef = useRef(null);
+            const [viewportWidth, setViewportWidth] = useState(() => (typeof window !== 'undefined' ? window.innerWidth : 1024));
+
+            useEffect(() => {
+                const onResize = () => setViewportWidth(window.innerWidth);
+                window.addEventListener('resize', onResize);
+                return () => window.removeEventListener('resize', onResize);
+            }, []);
 
             const groups = useMemo(() => {
                 const map = new Map();
@@ -3939,6 +3948,10 @@ DATA: ${JSON.stringify(data)}`;
                 : 22;
             const timelineHeight = 8 + timelineGroups.length * timelineRowHeight + 24;
             const sidebarGroups = groups.slice(0, 500);
+            const timelineLabelWidth = isMobile ? 112 : 190;
+            const timelineCanvasWidth = isMobile ? Math.max(320, viewportWidth - 28) : 980;
+            const mapCanvasWidth = isMobile ? Math.max(300, viewportWidth - 28) : 860;
+            const mapCanvasHeight = isMobile ? 300 : 440;
 
             const clusterRangeOffsets = useMemo(() => {
                 if (!bounds || !clusterRange?.start || !clusterRange?.end) return null;
@@ -4012,11 +4025,11 @@ DATA: ${JSON.stringify(data)}`;
                 const ctx = canvas.getContext('2d');
                 if (!ctx) return;
                 try {
-                const left = 190;
+                const left = timelineLabelWidth;
                 const right = 12;
                 const top = 8;
                 const rowHeight = timelineRowHeight;
-                const width = 980;
+                const width = timelineCanvasWidth;
                 const height = timelineHeight;
                 const dpr = window.devicePixelRatio || 1;
 
@@ -4051,7 +4064,8 @@ DATA: ${JSON.stringify(data)}`;
                         ctx.fillStyle = group.color;
                         ctx.font = '10px sans-serif';
                         const label = `${group.name} (${group.photos.length})`;
-                        ctx.fillText(label.length > 28 ? `${label.slice(0, 27)}…` : label, 6, y + 14);
+                        const maxLabelChars = isMobile ? 14 : 28;
+                        ctx.fillText(label.length > maxLabelChars ? `${label.slice(0, maxLabelChars - 1)}…` : label, 6, y + 14);
                     }
                     group.dayCounts.forEach((count, day) => {
                         const offset = Math.round((new Date(`${day}T00:00:00`).getTime() - bounds.minDate) / 86400000);
@@ -4104,7 +4118,7 @@ DATA: ${JSON.stringify(data)}`;
                 } catch (error) {
                     console.error('Timeline heatmap draw failed', error);
                 }
-            }, [tab, groups, bounds, selectedKeys, tileSelection, dragState, clusterRangeOffsets, clusterRangeStartOffset, timelineRowHeight, timelineHeight]);
+            }, [tab, groups, bounds, selectedKeys, tileSelection, dragState, clusterRangeOffsets, clusterRangeStartOffset, timelineRowHeight, timelineHeight, timelineCanvasWidth, timelineLabelWidth, isMobile]);
 
             useEffect(() => {
                 if (tab !== 'map' || !mapRef.current) return;
@@ -4112,8 +4126,8 @@ DATA: ${JSON.stringify(data)}`;
                 const ctx = canvas.getContext('2d');
                 if (!ctx) return;
                 try {
-                const width = 860;
-                const height = 440;
+                const width = mapCanvasWidth;
+                const height = mapCanvasHeight;
                 const padding = 34;
                 const dpr = window.devicePixelRatio || 1;
 
@@ -4163,7 +4177,7 @@ DATA: ${JSON.stringify(data)}`;
                 } catch (error) {
                     console.error('Map heatmap draw failed', error);
                 }
-            }, [tab, geoPoints, geoBounds, selectedKeys, t]);
+            }, [tab, geoPoints, geoBounds, selectedKeys, t, mapCanvasWidth, mapCanvasHeight]);
 
             const toggleGroup = (key) => {
                 setTileSelection(new Set());
@@ -4175,13 +4189,13 @@ DATA: ${JSON.stringify(data)}`;
                 });
             };
 
-            const timelineDayWidth = Math.max(2, (980 - 190 - 12) / Math.max(1, bounds?.spanDays || 1));
+            const timelineDayWidth = Math.max(2, (timelineCanvasWidth - timelineLabelWidth - 12) / Math.max(1, bounds?.spanDays || 1));
             const timelineOffsetAt = (event) => {
                 const rect = timelineRef.current.getBoundingClientRect();
                 const x = event.clientX - rect.left;
                 const y = event.clientY - rect.top - 8;
                 const row = Math.floor(y / timelineRowHeight);
-                const offset = Math.floor((x - 190) / timelineDayWidth);
+                const offset = Math.floor((x - timelineLabelWidth) / timelineDayWidth);
                 return { row, offset, x };
             };
             const dayKeyAtOffset = (offset) => {
@@ -4194,7 +4208,7 @@ DATA: ${JSON.stringify(data)}`;
             const handleTimelineMouseDown = (event) => {
                 if (!timelineRef.current || !bounds || timelineGroups.length === 0) return;
                 const { row, offset, x } = timelineOffsetAt(event);
-                if (x < 190) {
+                if (x < timelineLabelWidth) {
                     if (row >= 0 && row < timelineGroups.length) toggleGroup(timelineGroups[row].key);
                     return;
                 }
@@ -4274,8 +4288,8 @@ DATA: ${JSON.stringify(data)}`;
                 const rect = mapRef.current.getBoundingClientRect();
                 const x = event.clientX - rect.left;
                 const y = event.clientY - rect.top;
-                const width = 860;
-                const height = 440;
+                const width = mapCanvasWidth;
+                const height = mapCanvasHeight;
                 const padding = 34;
                 const lonSpan = Math.max(0.0001, geoBounds.maxLon - geoBounds.minLon);
                 const latSpan = Math.max(0.0001, geoBounds.maxLat - geoBounds.minLat);
@@ -4390,8 +4404,13 @@ DATA: ${JSON.stringify(data)}`;
             ];
 
             return (
-                <div data-heatmap-panel="true" className="shrink-0 h-[38vh] min-h-[280px] border-t-2 border-cyan-800 bg-slate-900 flex flex-col z-[80]" onClick={(event) => event.stopPropagation()}>
-                    <div className="flex items-center justify-between gap-3 px-3 py-1.5 border-b border-slate-800">
+                <div
+                    data-heatmap-panel="true"
+                    className={`border-t-2 border-cyan-800 bg-slate-900 flex flex-col ${isMobile ? 'fixed inset-0 z-[150] h-full min-h-0' : 'shrink-0 h-[38vh] min-h-[280px] z-[80]'}`}
+                    style={isMobile ? { paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' } : undefined}
+                    onClick={(event) => event.stopPropagation()}
+                >
+                    <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-1.5 border-b border-slate-800">
                         <div className="flex items-center gap-2 min-w-0 flex-wrap">
                             <div className="text-sm font-bold text-orange-400 shrink-0">📊 {t('Heatmapa', 'Heatmap')}</div>
                             <div className="flex bg-slate-950 border border-slate-800 rounded-full p-0.5">
@@ -4409,11 +4428,13 @@ DATA: ${JSON.stringify(data)}`;
                             >
                                 {drawMode ? t('✏️ Kreslení clusterů', '✏️ Draw clusters') : t('🔍 Prohlížení', '🔍 Inspect')}
                             </button>
-                            <div className="text-[10px] text-slate-500 truncate">
-                                {lastClusterSettings?.profile === 'trips'
-                                    ? t(`Cesty: ${lastClusterSettings.trip?.heatmapRadiusDays ?? 2} dny okno / ${lastClusterSettings.trip?.maxInactiveDays ?? 1} dny bez fotek`, `Trips: ${lastClusterSettings.trip?.heatmapRadiusDays ?? 2} day window / ${lastClusterSettings.trip?.maxInactiveDays ?? 1} rest days`)
-                                    : t('Citlivost: podle aktuálního nastavení.', 'Sensitivity: current settings.')}
-                            </div>
+                            {!isMobile && (
+                                <div className="text-[10px] text-slate-500 truncate">
+                                    {lastClusterSettings?.profile === 'trips'
+                                        ? t(`Cesty: ${lastClusterSettings.trip?.heatmapRadiusDays ?? 2} dny okno / ${lastClusterSettings.trip?.maxInactiveDays ?? 1} dny bez fotek`, `Trips: ${lastClusterSettings.trip?.heatmapRadiusDays ?? 2} day window / ${lastClusterSettings.trip?.maxInactiveDays ?? 1} rest days`)
+                                        : t('Citlivost: podle aktuálního nastavení.', 'Sensitivity: current settings.')}
+                                </div>
+                            )}
                         </div>
                         <div className="flex items-center gap-1 shrink-0">
                             <button
@@ -4424,12 +4445,12 @@ DATA: ${JSON.stringify(data)}`;
                             >
                                 ?
                             </button>
-                            <button data-heatmap-close="true" onClick={onClose} className="text-slate-500 hover:text-white text-2xl leading-none shrink-0">&times;</button>
+                            <button data-heatmap-close="true" onClick={onClose} aria-label={t('Zavřít heatmapu', 'Close heatmap')} className={`text-slate-500 hover:text-white leading-none shrink-0 flex items-center justify-center ${isMobile ? 'w-9 h-9 text-2xl' : 'text-2xl'}`}>&times;</button>
                         </div>
                     </div>
 
-                    <div className="flex-1 min-h-0 grid lg:grid-cols-[1fr_340px] gap-2 p-2 overflow-y-auto custom-scrollbar">
-                            <div className="min-w-0 min-h-0">
+                    <div className={`flex-1 min-h-0 gap-2 p-2 custom-scrollbar ${isMobile ? 'flex flex-col overflow-y-auto' : 'grid lg:grid-cols-[1fr_340px] overflow-y-auto'}`}>
+                            <div className={isMobile ? 'h-[42vh] shrink-0 min-w-0 min-h-0' : 'min-w-0 min-h-0'}>
                                 {groups.length === 0 ? (
                                     <div className="h-full flex flex-col items-center justify-center border border-slate-800 rounded-lg bg-slate-950 p-4 text-center">
                                         <div className="text-2xl mb-1">📊</div>
@@ -4464,21 +4485,36 @@ DATA: ${JSON.stringify(data)}`;
                                                 {t(`Heatmapa zobrazuje prvních ${timelineGroups.length} z ${groups.length} clusterů.`, `Heatmap shows the first ${timelineGroups.length} of ${groups.length} clusters.`)}
                                             </div>
                                         )}
-                                        <canvas ref={timelineRef} data-cluster-review-canvas="timeline" onMouseDown={handleTimelineMouseDown} onMouseMove={handleTimelineMouseMove} onMouseUp={handleTimelineMouseUp} onMouseLeave={() => setDragState(null)} className="cursor-crosshair" />
+                                        <canvas
+                                            ref={timelineRef}
+                                            data-cluster-review-canvas="timeline"
+                                            onPointerDown={(event) => {
+                                                try { event.currentTarget.setPointerCapture(event.pointerId); } catch (e) {}
+                                                handleTimelineMouseDown(event);
+                                            }}
+                                            onPointerMove={handleTimelineMouseMove}
+                                            onPointerUp={(event) => {
+                                                handleTimelineMouseUp(event);
+                                                try { event.currentTarget.releasePointerCapture(event.pointerId); } catch (e) {}
+                                            }}
+                                            onPointerCancel={() => setDragState(null)}
+                                            onPointerLeave={() => { if (!dragState) setDragState(null); }}
+                                            className="cursor-crosshair touch-none"
+                                        />
                                     </div>
                                 ) : (
                                     <div className="h-full overflow-auto custom-scrollbar border border-slate-800 rounded-lg p-2 bg-slate-950">
                                         {geoPoints.length === 0 ? (
                                             <div className="text-sm text-slate-500 p-4">{t('Žádné fotky s GPS/Timeline souřadnicemi.', 'No photos with GPS/Timeline coordinates.')}</div>
                                         ) : (
-                                            <canvas ref={mapRef} data-cluster-review-canvas="map" onClick={handleMapClick} className="cursor-pointer" />
+                                            <canvas ref={mapRef} data-cluster-review-canvas="map" onClick={handleMapClick} className="cursor-pointer touch-manipulation" />
                                         )}
                                     </div>
                                 )}
                             </div>
 
-                            <div className="min-h-0 flex flex-col gap-1">
-                                <div className="flex-1 min-h-0 border border-slate-800 rounded-lg p-2 bg-slate-950 overflow-y-auto custom-scrollbar">
+                            <div className={`min-h-0 flex flex-col gap-1 ${isMobile ? 'shrink-0' : ''}`}>
+                                <div className={`border border-slate-800 rounded-lg p-2 bg-slate-950 overflow-y-auto custom-scrollbar ${isMobile ? 'max-h-[32vh]' : 'flex-1 min-h-0'}`}>
                                     {groups.length === 0 && <div className="text-[11px] text-slate-600 p-2">{t('Nejprve spusťte fázi 2.', 'Run Phase 2 first.')}</div>}
                                     {sidebarGroups.map((group) => (
                                         <button

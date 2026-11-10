@@ -47,6 +47,8 @@ try {
     const page = await context.newPage();
     await page.addInitScript(() => {
         try {
+            localStorage.setItem('clustr-early-access-seen', '1');
+            localStorage.setItem('clustr-tour-seen', '1');
             Object.defineProperty(navigator, 'share', { value: undefined, configurable: true });
             Object.defineProperty(navigator, 'canShare', { value: undefined, configurable: true });
         } catch (error) {}
@@ -151,6 +153,33 @@ try {
     const xmpFile = archiveFiles.find((name) => /\.xmp$/i.test(name));
     assert.ok(Buffer.from(archive[xmpFile]).toString('utf8').includes('<dc:subject>'), 'XMP should contain keywords');
     console.log(`Mobile ZIP export: OK (${archiveFiles.length} files)`);
+
+    await menuButton.click();
+    await page.locator('[data-auto-clustering]').click();
+    await page.getByText(/Seskupeno|Grouped/).waitFor({ timeout: 60000 });
+    await page.getByRole('button', { name: 'OK', exact: true }).click();
+    await page.getByRole('button', { name: /Close menu|Zavřít menu/ }).click();
+    console.log('Mobile Phase 2: OK');
+
+    await menuButton.click();
+    await page.locator('[data-open-heatmap]').click();
+    const heatmapPanel = page.locator('[data-heatmap-panel]');
+    await heatmapPanel.waitFor({ timeout: 10000 });
+    await page.waitForTimeout(400);
+    const heatmapBox = await heatmapPanel.boundingBox();
+    assert.ok(heatmapBox && heatmapBox.width >= page.viewportSize().width - 1, 'Mobile heatmap should fill the screen');
+
+    await page.locator('[data-heatmap-draw-mode]').click();
+    const timelineCanvas = page.locator('[data-cluster-review-canvas="timeline"]');
+    const canvasBox = await timelineCanvas.boundingBox();
+    assert.ok(canvasBox, 'Timeline canvas should be rendered');
+    await page.touchscreen.tap(canvasBox.x + Math.min(200, canvasBox.width - 20), canvasBox.y + 12);
+    await page.getByText(/Start:/).waitFor({ timeout: 5000 });
+    await page.screenshot({ path: path.join(os.tmpdir(), 'clustr-mobile-heatmap.png') });
+    console.log('Mobile heatmap touch range: OK');
+
+    await page.locator('[data-heatmap-close]').click();
+    await heatmapPanel.waitFor({ state: 'detached', timeout: 5000 }).catch(() => {});
 
     assert.deepEqual(pageErrors, [], `Page errors: ${pageErrors.join(' | ')}`);
     console.log('Mobile browser test passed.');
