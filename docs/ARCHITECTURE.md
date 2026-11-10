@@ -4,8 +4,13 @@
 
 ```text
 app/                 PWA source (build-free React app)
-  index.html         Desktop UI shell, phases, dialogs and export flow
+  index.html         UI shell, phases, dialogs and export flow
   core.js            Shared engine: EXIF, Timeline, clustering, AI and export helpers
+  about.html         English landing page for search engines
+  o-clustr.html      Czech landing page for search engines
+  robots.txt         Crawler rules
+  sitemap.xml        App and landing-page sitemap
+  seo/               Landing CSS and 1200x630 social card
   manifest.webmanifest
   sw.js              Service worker (app shell + CDN cache)
   icons/             PWA icons

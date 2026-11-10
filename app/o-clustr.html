@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>O Clustr - lokální třídič fotek podle EXIF, Timeline a Lightroom</title>
+    <meta name="description" content="Clustr je zdarma, lokálně běžící třídič fotek z fotoaparátu. Podle EXIF, Google Timeline a heatmap vytvoří složky cest a událostí a exportuje XMP sidecary pro Lightroom.">
+    <link rel="canonical" href="https://clustr-photo.vercel.app/o-clustr">
+    <link rel="alternate" hreflang="en" href="https://clustr-photo.vercel.app/about">
+    <link rel="alternate" hreflang="cs" href="https://clustr-photo.vercel.app/o-clustr">
+    <link rel="alternate" hreflang="x-default" href="https://clustr-photo.vercel.app/about">
+    <meta name="robots" content="index, follow, max-image-preview:large">
+    <meta name="theme-color" content="#0f172a">
+    <link rel="icon" type="image/png" href="/icons/favicon.png">
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+    <link rel="stylesheet" href="/seo/landing.css">
+
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Clustr">
+    <meta property="og:title" content="O Clustr - lokální třídič fotek z fotoaparátu">
+    <meta property="og:description" content="Zdarma, lokálně běžící organizér fotek. Roztřídí knihovnu z fotoaparátu do cest a událostí podle EXIF, Google Timeline a heatmap. Exportuje složky a XMP pro Lightroom.">
+    <meta property="og:url" content="https://clustr-photo.vercel.app/o-clustr">
+    <meta property="og:image" content="https://clustr-photo.vercel.app/seo/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:alt" content="Clustr - lokální třídič fotek z fotoaparátu">
+    <meta property="og:locale" content="cs_CZ">
+    <meta property="og:locale:alternate" content="en_US">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="O Clustr - lokální třídič fotek">
+    <meta name="twitter:description" content="Fotky z fotoaparátu do cest a událostí podle EXIF, Google Timeline a heatmap. Export složek a XMP pro Lightroom.">
+    <meta name="twitter:image" content="https://clustr-photo.vercel.app/seo/og-image.png">
+
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "WebSite",
+          "@id": "https://clustr-photo.vercel.app/#website",
+          "url": "https://clustr-photo.vercel.app/",
+          "name": "Clustr",
+          "inLanguage": ["en", "cs"],
+          "publisher": { "@id": "https://clustr-photo.vercel.app/#organization" }
+        },
+        {
+          "@type": "Organization",
+          "@id": "https://clustr-photo.vercel.app/#organization",
+          "name": "Clustr",
+          "url": "https://clustr-photo.vercel.app/",
+          "logo": "https://clustr-photo.vercel.app/icons/icon-512.png",
+          "sameAs": [
+            "https://github.com/Blck-Brd/Clustr",
+            "https://ko-fi.com/andrewblackbird"
+          ]
+        },
+        {
+          "@type": "WebPage",
+          "@id": "https://clustr-photo.vercel.app/o-clustr#webpage",
+          "url": "https://clustr-photo.vercel.app/o-clustr",
+          "name": "O Clustr - lokální třídič fotek",
+          "description": "Zdarma, lokálně běžící třídič fotek z fotoaparátu podle EXIF, Google Timeline a heatmap.",
+          "inLanguage": "cs",
+          "isPartOf": { "@id": "https://clustr-photo.vercel.app/#website" }
+        },
+        {
+          "@type": "SoftwareApplication",
+          "@id": "https://clustr-photo.vercel.app/#app",
+          "name": "Clustr",
+          "applicationCategory": "MultimediaApplication",
+          "operatingSystem": "Webový prohlížeč (Chromium na PC; PWA na iOS a Androidu)",
+          "url": "https://clustr-photo.vercel.app/",
+          "downloadUrl": "https://clustr-photo.vercel.app/",
+          "image": "https://clustr-photo.vercel.app/seo/og-image.png",
+          "description": "Lokální třídič fotek, který podle EXIF metadat, Google Timeline a hustotních heatmap vytvoří složky cest, zastávek a událostí a exportuje je s XMP sidecary pro Lightroom.",
+          "isAccessibleForFree": true,
+          "offers": { "@type": "Offer", "price": "0", "priceCurrency": "CZK" },
+          "featureList": [
+            "Čtení EXIF metadat",
+            "Párování s Google Timeline",
+            "Clustery cest, zastávek a domova",
+            "Přesun screenshotů a clutteru",
+            "Export složek a XMP pro Lightroom",
+            "Lokální zpracování bez nahrávání",
+            "Volitelné AI názvy a vizuální tagy",
+            "Instalovatelná PWA s importem z telefonu"
+          ],
+          "publisher": { "@id": "https://clustr-photo.vercel.app/#organization" }
+        },
+        {
+          "@type": "FAQPage",
+          "@id": "https://clustr-photo.vercel.app/o-clustr#faq",
+          "mainEntity": [
+            {
+              "@type": "Question",
+              "name": "Je Clustr zdarma?",
+              "acceptedAnswer": { "@type": "Answer", "text": "Ano. Clustr je zdarma a bez reklam. Nemá účet, předplatné ani limit nahrávání. Dobrovolná podpora přes Ko-fi pomáhá dalšímu vývoji." }
+            },
+            {
+              "@type": "Question",
+              "name": "Nahrávají se fotky na server?",
+              "acceptedAnswer": { "@type": "Answer", "text": "Ne. Fotky se čtou a zpracovávají přímo v prohlížeči. Aplikace nemá backend pro fotky a knihovnu nikam nenahrává. Metadata se ukládají lokálně v IndexedDB, samotné fotky ne." }
+            },
+            {
+              "@type": "Question",
+              "name": "Funguje Clustr s Google Timeline?",
+              "acceptedAnswer": { "@type": "Answer", "text": "Ano. Importujte JSON export Google Timeline a Clustr přiřadí fotkám místa podle času návštěv, aktivit a tras. Bez Timeline použije GPS z EXIF a interpolaci." }
+            },
+            {
+              "@type": "Question",
+              "name": "Které formáty fotek jsou podporované?",
+              "acceptedAnswer": { "@type": "Answer", "text": "JPG, PNG, WebP, HEIC a HEIF, dále RAW formáty NEF, CR2, ARW, DNG, ORF a RAF, a TIF nebo TIFF. Pro náhledy RAW se používají spárované JPG nebo vestavěné náhledy." }
+            },
+            {
+              "@type": "Question",
+              "name": "Funguje Clustr na telefonu?",
+              "acceptedAnswer": { "@type": "Answer", "text": "Ano, jako doplňkový postup. Nainstalujte PWA, přidejte fotky z galerie, projděte fáze a exportujte ZIP s fotkami a XMP sidecary. Hlavní postup zůstává PC s fotkami z fotoaparátu." }
+            },
+            {
+              "@type": "Question",
+              "name": "Funguje Clustr s Adobe Lightroom?",
+              "acceptedAnswer": { "@type": "Answer", "text": "Ano. Export vytvoří hierarchii složek a XMP sidecary s klíčovými slovy, hierarchickými tématy, městem a lokací, které Lightroom načte." }
+            },
+            {
+              "@type": "Question",
+              "name": "Který prohlížeč potřebuji?",
+              "acceptedAnswer": { "@type": "Answer", "text": "Na PC použijte prohlížeč založený na Chromiu pro import složky a přímý export na disk. Na mobilu stačí moderní prohlížeč pro instalaci PWA a export ZIPu." }
+            },
+            {
+              "@type": "Question",
+              "name": "Funguje Clustr offline?",
+              "acceptedAnswer": { "@type": "Answer", "text": "Po prvním načtení service worker uloží aplikaci a knihovny, takže Clustr funguje offline. Nejspolehlivější úložiště na iOS zajistí instalace PWA na plochu." }
+            }
+          ]
+        },
+        {
+          "@type": "BreadcrumbList",
+          "@id": "https://clustr-photo.vercel.app/o-clustr#breadcrumbs",
+          "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Clustr", "item": "https://clustr-photo.vercel.app/" },
+            { "@type": "ListItem", "position": 2, "name": "O aplikaci", "item": "https://clustr-photo.vercel.app/o-clustr" }
+          ]
+        }
+      ]
+    }
+    </script>
+</head>
+<body>
+    <a class="skip-link" href="#main">Přejít na obsah</a>
+
+    <header class="wrap site-header">
+        <a class="brand" href="/">
+            <img src="/icons/icon-192.png" alt="" width="34" height="34">
+            <span>Clustr</span>
+        </a>
+        <nav class="nav" aria-label="Hlavní navigace">
+            <a class="nav-section" href="#funkce">Funkce</a>
+            <a class="nav-section" href="#postup">Jak to funguje</a>
+            <a class="nav-section" href="#faq">Časté otázky</a>
+            <a class="lang-switch" href="/about" hreflang="en" lang="en">English</a>
+            <a class="btn btn-primary" href="/">Otevřít Clustr</a>
+        </nav>
+    </header>
+
+    <main id="main">
+        <section class="wrap hero">
+            <div class="hero-grid">
+                <div>
+                    <span class="eyebrow">Zdarma · lokálně · bez nahrávání</span>
+                    <h1>Roztřiďte tisíce fotek z fotoaparátu do cest, zastávek a událostí.</h1>
+                    <p class="lead">Clustr je organizér fotek, který běží v prohlížeči. Přečte EXIF, přiřadí místa podle Google Timeline, najde cesty a zastávky pomocí hustotních heatmap a exportuje přehledný strom složek s XMP sidecary pro Adobe Lightroom.</p>
+                    <div class="hero-actions">
+                        <a class="btn btn-primary" href="/">Otevřít Clustr</a>
+                        <a class="btn btn-ghost" href="#postup">Jak to funguje</a>
+                    </div>
+                    <p class="hero-note">Primárně je stavěný pro práci na PC s fotkami z fotoaparátu. Mobil je doplňkový: import z galerie, dotyková kontrola a export ZIPu.</p>
+                </div>
+                <figure class="hero-card">
+                    <img src="/seo/og-image.png" width="1200" height="630" alt="Clustr - lokální třídič fotek s EXIF, Google Timeline a exportem XMP pro Lightroom" loading="lazy">
+                    <figcaption>Lokální třídění fotek do složek cest, zastávek a událostí.</figcaption>
+                </figure>
+            </div>
+        </section>
+
+        <section class="wrap" id="funkce">
+            <div class="section-head">
+                <h2>Proč fotografové používají Clustr</h2>
+                <p>Je to cílená náhrada ručního třídění cest, postavená na metadatech, která fotoaparát a telefon už obsahují.</p>
+            </div>
+            <div class="cards">
+                <article class="card">
+                    <div class="icon" aria-hidden="true">📷</div>
+                    <h3>Pracuje s EXIF</h3>
+                    <p>Načte čas pořízení, fotoaparát, GPS a orientaci a sám doplní tagy ročního období a denní doby.</p>
+                </article>
+                <article class="card">
+                    <div class="icon" aria-hidden="true">🌍</div>
+                    <h3>Google Timeline</h3>
+                    <p>Z návštěv, aktivit a tras přiřadí reálné místo i fotkám, které nemají GPS.</p>
+                </article>
+                <article class="card">
+                    <div class="icon" aria-hidden="true">📊</div>
+                    <h3>Clustery cest a zastávek</h3>
+                    <p>Vyhlazená denní heatmapa najde cesty a dny odpočinku, prostorová heatmapa rozdělí cestu na zastávky.</p>
+                </article>
+                <article class="card">
+                    <div class="icon" aria-hidden="true">🖐️</div>
+                    <h3>Ruční kontrola</h3>
+                    <p>Clustery můžete v heatmapě kreslit, dělit, slučovat a přejmenovat ještě před exportem.</p>
+                </article>
+                <article class="card">
+                    <div class="icon" aria-hidden="true">💾</div>
+                    <h3>Připraveno pro Lightroom</h3>
+                    <p>Exportuje názvy složek bezpečné pro Windows a XMP sidecary s klíčovými slovy, hierarchií, městem a lokací.</p>
+                </article>
+                <article class="card">
+                    <div class="icon" aria-hidden="true">🔒</div>
+                    <h3>Soukromí na prvním místě</h3>
+                    <p>Vše se zpracovává v prohlížeči. Fotky se nikdy nenahrávají na server Clustr.</p>
+                </article>
+            </div>
+        </section>
+
+        <section class="wrap" id="postup">
+            <div class="section-head">
+                <h2>Jak Clustr funguje</h2>
+                <p>Pět fází. Povinné je jen to, co potřebujete; nastavení zůstává pod ozubeným kolečkem.</p>
+            </div>
+            <ol class="steps">
+                <li><strong>Nahrajte složku z fotoaparátu.</strong> Vyberte JPG, HEIC nebo RAW soubory z disku PC.</li>
+                <li><strong>Přidejte Google Timeline (volitelné).</strong> Import JSON exportu přiřadí místa podle času fotek.</li>
+                <li><strong>Načtěte EXIF a seskupujte.</strong> Auto clustering vytvoří cesty a zastávky z hustoty; v heatmapě můžete kreslit rozsahy ručně.</li>
+                <li><strong>Pojmenujte a obohaťte (volitelné).</strong> Ollama nebo Gemini pojmenují události, lokální vision model doplní tagy.</li>
+                <li><strong>Zkontrolujte a exportujte.</strong> Filtrujte, přejmenujte, projděte v Tinder režimu a zapište složky a XMP sidecary.</li>
+            </ol>
+        </section>
+
+        <section class="wrap">
+            <div class="split">
+                <div class="panel">
+                    <h2>Stavěno pro PC + fotoaparát</h2>
+                    <p>Clustr předpokládá, že fotky z fotoaparátu nebo paměťové karty nejprve zkopírujete do počítače a tam je roztřídíte a exportujete v prohlížeči založeném na Chromiu. Tam funguje import složky, přímý export na disk i lokální AI nejlépe.</p>
+                    <ul>
+                        <li>Názvy složek a souborů bezpečné pro Windows</li>
+                        <li>Náhledy RAW a HEIC z vestavěných náhledů nebo spárovaných JPG</li>
+                        <li>Import bez duplicit a virtualizovaná galerie pro velké knihovny</li>
+                        <li>Volitelné lokální modely Ollama nebo Gemini pro pojmenování</li>
+                    </ul>
+                </div>
+                <div class="panel">
+                    <h2>Mobil je doplňkový, ale funkční</h2>
+                    <p>Stejná aplikace se instaluje jako PWA. Na telefonu můžete přidat fotky z galerie, projít fáze, prohlížet strom složek, kreslit rozsahy v heatmapě, třídit v Tinder režimu a exportovat ZIP s XMP sidecary.</p>
+                    <ul>
+                        <li>Import z galerie s přeskakováním duplicit</li>
+                        <li>Dotyková celoobrazovková heatmapa</li>
+                        <li>Export ZIPu přes sdílení nebo uložení do Souborů</li>
+                        <li>Pojmenování přes Gemini; Ollama zůstává jen na PC</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <section class="wrap" id="faq">
+            <div class="section-head">
+                <h2>Časté otázky</h2>
+                <p>Krátké odpovědi o soukromí, formátech, Timeline, Lightroomu a mobilu.</p>
+            </div>
+            <div class="faq">
+                <details open>
+                    <summary>Je Clustr zdarma?</summary>
+                    <p>Ano. Clustr je zdarma a bez reklam. Nemá účet, předplatné ani limit nahrávání. Dobrovolná podpora přes Ko-fi pomáhá dalšímu vývoji.</p>
+                </details>
+                <details>
+                    <summary>Nahrávají se fotky na server?</summary>
+                    <p>Ne. Fotky se čtou a zpracovávají přímo v prohlížeči. Aplikace nemá backend pro fotky a knihovnu nikam nenahrává. Metadata se ukládají lokálně v IndexedDB, samotné fotky ne.</p>
+                </details>
+                <details>
+                    <summary>Funguje Clustr s Google Timeline?</summary>
+                    <p>Ano. Importujte JSON export Google Timeline a Clustr přiřadí fotkám místa podle času návštěv, aktivit a tras. Bez Timeline použije GPS z EXIF a interpolaci.</p>
+                </details>
+                <details>
+                    <summary>Které formáty fotek jsou podporované?</summary>
+                    <p>JPG, PNG, WebP, HEIC a HEIF, dále RAW formáty NEF, CR2, ARW, DNG, ORF a RAF, a TIF nebo TIFF. Pro náhledy RAW se používají spárované JPG nebo vestavěné náhledy.</p>
+                </details>
+                <details>
+                    <summary>Funguje Clustr na telefonu?</summary>
+                    <p>Ano, jako doplňkový postup. Nainstalujte PWA, přidejte fotky z galerie, projděte fáze a exportujte ZIP s fotkami a XMP sidecary. Hlavní postup zůstává PC s fotkami z fotoaparátu.</p>
+                </details>
+                <details>
+                    <summary>Funguje Clustr s Adobe Lightroom?</summary>
+                    <p>Ano. Export vytvoří hierarchii složek a XMP sidecary s klíčovými slovy, hierarchickými tématy, městem a lokací, které Lightroom načte.</p>
+                </details>
+                <details>
+                    <summary>Který prohlížeč potřebuji?</summary>
+                    <p>Na PC použijte prohlížeč založený na Chromiu pro import složky a přímý export na disk. Na mobilu stačí moderní prohlížeč pro instalaci PWA a export ZIPu.</p>
+                </details>
+                <details>
+                    <summary>Funguje Clustr offline?</summary>
+                    <p>Po prvním načtení service worker uloží aplikaci a knihovny, takže Clustr funguje offline. Nejspolehlivější úložiště na iOS zajistí instalace PWA na plochu.</p>
+                </details>
+            </div>
+        </section>
+
+        <section class="wrap">
+            <div class="cta">
+                <h2>Připraveni roztřídit knihovnu?</h2>
+                <p>Otevřete Clustr, vyberte složku a nechte heatmapu najít cesty. Pracujte s kopií fotek a exportované složky si před smazáním zkontrolujte.</p>
+                <a class="btn btn-primary" href="/">Otevřít Clustr</a>
+            </div>
+        </section>
+    </main>
+
+    <footer class="wrap site-footer">
+        <div class="footer-grid">
+            <div>
+                <strong style="color:#e2e8f0;">Clustr</strong> - lokální třídič fotek. Zkušební provoz / early access.<br>
+                Fotky se zpracovávají v prohlížeči a nikam se nenahrávají.
+            </div>
+            <div class="footer-links">
+                <a href="/">Otevřít aplikaci</a>
+                <a href="/about" hreflang="en" lang="en">English</a>
+                <a href="https://github.com/Blck-Brd/Clustr">GitHub</a>
+                <a href="https://ko-fi.com/andrewblackbird">Ko-fi</a>
+                <a href="mailto:andrejkos2077@gmail.com">E-mail</a>
+            </div>
+        </div>
+    </footer>
+</body>
+</html>

@@ -31,6 +31,25 @@ Bump `CACHE_NAME` in `app/sw.js` (already done for this release) and hard-reload
 the project in the Vercel dashboard once after deploying. Localhost is skipped so
 local runs do not produce 404s.
 
+## Search engines
+
+The production origin is `https://clustr-photo.vercel.app/`. `cleanUrls` is enabled, so the static pages are:
+
+- `/` - the app
+- `/about` - English landing page
+- `/o-clustr` - Czech landing page
+
+`app/robots.txt` and `app/sitemap.xml` are served from the app root. The sitemap lists the app and both landing pages with hreflang alternates. `app/seo/og-image.png` is the 1200×630 social card; regenerate it with `npm run og`.
+
+After each production deploy:
+
+1. Verify the property in Google Search Console (HTML tag or DNS).
+2. Submit `https://clustr-photo.vercel.app/sitemap.xml`.
+3. Add the same sitemap in Bing Webmaster Tools.
+4. Request indexing for `/`, `/about` and `/o-clustr` after major copy changes.
+
+`npm run check` validates the canonical URLs, Open Graph tags, JSON-LD, FAQ schema, sitemap and social image before deploy.
+
 ## GitHub Pages
 
 GitHub Pages serves the repository root. The app is therefore reachable at `/Clustr/app/` unless you publish only the `app/` folder. Relative manifest, icon and service-worker paths keep it functional either way.

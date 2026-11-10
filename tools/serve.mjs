@@ -48,7 +48,11 @@ const server = http.createServer((req, res) => {
         return;
     }
 
-    const relative = decoded === '/' ? 'index.html' : decoded.replace(/^\/+/, '');
+    let relative = decoded === '/' ? 'index.html' : decoded.replace(/^\/+/, '');
+    if (!path.extname(relative)) {
+        const htmlCandidate = path.join(appRoot, `${relative}.html`);
+        if (decoded !== '/' && fs.existsSync(htmlCandidate)) relative = `${relative}.html`;
+    }
     const filePath = path.resolve(appRoot, relative);
     if (!filePath.startsWith(appRoot)) {
         res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });

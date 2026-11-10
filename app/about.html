@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>About Clustr - Local-First Photo Sorter for Camera Libraries</title>
+    <meta name="description" content="Clustr is a free, local-first photo sorter for camera libraries. Group photos into trips and events with EXIF, Google Timeline and heatmaps, then export Lightroom folders and XMP sidecars.">
+    <link rel="canonical" href="https://clustr-photo.vercel.app/about">
+    <link rel="alternate" hreflang="en" href="https://clustr-photo.vercel.app/about">
+    <link rel="alternate" hreflang="cs" href="https://clustr-photo.vercel.app/o-clustr">
+    <link rel="alternate" hreflang="x-default" href="https://clustr-photo.vercel.app/about">
+    <meta name="robots" content="index, follow, max-image-preview:large">
+    <meta name="theme-color" content="#0f172a">
+    <link rel="icon" type="image/png" href="/icons/favicon.png">
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+    <link rel="stylesheet" href="/seo/landing.css">
+
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Clustr">
+    <meta property="og:title" content="About Clustr - Local-First Photo Sorter for Camera Libraries">
+    <meta property="og:description" content="A free, local-first photo organizer that turns camera libraries into trip, stop and event folders with EXIF, Google Timeline and heatmaps. Exports Lightroom folders and XMP.">
+    <meta property="og:url" content="https://clustr-photo.vercel.app/about">
+    <meta property="og:image" content="https://clustr-photo.vercel.app/seo/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:alt" content="Clustr - local-first photo sorter for camera libraries">
+    <meta property="og:locale" content="en_US">
+    <meta property="og:locale:alternate" content="cs_CZ">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="About Clustr - Local-First Photo Sorter">
+    <meta name="twitter:description" content="Sort camera photos into trips and events with EXIF, Google Timeline and heatmaps, then export Lightroom folders and XMP.">
+    <meta name="twitter:image" content="https://clustr-photo.vercel.app/seo/og-image.png">
+
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "WebSite",
+          "@id": "https://clustr-photo.vercel.app/#website",
+          "url": "https://clustr-photo.vercel.app/",
+          "name": "Clustr",
+          "inLanguage": ["en", "cs"],
+          "publisher": { "@id": "https://clustr-photo.vercel.app/#organization" }
+        },
+        {
+          "@type": "Organization",
+          "@id": "https://clustr-photo.vercel.app/#organization",
+          "name": "Clustr",
+          "url": "https://clustr-photo.vercel.app/",
+          "logo": "https://clustr-photo.vercel.app/icons/icon-512.png",
+          "sameAs": [
+            "https://github.com/Blck-Brd/Clustr",
+            "https://ko-fi.com/andrewblackbird"
+          ]
+        },
+        {
+          "@type": "WebPage",
+          "@id": "https://clustr-photo.vercel.app/about#webpage",
+          "url": "https://clustr-photo.vercel.app/about",
+          "name": "About Clustr - Local-First Photo Sorter",
+          "description": "A free, local-first photo sorter for camera libraries using EXIF, Google Timeline and heatmaps.",
+          "inLanguage": "en",
+          "isPartOf": { "@id": "https://clustr-photo.vercel.app/#website" }
+        },
+        {
+          "@type": "SoftwareApplication",
+          "@id": "https://clustr-photo.vercel.app/#app",
+          "name": "Clustr",
+          "applicationCategory": "MultimediaApplication",
+          "operatingSystem": "Web browser (Chromium desktop; iOS and Android PWA)",
+          "url": "https://clustr-photo.vercel.app/",
+          "downloadUrl": "https://clustr-photo.vercel.app/",
+          "image": "https://clustr-photo.vercel.app/seo/og-image.png",
+          "description": "Local-first photo sorter that groups camera photos into trips, stops and events using EXIF metadata, Google Timeline and density heatmaps, then exports Lightroom-ready folders with XMP sidecars.",
+          "isAccessibleForFree": true,
+          "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+          "featureList": [
+            "EXIF metadata extraction",
+            "Google Timeline location matching",
+            "Trip, stop and home clustering with heatmaps",
+            "Screenshot and clutter routing",
+            "Lightroom folder export with XMP sidecars",
+            "Local-first processing with no uploads",
+            "Optional AI event names and visual tags",
+            "Installable PWA with mobile camera-roll import"
+          ],
+          "publisher": { "@id": "https://clustr-photo.vercel.app/#organization" }
+        },
+        {
+          "@type": "FAQPage",
+          "@id": "https://clustr-photo.vercel.app/about#faq",
+          "mainEntity": [
+            {
+              "@type": "Question",
+              "name": "Is Clustr free?",
+              "acceptedAnswer": { "@type": "Answer", "text": "Yes. Clustr is free and ad-free. There is no account, no subscription and no upload quota. Optional support through Ko-fi keeps development going." }
+            },
+            {
+              "@type": "Question",
+              "name": "Are my photos uploaded to a server?",
+              "acceptedAnswer": { "@type": "Answer", "text": "No. Photos are read and processed in your browser. The app has no photo backend and never uploads your library. Metadata is stored locally in IndexedDB; photo blobs are not stored." }
+            },
+            {
+              "@type": "Question",
+              "name": "Does Clustr work with Google Timeline?",
+              "acceptedAnswer": { "@type": "Answer", "text": "Yes. Import a Google Timeline JSON export and Clustr matches visits, activities and paths to your photo times. If Timeline is missing, GPS EXIF and interpolation are used instead." }
+            },
+            {
+              "@type": "Question",
+              "name": "Which photo formats are supported?",
+              "acceptedAnswer": { "@type": "Answer", "text": "JPG, PNG, WebP, HEIC and HEIF, plus RAW formats such as NEF, CR2, ARW, DNG, ORF and RAF, and TIF or TIFF. Paired JPGs and embedded previews are used for RAW thumbnails." }
+            },
+            {
+              "@type": "Question",
+              "name": "Does Clustr work on a phone?",
+              "acceptedAnswer": { "@type": "Answer", "text": "Yes, as a secondary workflow. Install the PWA, add photos from the camera roll, run the clustering phases and export a ZIP with photos and XMP sidecars. The primary workflow remains a PC with camera files." }
+            },
+            {
+              "@type": "Question",
+              "name": "Does Clustr work with Adobe Lightroom?",
+              "acceptedAnswer": { "@type": "Answer", "text": "Yes. Export writes a folder hierarchy and XMP sidecars with keywords, hierarchical subjects, city and location fields that Lightroom can read." }
+            },
+            {
+              "@type": "Question",
+              "name": "Which browser do I need?",
+              "acceptedAnswer": { "@type": "Answer", "text": "Use a Chromium-based browser on desktop for folder import and direct folder export. On mobile, any modern browser can install the PWA and export a ZIP." }
+            },
+            {
+              "@type": "Question",
+              "name": "Can Clustr run offline?",
+              "acceptedAnswer": { "@type": "Answer", "text": "After the first load the service worker caches the app shell and vendor libraries, so Clustr works offline. Installing the PWA gives the most reliable storage behavior on iOS." }
+            }
+          ]
+        },
+        {
+          "@type": "BreadcrumbList",
+          "@id": "https://clustr-photo.vercel.app/about#breadcrumbs",
+          "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Clustr", "item": "https://clustr-photo.vercel.app/" },
+            { "@type": "ListItem", "position": 2, "name": "About", "item": "https://clustr-photo.vercel.app/about" }
+          ]
+        }
+      ]
+    }
+    </script>
+</head>
+<body>
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <header class="wrap site-header">
+        <a class="brand" href="/">
+            <img src="/icons/icon-192.png" alt="" width="34" height="34">
+            <span>Clustr</span>
+        </a>
+        <nav class="nav" aria-label="Main navigation">
+            <a class="nav-section" href="#features">Features</a>
+            <a class="nav-section" href="#workflow">How it works</a>
+            <a class="nav-section" href="#faq">FAQ</a>
+            <a class="lang-switch" href="/o-clustr" hreflang="cs" lang="cs">Česky</a>
+            <a class="btn btn-primary" href="/">Open Clustr</a>
+        </nav>
+    </header>
+
+    <main id="main">
+        <section class="wrap hero">
+            <div class="hero-grid">
+                <div>
+                    <span class="eyebrow">Free · local-first · no uploads</span>
+                    <h1>Sort thousands of camera photos into trips, stops and events.</h1>
+                    <p class="lead">Clustr is a browser-based photo organizer for real camera libraries. It reads EXIF, matches photo times against Google Timeline, finds trips and stops with density heatmaps, and exports a clean folder tree with Adobe Lightroom XMP sidecars.</p>
+                    <div class="hero-actions">
+                        <a class="btn btn-primary" href="/">Open Clustr</a>
+                        <a class="btn btn-ghost" href="#workflow">See how it works</a>
+                    </div>
+                    <p class="hero-note">Built primarily for a PC + camera workflow. Phone support is included for camera-roll import, touch review and ZIP export.</p>
+                </div>
+                <figure class="hero-card">
+                    <img src="/seo/og-image.png" width="1200" height="630" alt="Clustr app summary: local-first photo sorter with EXIF, Google Timeline and Lightroom XMP export" loading="lazy">
+                    <figcaption>Local-first photo sorting with trip, stop and event folders.</figcaption>
+                </figure>
+            </div>
+        </section>
+
+        <section class="wrap" id="features">
+            <div class="section-head">
+                <h2>Why photographers use Clustr</h2>
+                <p>It is a focused replacement for manual trip-folder sorting, built around the metadata your camera and phone already produce.</p>
+            </div>
+            <div class="cards">
+                <article class="card">
+                    <div class="icon" aria-hidden="true">📷</div>
+                    <h3>EXIF-aware</h3>
+                    <p>Reads capture time, camera, GPS and orientation, then adds season and time-of-day tags automatically.</p>
+                </article>
+                <article class="card">
+                    <div class="icon" aria-hidden="true">🌍</div>
+                    <h3>Google Timeline matching</h3>
+                    <p>Uses visits, activities and paths to put a real place on photos even when the camera recorded no GPS.</p>
+                </article>
+                <article class="card">
+                    <div class="icon" aria-hidden="true">📊</div>
+                    <h3>Trip and stop clusters</h3>
+                    <p>A smoothed daily heatmap finds trips and rest days; a spatiotemporal grid splits each trip into stops.</p>
+                </article>
+                <article class="card">
+                    <div class="icon" aria-hidden="true">🖐️</div>
+                    <h3>Manual control</h3>
+                    <p>Draw, split, merge and rename clusters in a docked heatmap before anything is exported.</p>
+                </article>
+                <article class="card">
+                    <div class="icon" aria-hidden="true">💾</div>
+                    <h3>Lightroom-ready</h3>
+                    <p>Exports Windows-safe folder names plus XMP sidecars with keywords, hierarchy, city and location.</p>
+                </article>
+                <article class="card">
+                    <div class="icon" aria-hidden="true">🔒</div>
+                    <h3>Local-first privacy</h3>
+                    <p>All processing happens in your browser. Photos are never uploaded to a Clustr server.</p>
+                </article>
+            </div>
+        </section>
+
+        <section class="wrap" id="workflow">
+            <div class="section-head">
+                <h2>How Clustr works</h2>
+                <p>Five phases, each optional except the ones you need, with settings kept behind a cog.</p>
+            </div>
+            <ol class="steps">
+                <li><strong>Upload the camera folder.</strong> Select JPG, HEIC or RAW files from a directory on your PC.</li>
+                <li><strong>Add Google Timeline (optional).</strong> Import a Timeline JSON export so locations can be assigned by photo time.</li>
+                <li><strong>Extract EXIF and cluster.</strong> Auto clustering builds trip and stop folders from density; heatmap mode lets you draw ranges manually.</li>
+                <li><strong>Name and enrich (optional).</strong> Use Ollama or Gemini for event names, and a local vision model for tags.</li>
+                <li><strong>Review and export.</strong> Filter, rename, triage with Tinder mode, then write folders and XMP sidecars.</li>
+            </ol>
+        </section>
+
+        <section class="wrap">
+            <div class="split">
+                <div class="panel">
+                    <h2>Built for a PC + camera workflow</h2>
+                    <p>Clustr assumes your photos are copied from a camera or memory card to a computer, then sorted and exported there in a Chromium-based desktop browser. That is where folder import, direct disk export and local AI work best.</p>
+                    <ul>
+                        <li>Windows-safe folder and file names</li>
+                        <li>RAW and HEIC previews from embedded thumbnails or paired JPGs</li>
+                        <li>Duplicate-safe import and a virtualized gallery for large libraries</li>
+                        <li>Optional local Ollama models, or Gemini for cloud naming</li>
+                    </ul>
+                </div>
+                <div class="panel">
+                    <h2>Phone use is secondary, but real</h2>
+                    <p>The same app installs as a PWA. On a phone you can add photos from the camera roll, run the phases, browse the folder tree, draw touch ranges on the heatmap, use Tinder review and export a ZIP with XMP sidecars.</p>
+                    <ul>
+                        <li>Camera-roll import with duplicate skipping</li>
+                        <li>Touch-friendly full-screen heatmap</li>
+                        <li>ZIP export with Web Share or save-to-Files</li>
+                        <li>Gemini naming; Ollama stays desktop-only</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <section class="wrap" id="faq">
+            <div class="section-head">
+                <h2>Frequently asked questions</h2>
+                <p>Short answers about privacy, formats, Timeline, Lightroom and mobile use.</p>
+            </div>
+            <div class="faq">
+                <details open>
+                    <summary>Is Clustr free?</summary>
+                    <p>Yes. Clustr is free and ad-free. There is no account, no subscription and no upload quota. Optional support through Ko-fi keeps development going.</p>
+                </details>
+                <details>
+                    <summary>Are my photos uploaded to a server?</summary>
+                    <p>No. Photos are read and processed in your browser. The app has no photo backend and never uploads your library. Metadata is stored locally in IndexedDB; photo blobs are not stored.</p>
+                </details>
+                <details>
+                    <summary>Does Clustr work with Google Timeline?</summary>
+                    <p>Yes. Import a Google Timeline JSON export and Clustr matches visits, activities and paths to your photo times. If Timeline is missing, GPS EXIF and interpolation are used instead.</p>
+                </details>
+                <details>
+                    <summary>Which photo formats are supported?</summary>
+                    <p>JPG, PNG, WebP, HEIC and HEIF, plus RAW formats such as NEF, CR2, ARW, DNG, ORF and RAF, and TIF or TIFF. Paired JPGs and embedded previews are used for RAW thumbnails.</p>
+                </details>
+                <details>
+                    <summary>Does Clustr work on a phone?</summary>
+                    <p>Yes, as a secondary workflow. Install the PWA, add photos from the camera roll, run the clustering phases and export a ZIP with photos and XMP sidecars. The primary workflow remains a PC with camera files.</p>
+                </details>
+                <details>
+                    <summary>Does Clustr work with Adobe Lightroom?</summary>
+                    <p>Yes. Export writes a folder hierarchy and XMP sidecars with keywords, hierarchical subjects, city and location fields that Lightroom can read.</p>
+                </details>
+                <details>
+                    <summary>Which browser do I need?</summary>
+                    <p>Use a Chromium-based browser on desktop for folder import and direct folder export. On mobile, any modern browser can install the PWA and export a ZIP.</p>
+                </details>
+                <details>
+                    <summary>Can Clustr run offline?</summary>
+                    <p>After the first load the service worker caches the app shell and vendor libraries, so Clustr works offline. Installing the PWA gives the most reliable storage behavior on iOS.</p>
+                </details>
+            </div>
+        </section>
+
+        <section class="wrap">
+            <div class="cta">
+                <h2>Ready to sort your camera library?</h2>
+                <p>Open Clustr, select a folder and let the heatmap find the trips. Work from a copy of your photos and review the exported folders before deleting anything.</p>
+                <a class="btn btn-primary" href="/">Open Clustr</a>
+            </div>
+        </section>
+    </main>
+
+    <footer class="wrap site-footer">
+        <div class="footer-grid">
+            <div>
+                <strong style="color:#e2e8f0;">Clustr</strong> - local-first photo sorter. Early access / zkušební provoz.<br>
+                Photos are processed in your browser and are never uploaded.
+            </div>
+            <div class="footer-links">
+                <a href="/">Open app</a>
+                <a href="/o-clustr" hreflang="cs" lang="cs">Česky</a>
+                <a href="https://github.com/Blck-Brd/Clustr">GitHub</a>
+                <a href="https://ko-fi.com/andrewblackbird">Ko-fi</a>
+                <a href="mailto:andrejkos2077@gmail.com">Email</a>
+            </div>
+        </div>
+    </footer>
+</body>
+</html>

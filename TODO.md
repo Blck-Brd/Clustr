@@ -36,6 +36,13 @@
 - [ ] Optional Android `share_target` so photos can be shared into Clustr.
 - [ ] Decide whether a mobile-specific guided tour is worth building (currently disabled).
 
+## Discovery
+
+- [ ] Verify the domain in Google Search Console and submit `https://clustr-photo.vercel.app/sitemap.xml`.
+- [ ] Add the sitemap to Bing Webmaster Tools.
+- [ ] Request indexing for `/`, `/about` and `/o-clustr` after the next production deploy.
+- [ ] Add real product screenshots to `/about` once a clean demo library exists.
+
 ## Quality
 
 - [ ] Playwright coverage for Phase 2 → cluster review → rename → export.
@@ -71,4 +78,6 @@
 - [x] Mobile ZIP export with XMP sidecars and Web Share fallback.
 - [x] Touch-friendly full-screen heatmap with responsive canvases and pointer ranges.
 - [x] Mobile AI fallback to Gemini; Ollama and visual tags stay desktop-only.
+- [x] SEO setup: canonical/OG/Twitter, JSON-LD, robots, sitemap, English and Czech landing pages with FAQ schema, and a 1200x630 social card.
+- [x] SEO validation in `npm run check`; safe service-worker navigation for the landing pages.
 

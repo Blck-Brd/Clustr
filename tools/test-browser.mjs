@@ -70,6 +70,19 @@ try {
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
     await page.getByText('Clustr', { exact: false }).first().waitFor({ timeout: 20000 });
 
+    await page.evaluate(async () => {
+        if (!('serviceWorker' in navigator)) return;
+        await Promise.race([
+            navigator.serviceWorker.ready,
+            new Promise((resolve) => setTimeout(resolve, 5000))
+        ]);
+    });
+    await page.goto(`${baseUrl}about`, { waitUntil: 'domcontentloaded' });
+    await page.locator('h1').filter({ hasText: /Sort thousands of camera photos/ }).waitFor({ timeout: 10000 });
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await page.getByText('Clustr', { exact: false }).first().waitFor({ timeout: 20000 });
+    console.log('About page navigation: OK');
+
     const earlyAccessModal = page.locator('[data-early-access-modal]');
     await earlyAccessModal.waitFor({ timeout: 5000 }).catch(() => {});
     if (await earlyAccessModal.count()) {

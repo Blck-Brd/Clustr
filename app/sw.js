@@ -1,4 +1,4 @@
-const CACHE_NAME = 'clustr-shell-v27';
+const CACHE_NAME = 'clustr-shell-v29';
 const APP_SHELL = [
     './',
     './index.html',
@@ -68,6 +68,22 @@ self.addEventListener('fetch', (event) => {
     }
 
     if (request.mode === 'navigate') {
+        const isAppShell = url.pathname.endsWith('/') || url.pathname.endsWith('/index.html');
+        if (!isAppShell) {
+            event.respondWith(
+                fetch(request)
+                    .then((response) => {
+                        if (response && response.ok) {
+                            const copy = response.clone();
+                            caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+                        }
+                        return response;
+                    })
+                    .catch(() => caches.match(request))
+            );
+            return;
+        }
+
         event.respondWith(
             fetch(request)
                 .then((response) => {

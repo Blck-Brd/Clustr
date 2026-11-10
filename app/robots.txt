@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://clustr-photo.vercel.app/sitemap.xml

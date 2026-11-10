@@ -10,6 +10,12 @@ const appDir = path.join(root, 'app');
 const requiredFiles = [
     'index.html',
     'core.js',
+    'about.html',
+    'o-clustr.html',
+    'robots.txt',
+    'sitemap.xml',
+    'seo/landing.css',
+    'seo/og-image.png',
     'manifest.webmanifest',
     'sw.js',
     'exif-worker.js',

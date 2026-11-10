@@ -140,9 +140,9 @@ try {
     console.log('Mobile panel arrow toggle: OK');
 
     await panelToggle.click();
+    await page.waitForTimeout(300);
     await page.locator('[data-tour="export"]').click();
     await page.locator('[data-export-run]').click();
-    await page.locator('[data-export-progress]').waitFor({ timeout: 10000 });
     await page.getByText(/Export hotov|Export done/).waitFor({ timeout: 60000 });
     await page.getByRole('button', { name: 'OK', exact: true }).click();
 

@@ -125,6 +125,18 @@ See `docs/DEPLOYMENT.md` for details.
 
 > Note: When the app is served over HTTPS, browsers may restrict HTTP requests to `http://localhost` because of mixed-content / Private Network Access rules. Local AI through Ollama is most reliable when the app is opened locally (`index.html`, `http://localhost`, or `vercel dev`) rather than from the public HTTPS deployment.
 
+## Search engine discovery
+
+Production origin: **https://clustr-photo.vercel.app/**
+
+- `/` is the app with canonical, Open Graph, Twitter and `SoftwareApplication` JSON-LD.
+- `/about` is the English landing page and `/o-clustr` the Czech one; both include FAQ schema and hreflang links.
+- `app/robots.txt` and `app/sitemap.xml` are served from the app root; `cleanUrls` makes `/about` and `/o-clustr` work without `.html`.
+- The social card is `app/seo/og-image.png` (1200×630); regenerate it with `npm run og`.
+- `npm run check` validates titles, descriptions, canonical URLs, JSON-LD, the sitemap and the social image.
+
+After deploying, add the property in Google Search Console and submit `https://clustr-photo.vercel.app/sitemap.xml`; do the same in Bing Webmaster Tools. If the domain changes, update the canonical and Open Graph URLs in `app/index.html`, `app/about.html`, `app/o-clustr.html`, `app/sitemap.xml`, `app/robots.txt` and `tools/check-seo.mjs`.
+
 ## Development and tests
 
 ```powershell
@@ -138,8 +150,8 @@ npm run icons         # regenerate PWA icons
 ## Repository layout
 
 ```text
-app/                  PWA source and assets
-tools/                Checks, tests, dev server and icon generation
+app/                  PWA source and assets (app, core, about, o-clustr, seo, robots, sitemap)
+tools/                Checks, tests, dev server, icon and social-card generation
 docs/                 Architecture, deployment, Timeline format, tutorials and DEVLOG
 ```
 

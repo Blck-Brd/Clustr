@@ -1,17 +1,92 @@
 <!DOCTYPE html>
-<html lang="cs">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="theme-color" content="#0f172a">
-    <meta name="description" content="Clustr - local-first photo sorter with clusters and heatmaps. EXIF, Google Timeline, event folders, previews and Lightroom export.">
+    <title>Clustr - Photo Sorter for EXIF, Timeline &amp; Lightroom</title>
+    <meta name="description" content="Free local-first photo organizer. Sort camera photos into trips and events with EXIF, Google Timeline and heatmaps. Export Lightroom folders and XMP. Nothing is uploaded.">
+    <link rel="canonical" href="https://clustr-photo.vercel.app/">
+    <meta name="robots" content="index, follow, max-image-preview:large">
+    <meta name="application-name" content="Clustr">
     <link rel="manifest" href="manifest.webmanifest">
     <link rel="icon" type="image/png" href="icons/favicon.png">
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Clustr">
-    <title>Clustr - Cluster & Heatmap Photo Sorter</title>
+
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Clustr">
+    <meta property="og:title" content="Clustr - Photo Sorter for EXIF, Timeline &amp; Lightroom">
+    <meta property="og:description" content="Free local-first photo organizer. Sort camera photos into trips and events with EXIF, Google Timeline and heatmaps. Export Lightroom folders and XMP. Nothing is uploaded.">
+    <meta property="og:url" content="https://clustr-photo.vercel.app/">
+    <meta property="og:image" content="https://clustr-photo.vercel.app/seo/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:alt" content="Clustr - local-first photo sorter with trip folders and heatmap clustering">
+    <meta property="og:locale" content="en_US">
+    <meta property="og:locale:alternate" content="cs_CZ">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Clustr - Photo Sorter for EXIF, Timeline &amp; Lightroom">
+    <meta name="twitter:description" content="Free local-first photo organizer. Sort camera photos into trips and events with EXIF, Google Timeline and heatmaps. Export Lightroom folders and XMP. Nothing is uploaded.">
+    <meta name="twitter:image" content="https://clustr-photo.vercel.app/seo/og-image.png">
+
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "WebSite",
+          "@id": "https://clustr-photo.vercel.app/#website",
+          "url": "https://clustr-photo.vercel.app/",
+          "name": "Clustr",
+          "description": "Free local-first photo organizer for camera libraries.",
+          "inLanguage": ["en", "cs"],
+          "publisher": { "@id": "https://clustr-photo.vercel.app/#organization" }
+        },
+        {
+          "@type": "Organization",
+          "@id": "https://clustr-photo.vercel.app/#organization",
+          "name": "Clustr",
+          "url": "https://clustr-photo.vercel.app/",
+          "logo": "https://clustr-photo.vercel.app/icons/icon-512.png",
+          "sameAs": [
+            "https://github.com/Blck-Brd/Clustr",
+            "https://ko-fi.com/andrewblackbird"
+          ]
+        },
+        {
+          "@type": "SoftwareApplication",
+          "@id": "https://clustr-photo.vercel.app/#app",
+          "name": "Clustr",
+          "applicationCategory": "MultimediaApplication",
+          "operatingSystem": "Web browser (Chromium desktop; iOS and Android PWA)",
+          "url": "https://clustr-photo.vercel.app/",
+          "downloadUrl": "https://clustr-photo.vercel.app/",
+          "image": "https://clustr-photo.vercel.app/seo/og-image.png",
+          "description": "Local-first photo sorter that groups camera photos into trips, stops and events using EXIF metadata, Google Timeline and density heatmaps, then exports Lightroom-ready folders with XMP sidecars.",
+          "isAccessibleForFree": true,
+          "offers": {
+            "@type": "Offer",
+            "price": "0",
+            "priceCurrency": "USD"
+          },
+          "featureList": [
+            "EXIF metadata extraction",
+            "Google Timeline location matching",
+            "Trip, stop and home clustering with heatmaps",
+            "Screenshot and clutter routing",
+            "Lightroom folder export with XMP sidecars",
+            "Local-first processing with no uploads",
+            "Optional AI event names and visual tags",
+            "Installable PWA with mobile camera-roll import"
+          ],
+          "publisher": { "@id": "https://clustr-photo.vercel.app/#organization" }
+        }
+      ]
+    }
+    </script>
     <!-- Vercel Web Analytics (static host). Enable it in the Vercel dashboard. -->
     <script>
         (function () {
@@ -78,6 +153,13 @@
 </head>
 <body class="bg-slate-950">
     <div id="root"></div>
+    <noscript>
+        <div style="max-width:720px;margin:0 auto;padding:48px 24px;font-family:system-ui,sans-serif;line-height:1.6;color:#e2e8f0;">
+            <h1>Clustr - local-first photo sorter</h1>
+            <p>Clustr groups camera photos into trips, stops and events using EXIF metadata, Google Timeline and density heatmaps, then exports Lightroom-ready folders with XMP sidecars. Photos are processed in your browser and are never uploaded.</p>
+            <p><a style="color:#fb923c;" href="/about">Learn more about Clustr</a> or enable JavaScript to open the app.</p>
+        </div>
+    </noscript>
 
     <script type="text/babel">
 
@@ -3229,6 +3311,9 @@ DATA: ${JSON.stringify(data)}`;
                                     📲 {t('Pro offline použití přidejte Clustr na plochu: Sdílet → Přidat na plochu.', 'For offline use, add Clustr to your Home Screen: Share → Add to Home Screen.')}
                                 </div>
                             )}
+                            <a href="/about" className="block text-center text-[10px] text-cyan-400 hover:text-cyan-300 hover:underline">
+                                {t('ℹ️ O aplikaci Clustr', 'ℹ️ About Clustr')}
+                            </a>
                         </div>
                     </div>
 
