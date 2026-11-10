@@ -58,9 +58,13 @@ try {
     page.on('pageerror', (error) => pageErrors.push(error.message));
     page.on('console', (message) => {
         if (message.type() !== 'error') return;
+        const text = message.text();
         // Ollama polling is optional and logs a refused connection when it is not running.
-        if (/ERR_CONNECTION_REFUSED|localhost:11434/i.test(message.text())) return;
-        pageErrors.push(message.text());
+        if (/ERR_CONNECTION_REFUSED|localhost:11434/i.test(text)) return;
+        // Timeline.json is optional, so CI intentionally runs without it.
+        const url = message.location()?.url || '';
+        if (/Failed to load resource/i.test(text) && /\/Timeline\.json(?:$|[?#])/i.test(url)) return;
+        pageErrors.push(url ? `${text} (${url})` : text);
     });
 
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
