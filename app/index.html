@@ -93,6 +93,19 @@
             }
         };
 
+        // Czech users get Czech by default; everyone else starts in English.
+        const detectDefaultLang = () => {
+            try {
+                const languages = Array.isArray(navigator.languages) && navigator.languages.length
+                    ? navigator.languages
+                    : [navigator.language || ''];
+                if (languages.some((code) => /^cs(\b|-)/i.test(String(code).toLowerCase()))) return 'cs';
+                const zone = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+                if (zone === 'Europe/Prague') return 'cs';
+            } catch (e) {}
+            return 'en';
+        };
+
         const escapeXml = (value = '') => String(value).replace(/[<>&'"]/g, (ch) => ({
             '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;'
         }[ch]));
@@ -2252,7 +2265,7 @@
             const [bulkModal, setBulkModal] = useState({ isOpen: false, type: '', value: '' });
             const [tripModal, setTripModal] = useState({ isOpen: false, start: '', end: '', name: '', location: '' });
             
-            const [lang, setLang] = useState(initialSettings.lang || 'cs');
+            const [lang, setLang] = useState(initialSettings.lang || detectDefaultLang());
             const [analyzingPhotoId, setAnalyzingPhotoId] = useState(null);
             const t = (cs, en) => lang === 'cs' ? cs : en;
 
