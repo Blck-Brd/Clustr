@@ -48,7 +48,7 @@ Completed phases display a checkmark. Every phase keeps its settings behind the 
 - **Trip or stop AI naming** - Phase 3 can name the top-level trip folders or the stop subfolders, preserving the other level.
 - **Manual cluster edits** - Split selected photos into a new event, or merge events by renaming them together.
 - **Location inheritance** - a manually added location propagates through the event and to nearby photos that have no location of their own (12 h window).
-- **RAW + HEIC previews** - paired JPGs are used first, then embedded thumbnails via exifr, scanned embedded JPEG previews, HEIC conversion via heic2any, and TIFF/RAW decoding via UTIF.
+- **RAW + HEIC previews** - paired JPGs are used first, then embedded thumbnails via exifr, scanned embedded JPEG previews, HEIC conversion via heic2any, and TIFF/RAW decoding via UTIF. Thumbnails that fail to decode trigger a fresh embedded scan, and large files get a longer worker timeout.
 - **Worker pool** - EXIF parsing runs in a pool of dedicated workers; Nominatim geocoding runs in a serialized geocode worker.
 - **Virtualized gallery** - only visible photo tiles are mounted, so 2,000+ photos stay responsive.
 - **AI event names** - strict JSON prompts, output-shape normalization, retries, and clear model errors.
@@ -132,6 +132,10 @@ They should be routed to `Screenshot-Clutter`. Detection covers English and Czec
 **Vision tags are poor**
 
 Small vision models such as Moondream do not follow keyword instructions reliably, so the app asks for a short description and extracts keywords locally. Tags are limited to 8 and cleaned of stopwords. Use a stronger vision model for better results.
+
+## Support
+
+Clustr is completely free. It was built at home by one person, without a budget, and is given to everyone with no fees. If it helps you, you can support the author on Ko-fi: <https://ko-fi.com/andrewblackbird>. The app also shows a floating coffee button and occasional friendly reminders after a while or when an export finishes.
 
 ## Data & privacy
 

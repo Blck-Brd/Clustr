@@ -20,6 +20,14 @@ const tagValue = (ifd, tag) => {
     return value && value.length ? Number(value[0]) : 0;
 };
 
+const looksLikeSupportedImage = (bytes) => {
+    if (!bytes || bytes.length < 4) return false;
+    if (bytes[0] === 0xFF && bytes[1] === 0xD8) return true;
+    if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47) return true;
+    if (bytes.length >= 12 && bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46 && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) return true;
+    return false;
+};
+
 const sniffImageMime = (bytes) => {
     if (bytes.length >= 2 && bytes[0] === 0xFF && bytes[1] === 0xD8) return 'image/jpeg';
     if (bytes.length >= 4 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47) return 'image/png';
@@ -344,19 +352,22 @@ self.onmessage = async (event) => {
 
     const candidates = [];
     let hasEmbeddedThumbnail = false;
-    if (exifrReady) {
+    const forceScan = Boolean(data.forceScan);
+    if (exifrReady && !forceScan) {
         try {
             const bytes = await self.exifr.thumbnail(data.file);
             if (bytes && bytes.length) {
                 const copy = bytes.slice ? bytes.slice() : new Uint8Array(bytes);
-                candidates.push({ kind: 'bytes', buffer: copy.buffer, mime: sniffImageMime(copy) });
-                hasEmbeddedThumbnail = true;
+                if (looksLikeSupportedImage(copy)) {
+                    candidates.push({ kind: 'bytes', buffer: copy.buffer, mime: sniffImageMime(copy) });
+                    hasEmbeddedThumbnail = true;
+                }
             }
         } catch (error) {}
     }
 
-    // Only fall back when there is no embedded exifr preview. First look for a
-    // larger embedded JPEG preview, then use the guarded UTIF parser.
+    // Only fall back when there is no usable embedded exifr preview. First look
+    // for a larger embedded JPEG preview, then use the guarded UTIF parser.
     const ext = String(data.file.name || '').split('.').pop().toLowerCase();
     const canUseUtif = ['nef', 'cr2', 'arw', 'dng', 'raf', 'orf', 'tif', 'tiff'].includes(ext);
     if (!hasEmbeddedThumbnail) {
@@ -368,5 +379,10 @@ self.onmessage = async (event) => {
     }
 
     const transfers = candidates.map((candidate) => candidate.buffer).filter(Boolean);
-    self.postMessage({ type: 'result', id: data.id, candidates }, transfers);
+    self.postMessage({
+        type: 'result',
+        id: data.id,
+        candidates,
+        hadCandidates: candidates.length > 0
+    }, transfers);
 };

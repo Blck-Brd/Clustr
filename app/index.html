@@ -2084,16 +2084,16 @@
 
         // exifr/UTIF run in a worker with a hard timeout, so a bad raw file can
         // never leave a tile spinning forever or block the UI.
-        const previewFromWorker = (file) => new Promise((resolve) => {
+        const previewFromWorker = (file, options = {}) => new Promise((resolve) => {
             if (typeof Worker === 'undefined') {
-                resolve(null);
+                resolve({ url: null, hadCandidates: false });
                 return;
             }
             let worker;
             try {
-                worker = new Worker('preview-worker.js?v=4');
+                worker = new Worker('preview-worker.js?v=5');
             } catch (e) {
-                resolve(null);
+                resolve({ url: null, hadCandidates: false });
                 return;
             }
             let settled = false;
@@ -2105,7 +2105,7 @@
                 try { worker.terminate(); } catch (e) {}
                 resolve(value);
             };
-            timer = setTimeout(() => finish(null), 8000);
+            timer = setTimeout(() => finish({ url: null, hadCandidates: false }), 15000);
             worker.onmessage = async (event) => {
                 const data = event.data || {};
                 if (data.type !== 'result' || settled) return;
@@ -2125,22 +2125,29 @@
                     }
                     if (url) break;
                 }
-                finish(url);
+                finish({ url, hadCandidates: Boolean(data.hadCandidates) });
             };
-            worker.onerror = () => finish(null);
-            worker.postMessage({ type: 'preview', id: 'preview', file });
+            worker.onerror = () => finish({ url: null, hadCandidates: false });
+            worker.postMessage({ type: 'preview', id: 'preview', file, forceScan: Boolean(options.forceScan) });
         });
 
-        const generatePreview = async (file) => {
+        const generatePreview = async (file, options = {}) => {
             const ext = file.name.split('.').pop().toLowerCase();
-            if (ext === 'heic' || ext === 'heif') {
-                const embedded = await previewFromWorker(file);
-                return embedded || previewFromHeic(file);
+            const isHeic = ext === 'heic' || ext === 'heif';
+            const isRaw = ['nef', 'cr2', 'dng', 'arw', 'raf', 'orf', 'tif', 'tiff'].includes(ext);
+            if (!isHeic && !isRaw) return null;
+
+            const result = await previewFromWorker(file, options);
+            if (result.url) return result.url;
+
+            // An embedded thumbnail can exist but still fail to decode. Ask the
+            // worker for a fresh scan before giving up on the file.
+            if (result.hadCandidates && !options.forceScan) {
+                const rescan = await previewFromWorker(file, { ...options, forceScan: true });
+                if (rescan.url) return rescan.url;
             }
-            if (['nef', 'cr2', 'dng', 'arw', 'raf', 'orf', 'tif', 'tiff'].includes(ext)) {
-                return previewFromWorker(file);
-            }
-            return null;
+
+            return isHeic ? previewFromHeic(file) : null;
         };
 
         const KIND_COLORS = {
@@ -2282,6 +2289,8 @@
                 randomMinPhotos: initialSettings.tripRandomMinPhotos ?? 3
             });
             const [lastClusterSettings, setLastClusterSettings] = useState(null);
+            const [showSupport, setShowSupport] = useState(false);
+            const [supportReason, setSupportReason] = useState('timer');
             
             const fileInputRef = useRef(null);
             const timelineInputRef = useRef(null);
@@ -2290,6 +2299,8 @@
             const photosRef = useRef(photos);
             photosRef.current = photos;
             const modelAutoFixRef = useRef(false);
+            const previewRetriedRef = useRef(new Set());
+            const supportShownRef = useRef(false);
 
             useEffect(() => {
                 let cancelled = false;
@@ -2378,6 +2389,22 @@
                 const timer = window.setTimeout(() => setShowTour(true), 900);
                 return () => window.clearTimeout(timer);
             }, [photos.length, showTour]);
+
+            useEffect(() => {
+                if (photos.length === 0 || showTour || showSupport || showClusterReview || showDataFill || supportShownRef.current) return;
+                try {
+                    const last = Number(localStorage.getItem('clustr-support-last') || 0);
+                    if (last && Date.now() - last < 7 * 24 * 60 * 60 * 1000) return;
+                } catch (e) {}
+                const timer = window.setTimeout(() => {
+                    if (supportShownRef.current) return;
+                    supportShownRef.current = true;
+                    try { localStorage.setItem('clustr-support-last', String(Date.now())); } catch (e) {}
+                    setSupportReason('timer');
+                    setShowSupport(true);
+                }, 120000);
+                return () => window.clearTimeout(timer);
+            }, [photos.length, showTour, showSupport, showClusterReview, showDataFill]);
 
             useEffect(() => {
                 try {
@@ -2587,7 +2614,7 @@
 
             const processThumbnails = async (loadedFiles) => {
                 const CONCURRENCY_LIMIT = 8; 
-                const PREVIEW_TIMEOUT = 20000;
+                const PREVIEW_TIMEOUT = 40000;
                 const queue = [...loadedFiles];
                 const withTimeout = (promise, ms) => new Promise((resolve, reject) => {
                     const timer = setTimeout(() => reject(new Error('preview timeout')), ms);
@@ -2618,6 +2645,19 @@
 
                 const workers = Array(CONCURRENCY_LIMIT).fill(null).map(() => worker());
                 await Promise.all(workers);
+            };
+
+            const retryPhotoPreview = async (photo) => {
+                if (!photo || !photo.isRaw || !photo.file) return;
+                if (previewRetriedRef.current.has(photo.id)) return;
+                previewRetriedRef.current.add(photo.id);
+                setPhotos(prev => prev.map(item => item.id === photo.id ? { ...item, url: null, thumbLoading: true } : item));
+                try {
+                    const url = await generatePreview(photo.file);
+                    setPhotos(prev => prev.map(item => item.id === photo.id ? { ...item, url: url || null, thumbLoading: false } : item));
+                } catch (e) {
+                    setPhotos(prev => prev.map(item => item.id === photo.id ? { ...item, thumbLoading: false } : item));
+                }
             };
 
             const handleFolder = (e) => {
@@ -4052,6 +4092,10 @@ DATA: ${JSON.stringify(data)}`;
                         title: t('Export hotov!', 'Export done!'),
                         text: t(`Uloženo ${exportedCount} fotek včetně Adobe Lightroom XMP souborů.`, `Saved ${exportedCount} photos including Adobe Lightroom XMP sidecars.`)
                     });
+                    supportShownRef.current = true;
+                    try { localStorage.setItem('clustr-support-last', String(Date.now())); } catch (e) {}
+                    setSupportReason('export');
+                    setShowSupport(true);
                 } catch (e) {
                     setExportProgress(null);
                     setMessage({ title: t('Chyba exportu', 'Export error'), text: e.message });
@@ -5151,7 +5195,11 @@ DATA: ${JSON.stringify(data)}`;
                                                     className="w-full h-full object-cover"
                                                     onError={() => {
                                                         if (p.url.startsWith('blob:')) URL.revokeObjectURL(p.url);
-                                                        setPhotos(prev => prev.map(item => item.id === p.id ? { ...item, url: null, thumbLoading: false } : item));
+                                                        if (p.isRaw) {
+                                                            retryPhotoPreview(p);
+                                                        } else {
+                                                            setPhotos(prev => prev.map(item => item.id === p.id ? { ...item, url: null, thumbLoading: false } : item));
+                                                        }
                                                     }}
                                                 />
                                             ) : (
@@ -5449,6 +5497,53 @@ DATA: ${JSON.stringify(data)}`;
                                 <div className="flex justify-end gap-2">
                                     <button onClick={() => setRenameModal({ isOpen: false })} className="px-3 py-1 text-sm text-slate-400">{t("Zrušit", "Cancel")}</button>
                                     <button onClick={handleRename} className="px-3 py-1 bg-blue-600 rounded text-sm text-white">{t("Uložit", "Save")}</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {!showDataFill && !showClusterReview && (
+                        <a
+                            data-support-button
+                            href="https://ko-fi.com/andrewblackbird"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title={t('Podpořit autora na Ko-fi', 'Support the author on Ko-fi')}
+                            className="fixed bottom-5 right-5 z-[140] flex items-center gap-2 rounded-full bg-[#ff5e5b] px-4 py-2.5 text-sm font-bold text-white shadow-2xl shadow-black/50 transition-transform hover:scale-105"
+                        >
+                            <span aria-hidden="true">☕</span>
+                            <span>{t('Buy me a coffee', 'Buy me a coffee')}</span>
+                        </a>
+                    )}
+
+                    {showSupport && (
+                        <div data-support-modal className="fixed inset-0 bg-black/70 flex items-center justify-center z-[150] p-4" onClick={(e) => { if (e.target === e.currentTarget) setShowSupport(false); }}>
+                            <div className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-6 text-center shadow-2xl">
+                                <div className="text-4xl mb-3">☕</div>
+                                <h2 className="text-xl font-bold text-white mb-2">
+                                    {supportReason === 'export'
+                                        ? t('Hotovo! Líbí se vám Clustr?', 'All done! Enjoying Clustr?')
+                                        : t('Líbí se vám Clustr?', 'Enjoying Clustr?')}
+                                </h2>
+                                <p className="text-sm text-slate-400 leading-relaxed mb-6">
+                                    {t(
+                                        'Clustr je zcela zdarma. Vytvořil jsem ho doma, sám a bez rozpočtu, a dávám ho všem k dispozici bez poplatků. Pokud se vám hodí, můžete mě podpořit na Ko-fi — pomůže to dalšímu vývoji.',
+                                        'Clustr is completely free. I built it at home, alone and without a budget, and I give it to everyone with no fees. If it helps you, consider supporting me on Ko-fi — it helps fund the next updates.'
+                                    )}
+                                </p>
+                                <div className="flex flex-col gap-2">
+                                    <a
+                                        href="https://ko-fi.com/andrewblackbird"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        onClick={() => setShowSupport(false)}
+                                        className="rounded-lg bg-[#ff5e5b] px-4 py-2.5 font-bold text-white hover:brightness-110"
+                                    >
+                                        ☕ {t('Koupit mi kávu', 'Buy me a coffee')}
+                                    </a>
+                                    <button onClick={() => setShowSupport(false)} className="text-sm text-slate-500 hover:text-slate-300">
+                                        {t('Možná později', 'Maybe later')}
+                                    </button>
                                 </div>
                             </div>
                         </div>

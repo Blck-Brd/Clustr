@@ -227,6 +227,11 @@ try {
     await page.locator('[data-export-progress]').waitFor({ timeout: 10000 });
     await page.getByText(/Export hotov|Export done/).waitFor({ timeout: 60000 });
     await page.getByRole('button', { name: 'OK', exact: true }).click();
+    const supportModal = page.locator('[data-support-modal]');
+    if (await supportModal.count()) {
+        await supportModal.getByRole('button', { name: /Maybe later|Možná později/ }).click();
+    }
+    assert.equal(await page.locator('[data-support-button]').getAttribute('href'), 'https://ko-fi.com/andrewblackbird', 'Support button should link to Ko-fi');
     const xmpSidecars = await page.evaluate(() => window.__xmp);
     assert.ok(xmpSidecars.length > 0, 'XMP sidecars should be written');
     assert.ok(xmpSidecars[0].includes('<dc:subject>'), 'XMP should contain keywords');
