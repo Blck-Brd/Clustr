@@ -345,3 +345,29 @@ Added after the first checkpoint:
   - Can be replayed any time from the help dialog with **Start tour**.
 - Tutorial docs (EN/CZ) now mention the guided tour and the replay path.
 - Browser test covers auto-open, skip and replay from help.
+
+### Seventeenth pass - preview resilience, support prompts and early access
+
+- **RAW/HEIC previews**:
+  - Worker timeout raised from 8 s to 15 s; the scheduling timeout is 40 s.
+  - Embedded thumbnails are validated by magic bytes, so non-decodable TIFF/raw thumbnails fall through to JPEG scanning and UTIF.
+  - If candidates exist but fail to decode, the worker rescans with `forceScan`.
+  - A raw tile whose `<img>` fails gets one preview retry. Service worker cache bumped to `clustr-shell-v23`.
+- **Language**:
+  - Default language now follows `navigator.languages` (any `cs` locale) with an `Europe/Prague` timezone fallback; everyone else starts in English. A saved choice still wins.
+- **Support**:
+  - Floating Ko-fi button opens a support dialog instead of linking straight out.
+  - Copy says the app is free, ad-free and homemade; CTA is “I support that”.
+  - Reminders: at most once per day, plus one when an export starts (not after it finishes).
+- **Heatmap help**:
+  - `?` button in the heatmap header opens a bilingual guide (rendered through a portal) covering header controls, time/map views, right panel and workflow.
+- **Feedback and early access**:
+  - ✉️ button opens a feedback dialog with `andrejkos2077@gmail.com`, a Copy button and an optional mailto link.
+  - Sidebar badge is **Zkušební provoz / Early access**; a short first-visit popup appears once and can open the feedback dialog.
+- **Docs**:
+  - README rewritten to mirror the current app (workflow, features, feedback, support, tests, troubleshooting). Reddit post draft added locally as `reddit-post.txt`.
+- **CI**:
+  - CI runs without `Timeline.json`, so the app’s expected optional fetch 404 was failing the browser smoke test’s page-error assertion. The test now ignores 404s for `/Timeline.json` only.
+  - Run for `f0017b2` is green.
+- **Session commits**: `367c0e7` preview retries + Ko-fi prompts, `d6e4621` locale language default, `3447fb3` heatmap help + support timing, `04c7033` support dialog from the floating button, `7e6eb55` README/feedback/early access, `651b7be` Czech copy, `b801669` feedback dialog, `33bd647` README refresh, `f0017b2` CI 404 fix.
+- **Tests**: `npm run check`, `npm test`, and `npm run test:browser` pass locally; browser test also verified with `Timeline.json` absent.
