@@ -9,6 +9,7 @@ const appDir = path.join(root, 'app');
 
 const requiredFiles = [
     'index.html',
+    'core.js',
     'manifest.webmanifest',
     'sw.js',
     'exif-worker.js',
@@ -62,7 +63,7 @@ try {
     failed = true;
 }
 
-for (const file of ['sw.js', 'exif-worker.js', 'geo-worker.js', 'preview-worker.js', 'vendor/utif.js']) {
+for (const file of ['core.js', 'sw.js', 'exif-worker.js', 'geo-worker.js', 'preview-worker.js', 'vendor/utif.js']) {
     try {
         new Function(fs.readFileSync(path.join(appDir, file), 'utf8'));
         console.log(`${file} is syntactically valid`);

@@ -1,7 +1,8 @@
-const CACHE_NAME = 'clustr-shell-v23';
+const CACHE_NAME = 'clustr-shell-v24';
 const APP_SHELL = [
     './',
     './index.html',
+    './core.js',
     './manifest.webmanifest',
     './exif-worker.js',
     './geo-worker.js',

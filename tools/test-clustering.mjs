@@ -5,16 +5,7 @@ import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const html = fs.readFileSync(path.join(root, 'app', 'index.html'), 'utf8');
-const marker = '<script type="text/babel">';
-const start = html.indexOf(marker);
-const end = html.indexOf('</script>', start);
-assert.ok(start !== -1 && end !== -1, 'Babel script not found');
-
-const script = html.slice(start + marker.length, end);
-const appStart = script.indexOf('const App = () =>');
-assert.ok(appStart !== -1, 'App component marker not found');
-const preApp = script.slice(0, appStart);
+const preApp = fs.readFileSync(path.join(root, 'app', 'core.js'), 'utf8');
 
 const fetchStats = { calls: 0 };
 const sandbox = {
