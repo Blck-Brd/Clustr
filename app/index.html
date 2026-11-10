@@ -2862,8 +2862,8 @@ DATA: ${JSON.stringify(data)}`;
                 );
             };
 
-            const GALLERY_GAP = showClusterReview ? 8 : 16;
-            const GALLERY_MIN_TILE = showClusterReview ? 92 : 150;
+            const GALLERY_GAP = isMobileLayout ? 6 : (showClusterReview ? 8 : 16);
+            const GALLERY_MIN_TILE = isMobileLayout ? 78 : (showClusterReview ? 92 : 150);
             const GALLERY_MAX_COLUMNS = showClusterReview ? 12 : 8;
             const galleryContentWidth = Math.max(0, galleryView.width - 48);
             const galleryColumns = Math.max(1, Math.min(GALLERY_MAX_COLUMNS, Math.floor((galleryContentWidth + GALLERY_GAP) / (GALLERY_MIN_TILE + GALLERY_GAP))));
@@ -2884,10 +2884,23 @@ DATA: ${JSON.stringify(data)}`;
                     {isMobileLayout && showMobileSidebar && (
                         <div className="fixed inset-0 z-[120] bg-black/60" onClick={() => setShowMobileSidebar(false)} />
                     )}
+                    {isMobileLayout && !showMobileSidebar && selectedPhotos.size === 0 && (
+                        <button
+                            type="button"
+                            data-mobile-panel-toggle
+                            onClick={() => setShowMobileSidebar(true)}
+                            aria-label={t('Zobrazit panel', 'Show panel')}
+                            title={t('Zobrazit panel', 'Show panel')}
+                            className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] left-0 z-[140] flex h-14 w-7 items-center justify-center border border-l-0 border-slate-700 bg-slate-800/90 text-lg font-bold text-slate-300 shadow-lg backdrop-blur"
+                            style={{ borderRadius: '0 9999px 9999px 0' }}
+                        >
+                            ›
+                        </button>
+                    )}
                     <div className={`bg-slate-900 border-r border-slate-800 flex flex-col ${isMobileLayout ? `fixed inset-y-0 left-0 z-[130] w-80 max-w-[85vw] shadow-2xl transition-transform duration-200 ${showMobileSidebar ? 'translate-x-0' : '-translate-x-full'}` : 'w-80'}`} style={isMobileLayout ? { paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' } : undefined}>
                         <div className="relative p-6 border-b border-slate-800">
                             {isMobileLayout && (
-                                <button onClick={() => setShowMobileSidebar(false)} aria-label={t('Zavřít menu', 'Close menu')} className="absolute top-3 right-3 w-9 h-9 rounded-full bg-slate-800 text-slate-300 text-xl leading-none flex items-center justify-center">×</button>
+                                <button data-mobile-panel-close onClick={() => setShowMobileSidebar(false)} aria-label={t('Skrýt panel', 'Hide panel')} title={t('Skrýt panel', 'Hide panel')} className="absolute top-3 right-3 w-9 h-9 rounded-full bg-slate-800 text-slate-300 text-2xl leading-none flex items-center justify-center">‹</button>
                             )}
                             <div className="flex items-center gap-2">
                                 <h1 className="text-xl font-bold text-orange-400">⚡ Clustr</h1>
@@ -3332,7 +3345,7 @@ DATA: ${JSON.stringify(data)}`;
                                     const isSelected = selectedPhotos.has(p.id);
                                     return (
                                         <div key={p.id} data-photo-id={p.id} onClick={(e) => toggleSelection(p.id, e)} className={`relative aspect-square bg-slate-800 rounded-lg overflow-hidden group cursor-pointer transition-all ${isSelected ? 'ring-4 ring-orange-500 scale-[0.98]' : 'hover:ring-2 hover:ring-slate-500'}`}>
-                                            <div className={`absolute top-2 left-2 z-10 w-6 h-6 flex items-center justify-center rounded-full border-2 transition-colors ${isSelected ? 'bg-orange-500 border-orange-500' : `border-white/50 bg-black/30 ${isMobileLayout ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}`}>
+                                            <div className={`absolute z-10 flex items-center justify-center rounded-full border-2 transition-colors ${isMobileLayout ? 'top-1 left-1 w-5 h-5' : 'top-2 left-2 w-6 h-6'} ${isSelected ? 'bg-orange-500 border-orange-500' : `border-white/50 bg-black/30 ${isMobileLayout ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}`}>
                                                 {isSelected && <span className="text-white text-sm font-bold block mt-[-2px]">✓</span>}
                                             </div>
                                             
@@ -3359,12 +3372,12 @@ DATA: ${JSON.stringify(data)}`;
                                                 </div>
                                             )}
                                             
-                                            <div className={`photo-overlay absolute bottom-0 left-0 right-0 p-2 text-[9px] text-white transition-opacity ${isMobileLayout ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
-                                                <div className="flex justify-between items-start">
-                                                    <div>
-                                                        <div className="font-bold text-orange-400">{p.aiData?.event_name || t('Bez události', 'No event')}</div>
-                                                        <div className="text-emerald-400">{p.hardData?.location || ''}</div>
-                                                        <div className="text-slate-300">{p.hardData?.dateStr || ''} {p.hardData?.timeStr || ''}</div>
+                                            <div className={`photo-overlay absolute bottom-0 left-0 right-0 text-white transition-opacity ${isMobileLayout ? 'p-1 text-[8px] opacity-100' : 'p-2 text-[9px] opacity-0 group-hover:opacity-100'}`}>
+                                                <div className="flex justify-between items-start gap-1">
+                                                    <div className="min-w-0">
+                                                        <div className="font-bold text-orange-400 truncate">{p.aiData?.event_name || t('Bez události', 'No event')}</div>
+                                                        {!isMobileLayout && <div className="text-emerald-400 truncate">{p.hardData?.location || ''}</div>}
+                                                        <div className="text-slate-300 truncate">{p.hardData?.dateStr || ''} {p.hardData?.timeStr || ''}</div>
                                                     </div>
                                                     {!isMobileLayout && (
                                                         <button 
@@ -3377,9 +3390,11 @@ DATA: ${JSON.stringify(data)}`;
                                                         </button>
                                                     )}
                                                 </div>
-                                                <div className="flex flex-wrap gap-1 mt-1">
-                                                    {p.aiData?.tags?.map(tg => <span key={tg} className="bg-slate-700 px-1 rounded">#{tg}</span>)}
-                                                </div>
+                                                {!isMobileLayout && (
+                                                    <div className="flex flex-wrap gap-1 mt-1">
+                                                        {p.aiData?.tags?.map(tg => <span key={tg} className="bg-slate-700 px-1 rounded">#{tg}</span>)}
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
                                     );

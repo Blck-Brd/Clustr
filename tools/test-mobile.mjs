@@ -111,7 +111,7 @@ try {
     }
     console.log('Camera-roll import: OK');
 
-    await page.getByRole('button', { name: /Close menu|Zavřít menu/ }).click();
+    await page.locator('[data-mobile-panel-close]').click();
     await page.waitForTimeout(300);
 
     const tileBoxes = await page.locator('[data-photo-id]').evaluateAll((tiles) => tiles.slice(0, 8).map((tile) => {
@@ -119,7 +119,7 @@ try {
         return { x: Math.round(rect.x), y: Math.round(rect.y) };
     }));
     const columns = new Set(tileBoxes.map((box) => box.x)).size;
-    assert.ok(columns >= 2, `Mobile gallery should show at least 2 columns, got ${columns}`);
+    assert.ok(columns >= 4, `Mobile gallery should show at least 4 columns, got ${columns}`);
 
     const noHorizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1);
     assert.ok(noHorizontalOverflow, 'Mobile layout should not overflow horizontally');
@@ -128,7 +128,18 @@ try {
     await page.screenshot({ path: path.join(os.tmpdir(), 'clustr-mobile-check.png') });
     console.log('Screenshot:', path.join(os.tmpdir(), 'clustr-mobile-check.png'));
 
-    await menuButton.click();
+    const panelToggle = page.locator('[data-mobile-panel-toggle]');
+    await panelToggle.click();
+    await page.waitForTimeout(300);
+    const openBox = await page.locator('[data-tour="upload"]').boundingBox();
+    assert.ok(openBox && openBox.x + openBox.width > 0, 'Panel arrow should open the sidebar');
+    await page.locator('[data-mobile-panel-close]').click();
+    await page.waitForTimeout(300);
+    const closedBox = await page.locator('[data-tour="upload"]').boundingBox();
+    assert.ok(!closedBox || closedBox.x + closedBox.width <= 0, 'Panel arrow should hide the sidebar');
+    console.log('Mobile panel arrow toggle: OK');
+
+    await panelToggle.click();
     await page.locator('[data-tour="export"]').click();
     await page.locator('[data-export-run]').click();
     await page.locator('[data-export-progress]').waitFor({ timeout: 10000 });
@@ -158,7 +169,7 @@ try {
     await page.locator('[data-auto-clustering]').click();
     await page.getByText(/Seskupeno|Grouped/).waitFor({ timeout: 60000 });
     await page.getByRole('button', { name: 'OK', exact: true }).click();
-    await page.getByRole('button', { name: /Close menu|Zavřít menu/ }).click();
+    await page.locator('[data-mobile-panel-close]').click();
     console.log('Mobile Phase 2: OK');
 
     await menuButton.click();
