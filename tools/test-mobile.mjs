@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, devices } from 'playwright';
+import { unzipSync } from 'fflate';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const port = 4176;
@@ -42,8 +43,27 @@ let browser;
 try {
     await waitForServer();
     browser = await chromium.launch({ headless: true });
-    const context = await browser.newContext({ ...devices['iPhone 13'] });
+    const context = await browser.newContext({ ...devices['iPhone 13'], acceptDownloads: true });
     const page = await context.newPage();
+    await page.addInitScript(() => {
+        try {
+            Object.defineProperty(navigator, 'share', { value: undefined, configurable: true });
+            Object.defineProperty(navigator, 'canShare', { value: undefined, configurable: true });
+        } catch (error) {}
+        const createObjectURL = URL.createObjectURL.bind(URL);
+        URL.createObjectURL = (blob) => {
+            if (blob && blob.type === 'application/zip') window.__zipBlob = blob;
+            return createObjectURL(blob);
+        };
+        const originalClick = HTMLAnchorElement.prototype.click;
+        HTMLAnchorElement.prototype.click = function click() {
+            if (this.download && /\.zip$/i.test(this.download)) {
+                window.__zipName = this.download;
+                return;
+            }
+            return originalClick.call(this);
+        };
+    });
 
     const pageErrors = [];
     page.on('pageerror', (error) => pageErrors.push(error.message));
@@ -105,6 +125,32 @@ try {
 
     await page.screenshot({ path: path.join(os.tmpdir(), 'clustr-mobile-check.png') });
     console.log('Screenshot:', path.join(os.tmpdir(), 'clustr-mobile-check.png'));
+
+    await menuButton.click();
+    await page.locator('[data-tour="export"]').click();
+    await page.locator('[data-export-run]').click();
+    await page.locator('[data-export-progress]').waitFor({ timeout: 10000 });
+    await page.getByText(/Export hotov|Export done/).waitFor({ timeout: 60000 });
+    await page.getByRole('button', { name: 'OK', exact: true }).click();
+
+    const zipPayload = await page.evaluate(async () => {
+        if (!window.__zipBlob) return null;
+        const bytes = new Uint8Array(await window.__zipBlob.arrayBuffer());
+        let binary = '';
+        for (let index = 0; index < bytes.length; index += 0x8000) {
+            binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
+        }
+        return { name: window.__zipName, base64: btoa(binary) };
+    });
+    assert.ok(zipPayload, 'ZIP blob should be created');
+    assert.match(zipPayload.name, /^clustr-export-.*\.zip$/, 'ZIP should have the export name');
+    const archive = unzipSync(new Uint8Array(Buffer.from(zipPayload.base64, 'base64')));
+    const archiveFiles = Object.keys(archive);
+    assert.ok(archiveFiles.some((name) => /\.jpg$/i.test(name)), `ZIP should contain photos: ${archiveFiles.join(', ')}`);
+    assert.ok(archiveFiles.some((name) => /\.xmp$/i.test(name)), 'ZIP should contain XMP sidecars');
+    const xmpFile = archiveFiles.find((name) => /\.xmp$/i.test(name));
+    assert.ok(Buffer.from(archive[xmpFile]).toString('utf8').includes('<dc:subject>'), 'XMP should contain keywords');
+    console.log(`Mobile ZIP export: OK (${archiveFiles.length} files)`);
 
     assert.deepEqual(pageErrors, [], `Page errors: ${pageErrors.join(' | ')}`);
     console.log('Mobile browser test passed.');

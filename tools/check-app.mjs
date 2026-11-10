@@ -17,6 +17,7 @@ const requiredFiles = [
     'preview-worker.js',
     'vendor/exifr.full.umd.js',
     'vendor/utif.js',
+    'vendor/fflate.umd.js',
     'vendor/heic2any.min.js',
     'icons/icon-192.png',
     'icons/icon-512.png',
@@ -63,7 +64,7 @@ try {
     failed = true;
 }
 
-for (const file of ['core.js', 'sw.js', 'exif-worker.js', 'geo-worker.js', 'preview-worker.js', 'vendor/utif.js']) {
+for (const file of ['core.js', 'sw.js', 'exif-worker.js', 'geo-worker.js', 'preview-worker.js', 'vendor/utif.js', 'vendor/fflate.umd.js']) {
     try {
         new Function(fs.readFileSync(path.join(appDir, file), 'utf8'));
         console.log(`${file} is syntactically valid`);

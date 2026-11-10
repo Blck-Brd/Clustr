@@ -15,10 +15,10 @@
   },
   "devDependencies": {
     "@babel/standalone": "^7.28.4",
+    "fflate": "^0.8.2",
     "playwright": "^1.65.0"
   },
   "dependencies": {
     "@vercel/analytics": "^2.0.1"
   }
 }
-

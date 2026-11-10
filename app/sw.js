@@ -1,4 +1,4 @@
-const CACHE_NAME = 'clustr-shell-v24';
+const CACHE_NAME = 'clustr-shell-v25';
 const APP_SHELL = [
     './',
     './index.html',
@@ -9,6 +9,7 @@ const APP_SHELL = [
     './preview-worker.js',
     './vendor/exifr.full.umd.js',
     './vendor/utif.js',
+    './vendor/fflate.umd.js',
     './vendor/heic2any.min.js',
     './icons/icon-192.png',
     './icons/icon-512.png',

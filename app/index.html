@@ -60,6 +60,7 @@
     <script src="vendor/heic2any.min.js"></script>
     <!-- UTIF dekodér pro slozit� TIFF/RAW (NEF, CR2, DNG) -->
     <script src="vendor/utif.js"></script>
+    <script src="vendor/fflate.umd.js"></script>
     <script src="core.js"></script>
 
     <style>
@@ -1945,77 +1946,38 @@ DATA: ${JSON.stringify(data)}`;
             };
 
             // EXPORT NA DISK VČETNĚ ADOBE LIGHTROOM XMP SIDECAR SOUBORŮ
-            const exportToDisk = async () => {
-                if (!window.showDirectoryPicker) { setMessage({ title: "Chyba", text: "Prohlížeč nepodporuje export." }); return; }
+            const buildExportEntries = (exportPhotos) => {
+                const usedNamesByFolder = new Map();
 
-                let rootHandle;
-                try {
-                    rootHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
-                } catch (e) {
-                    if (e?.name !== 'AbortError') setMessage({ title: t('Chyba exportu', 'Export error'), text: e.message });
-                    return;
-                }
+                return exportPhotos.map((p) => {
+                    let folderPath = p.aiData?.event_name || p.hardData?.location || "Ostatní";
+                    if (isScreenshotCategory(p.aiData?.category) || p.aiData?.tags?.includes('Screenshot')) {
+                        folderPath = SCREENSHOT_FOLDER;
+                    }
 
-                const exportPhotos = photos.filter((p) => p.aiData?.category !== '🗑️ K vymazání' && p.file);
-                if (exportPhotos.length === 0) {
-                    setMessage({ title: t('Nic k exportu', 'Nothing to export'), text: t('Nejsou vybrány žádné fotky k exportu.', 'There are no photos to export.') });
-                    return;
-                }
+                    const folderParts = folderPath.split('/').map(sanitizeSegment).filter(Boolean);
+                    if (folderParts.length === 0) folderParts.push('Ostatní');
+                    folderPath = folderParts.join('/');
 
-                setExportProgress({ done: 0, total: exportPhotos.length, current: '' });
-                supportShownRef.current = true;
-                try { localStorage.setItem('clustr-support-last', String(Date.now())); } catch (e) {}
-                setSupportReason('export');
-                setShowSupport(true);
+                    if (!usedNamesByFolder.has(folderPath.toLowerCase())) {
+                        usedNamesByFolder.set(folderPath.toLowerCase(), new Set());
+                    }
+                    const usedNames = usedNamesByFolder.get(folderPath.toLowerCase());
+                    const safeFileName = makeUniqueFileName(sanitizeSegment(p.name), usedNames);
 
-                try {
-                    const usedNamesByFolder = new Map();
-                    let exportedCount = 0;
+                    const location = p.hardData?.location || '';
+                    const eventName = p.aiData?.event_name || '';
+                    const eventLeaf = eventName.split('/').filter(Boolean).pop() || '';
+                    const keywords = new Set(p.aiData?.tags || []);
+                    if (eventLeaf) keywords.add(eventLeaf);
+                    if (location) keywords.add(location);
 
-                    for (let index = 0; index < exportPhotos.length; index += 1) {
-                        const p = exportPhotos[index];
-                        setExportProgress({ done: index, total: exportPhotos.length, current: p.name });
+                    const keywordItems = [...keywords].map(tag => `<rdf:li>${escapeXml(tag)}</rdf:li>`);
+                    const hierarchyItems = eventName
+                        ? [`<rdf:li>${escapeXml(eventName.split('/').filter(Boolean).join('|'))}</rdf:li>`]
+                        : [];
 
-                        let folderPath = p.aiData?.event_name || p.hardData?.location || "Ostatní";
-                        if (isScreenshotCategory(p.aiData?.category) || p.aiData?.tags?.includes('Screenshot')) {
-                            folderPath = SCREENSHOT_FOLDER;
-                        }
-
-                        const folderParts = folderPath.split('/').map(sanitizeSegment).filter(Boolean);
-                        if (folderParts.length === 0) folderParts.push('Ostatní');
-                        folderPath = folderParts.join('/');
-
-                        let currentHandle = rootHandle;
-                        for (const part of folderParts) {
-                            currentHandle = await currentHandle.getDirectoryHandle(part, { create: true });
-                        }
-
-                        if (!usedNamesByFolder.has(folderPath.toLowerCase())) {
-                            usedNamesByFolder.set(folderPath.toLowerCase(), new Set());
-                        }
-                        const usedNames = usedNamesByFolder.get(folderPath.toLowerCase());
-
-                        // 1. Uložení samotného obrázku (s ošetřením duplicitních názvů)
-                        const safeFileName = makeUniqueFileName(sanitizeSegment(p.name), usedNames);
-                        const fileHandle = await currentHandle.getFileHandle(safeFileName, { create: true });
-                        const writable = await fileHandle.createWritable();
-                        await writable.write(p.file);
-                        await writable.close();
-
-                        // 2. XMP sidecar that Lightroom can read: flat keywords + hierarchy + location.
-                        const location = p.hardData?.location || '';
-                        const eventName = p.aiData?.event_name || '';
-                        const eventLeaf = eventName.split('/').filter(Boolean).pop() || '';
-                        const keywords = new Set(p.aiData?.tags || []);
-                        if (eventLeaf) keywords.add(eventLeaf);
-                        if (location) keywords.add(location);
-
-                        const keywordItems = [...keywords].map(tag => `<rdf:li>${escapeXml(tag)}</rdf:li>`);
-                        const hierarchyItems = eventName
-                            ? [`<rdf:li>${escapeXml(eventName.split('/').filter(Boolean).join('|'))}</rdf:li>`]
-                            : [];
-
-                        const xmpContent = `<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>
+                    const xmpContent = `<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>
 <x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="Adobe XMP Core 7.0-c000 1.000000, 2021/01/01-00:00:00">
  <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
   <rdf:Description rdf:about=""
@@ -2040,30 +2002,169 @@ DATA: ${JSON.stringify(data)}`;
 </x:xmpmeta>
 <?xpacket end="w"?>`;
 
-                        const [baseName] = splitExtension(safeFileName);
-                        const xmpFileName = makeUniqueFileName(`${baseName}.xmp`, usedNames);
-                        const xmpHandle = await currentHandle.getFileHandle(xmpFileName, { create: true });
+                    const [baseName] = splitExtension(safeFileName);
+                    const xmpFileName = makeUniqueFileName(`${baseName}.xmp`, usedNames);
+
+                    return { photo: p, folderParts, folderPath, fileName: safeFileName, xmpFileName, xmpContent };
+                });
+            };
+
+            const finishExport = (exportedCount, mobile) => {
+                setShowExportModal(false);
+                setExportProgress(null);
+                setMessage({
+                    title: t('Export hotov!', 'Export done!'),
+                    text: mobile
+                        ? t(`Uloženo ${exportedCount} fotek včetně XMP do ZIPu.`, `Saved ${exportedCount} photos with XMP sidecars in a ZIP.`)
+                        : t(`Uloženo ${exportedCount} fotek včetně Adobe Lightroom XMP souborů.`, `Saved ${exportedCount} photos including Adobe Lightroom XMP sidecars.`)
+                });
+            };
+
+            const exportToFolder = async (entries) => {
+                let rootHandle;
+                try {
+                    rootHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+                } catch (e) {
+                    if (e?.name !== 'AbortError') setMessage({ title: t('Chyba exportu', 'Export error'), text: e.message });
+                    return;
+                }
+
+                try {
+                    let exportedCount = 0;
+                    for (let index = 0; index < entries.length; index += 1) {
+                        const entry = entries[index];
+                        setExportProgress({ done: index, total: entries.length, current: entry.fileName });
+
+                        let currentHandle = rootHandle;
+                        for (const part of entry.folderParts) {
+                            currentHandle = await currentHandle.getDirectoryHandle(part, { create: true });
+                        }
+
+                        const fileHandle = await currentHandle.getFileHandle(entry.fileName, { create: true });
+                        const writable = await fileHandle.createWritable();
+                        await writable.write(entry.photo.file);
+                        await writable.close();
+
+                        const xmpHandle = await currentHandle.getFileHandle(entry.xmpFileName, { create: true });
                         const xmpWritable = await xmpHandle.createWritable();
-                        await xmpWritable.write(xmpContent);
+                        await xmpWritable.write(entry.xmpContent);
                         await xmpWritable.close();
                         exportedCount += 1;
 
-                        // Let React paint the progress bar between files.
                         await new Promise((resolve) => setTimeout(resolve, 0));
                     }
 
-                    setExportProgress({ done: exportPhotos.length, total: exportPhotos.length, current: '' });
+                    setExportProgress({ done: entries.length, total: entries.length, current: '' });
                     await new Promise((resolve) => setTimeout(resolve, 350));
-                    setShowExportModal(false);
-                    setExportProgress(null);
-                    setMessage({
-                        title: t('Export hotov!', 'Export done!'),
-                        text: t(`Uloženo ${exportedCount} fotek včetně Adobe Lightroom XMP souborů.`, `Saved ${exportedCount} photos including Adobe Lightroom XMP sidecars.`)
-                    });
+                    finishExport(exportedCount, false);
                 } catch (e) {
                     setExportProgress(null);
                     setMessage({ title: t('Chyba exportu', 'Export error'), text: e.message });
                 }
+            };
+
+            const exportAsZip = async (entries) => {
+                const totalBytes = entries.reduce((sum, entry) => sum + (entry.photo.file?.size || 0), 0);
+                if (totalBytes > 1.2 * 1024 * 1024 * 1024) {
+                    setExportProgress(null);
+                    setMessage({
+                        title: t('Export je příliš velký', 'Export is too large'),
+                        text: t('ZIP se na mobilu skládá v paměti. Vyberte méně fotek (do cca 1 GB) nebo export spusťte na PC.', 'The ZIP is built in memory on mobile. Select fewer photos (about 1 GB max) or export on a desktop.')
+                    });
+                    return;
+                }
+
+                try {
+                    const fflate = window.fflate;
+                    if (!fflate?.Zip || !fflate?.ZipPassThrough) throw new Error(t('ZIP podpora není dostupná.', 'ZIP support is not available.'));
+
+                    const chunks = [];
+                    let exportedCount = 0;
+                    const zipBlob = await new Promise((resolve, reject) => {
+                        const zip = new fflate.Zip((error, chunk, final) => {
+                            if (error) { reject(error); return; }
+                            chunks.push(chunk);
+                            if (final) resolve(new Blob(chunks, { type: 'application/zip' }));
+                        });
+
+                        (async () => {
+                            try {
+                                for (let index = 0; index < entries.length; index += 1) {
+                                    const entry = entries[index];
+                                    setExportProgress({ done: index, total: entries.length, current: entry.fileName });
+
+                                    const imageData = new Uint8Array(await entry.photo.file.arrayBuffer());
+                                    const imageEntry = new fflate.ZipPassThrough([...entry.folderParts, entry.fileName].join('/'));
+                                    zip.add(imageEntry);
+                                    imageEntry.push(imageData, true);
+
+                                    const xmpData = new TextEncoder().encode(entry.xmpContent);
+                                    const xmpEntry = new fflate.ZipPassThrough([...entry.folderParts, entry.xmpFileName].join('/'));
+                                    zip.add(xmpEntry);
+                                    xmpEntry.push(xmpData, true);
+
+                                    exportedCount += 1;
+                                    await new Promise((resolveTick) => setTimeout(resolveTick, 0));
+                                }
+                                zip.end();
+                            } catch (e) {
+                                reject(e);
+                            }
+                        })();
+                    });
+
+                    setExportProgress({ done: entries.length, total: entries.length, current: '' });
+                    const fileName = `clustr-export-${new Date().toISOString().slice(0, 10)}.zip`;
+                    const shareFile = new File([zipBlob], fileName, { type: 'application/zip' });
+
+                    let shared = false;
+                    try {
+                        if (navigator.canShare && navigator.canShare({ files: [shareFile] })) {
+                            await navigator.share({ files: [shareFile], title: 'Clustr export' });
+                            shared = true;
+                        }
+                    } catch (e) {
+                        if (e?.name === 'AbortError') shared = true;
+                    }
+
+                    if (!shared) {
+                        const url = URL.createObjectURL(zipBlob);
+                        const link = document.createElement('a');
+                        link.href = url;
+                        link.download = fileName;
+                        document.body.appendChild(link);
+                        link.click();
+                        link.remove();
+                        window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+                    }
+
+                    finishExport(exportedCount, true);
+                } catch (e) {
+                    setExportProgress(null);
+                    setMessage({ title: t('Chyba exportu', 'Export error'), text: e.message });
+                }
+            };
+
+            const exportToDisk = async () => {
+                const exportPhotos = photos.filter((p) => p.aiData?.category !== '🗑️ K vymazání' && p.file);
+                if (exportPhotos.length === 0) {
+                    setMessage({ title: t('Nic k exportu', 'Nothing to export'), text: t('Nejsou vybrány žádné fotky k exportu.', 'There are no photos to export.') });
+                    return;
+                }
+
+                const entries = buildExportEntries(exportPhotos);
+                setExportProgress({ done: 0, total: entries.length, current: '' });
+                supportShownRef.current = true;
+                try { localStorage.setItem('clustr-support-last', String(Date.now())); } catch (e) {}
+                setSupportReason('export');
+                if (!isMobileLayout) setShowSupport(true);
+
+                if (isMobileLayout || !window.showDirectoryPicker) {
+                    await exportAsZip(entries);
+                    return;
+                }
+
+                await exportToFolder(entries);
             };
 
             const handleRename = () => {
@@ -3033,7 +3134,7 @@ DATA: ${JSON.stringify(data)}`;
                                     </div>
                                     <div className="flex gap-2">
                                         <button onClick={startTinder} className="flex-1 bg-orange-600 p-2 rounded text-xs text-white font-bold hover:bg-orange-500">{t("🔥 Tinder", "🔥 Tinder")}</button>
-                                        <button data-export-open data-tour="export" onClick={() => setShowExportModal(true)} className="flex-1 bg-emerald-600 p-2 rounded text-xs text-white font-bold hover:bg-emerald-500">{t("💾 Export", "💾 Export")}</button>
+                                        <button data-export-open data-tour="export" onClick={() => { setShowExportModal(true); setShowMobileSidebar(false); }} className="flex-1 bg-emerald-600 p-2 rounded text-xs text-white font-bold hover:bg-emerald-500">{t("💾 Export", "💾 Export")}</button>
                                     </div>
                                 </div>
                             )}
@@ -3429,7 +3530,7 @@ DATA: ${JSON.stringify(data)}`;
                         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
                             <div className="bg-slate-900 p-6 rounded-xl border border-slate-700 w-full max-w-sm text-center">
                                 <div className="text-2xl mb-2">💾</div>
-                                <div className="font-bold mb-2">{t("Export na disk", "Export to Disk")}</div>
+                                <div className="font-bold mb-2">{isMobileLayout ? t("Export do ZIPu", "Export to ZIP") : t("Export na disk", "Export to Disk")}</div>
                                 {exportProgress ? (
                                     <div data-export-progress className="space-y-3 mt-4">
                                         <div className="flex justify-between text-xs text-slate-400">
@@ -3443,13 +3544,17 @@ DATA: ${JSON.stringify(data)}`;
                                             />
                                         </div>
                                         <div className="text-[10px] text-slate-500 truncate h-4">{exportProgress.current || ' '}</div>
-                                        <div className="text-[10px] text-slate-500">{t('Fotky a XMP sidecary se ukládají do složek.', 'Photos and XMP sidecars are being written to folders.')}</div>
+                                        <div className="text-[10px] text-slate-500">{isMobileLayout ? t('Fotky a XMP sidecary se balí do ZIPu.', 'Photos and XMP sidecars are being packed into a ZIP.') : t('Fotky a XMP sidecary se ukládají do složek.', 'Photos and XMP sidecars are being written to folders.')}</div>
                                     </div>
                                 ) : (
                                     <>
-                                        <div className="text-sm text-slate-400 mb-6">{t("Fotky a Adobe Lightroom XMP sidecar soubory budou uloženy do hierarchických složek.", "Photos and Adobe Lightroom XMP sidecar files will be saved into hierarchical folders.")}</div>
+                                        <div className="text-sm text-slate-400 mb-6">
+                                            {isMobileLayout
+                                                ? t("Fotky a XMP sidecary se zabalí do ZIPu, který pak můžete uložit nebo sdílet.", "Photos and XMP sidecars are packed into a ZIP you can save or share.")
+                                                : t("Fotky a Adobe Lightroom XMP sidecar soubory budou uloženy do hierarchických složek.", "Photos and Adobe Lightroom XMP sidecar files will be saved into hierarchical folders.")}
+                                        </div>
                                         <div className="flex flex-col gap-2">
-                                            <button data-export-run onClick={exportToDisk} className="bg-emerald-600 py-2 rounded text-white font-bold hover:bg-emerald-500">{t("Vybrat složku a spustit", "Select folder and run")}</button>
+                                            <button data-export-run onClick={exportToDisk} className="bg-emerald-600 py-2 rounded text-white font-bold hover:bg-emerald-500">{isMobileLayout ? t("Vytvořit ZIP", "Create ZIP") : t("Vybrat složku a spustit", "Select folder and run")}</button>
                                             <button onClick={() => setShowExportModal(false)} className="text-slate-500 text-sm">{t("Zrušit", "Cancel")}</button>
                                         </div>
                                     </>
