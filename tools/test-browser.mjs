@@ -159,6 +159,11 @@ try {
     assert.ok(reviewGroups > 0, 'Cluster review should show clusters after Phase 2');
     const canvasSize = await page.locator('[data-cluster-review-canvas="timeline"]').evaluate((canvas) => ({ width: canvas.width, height: canvas.height }));
     assert.ok(canvasSize.width > 0 && canvasSize.height > 0, 'Cluster heatmap canvas should have a size');
+    await page.locator('[data-heatmap-help]').click();
+    await page.locator('[data-heatmap-help-modal]').waitFor({ timeout: 5000 });
+    await page.locator('[data-heatmap-help-modal]').getByRole('button', { name: /Got it|Rozumím/ }).click();
+    await page.locator('[data-heatmap-help-modal]').waitFor({ state: 'detached', timeout: 5000 });
+    console.log('Heatmap help: OK');
     await page.locator('[data-cluster-group]').first().click();
     await page.locator('[data-review-name]').fill('Test Trip');
     await page.locator('[data-review-apply]').click();

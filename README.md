@@ -43,6 +43,7 @@ Completed phases display a checkmark. Every phase keeps its settings behind the 
 - **Phase progress** - completed phases get a checkmark, optional phases are labelled, and all per-phase settings collapse under a cog icon.
 - **Guided tour** - first-run spotlight walkthrough of the upload, Timeline, phases, folder tree and export; skippable and replayable from the help dialog.
 - **Heatmap-first Phase 2** - choose auto sort or heatmap clustering; heatmap mode pre-builds one cluster per visible density burst, opens the bottom panel in draw mode, and supports click-start/click-end, drag ranges and Start/End date inputs for adding more folders.
+- **Heatmap help** - a `?` button in the heatmap header opens a bilingual guide explaining the header controls, time and map views, the right panel, and the recommended workflow.
 - **TODO roadmap** - see `TODO.md` for Ko-fi profile rework, Vercel issues and remaining architecture tasks.
 - **Auto + manual sensitivity** - Auto derives the trip/home or place window from the dataset. Trip sensitivity (gap, home radius, session gap) and stop/place sensitivity (time, space, min photos) are separate.
 - **Trip or stop AI naming** - Phase 3 can name the top-level trip folders or the stop subfolders, preserving the other level.
@@ -135,7 +136,7 @@ Small vision models such as Moondream do not follow keyword instructions reliabl
 
 ## Support
 
-Clustr is completely free. It was built at home by one person, without a budget, and is given to everyone with no fees. If it helps you, you can support the author on Ko-fi: <https://ko-fi.com/andrewblackbird>. The app also shows a floating coffee button and occasional friendly reminders after a while or when an export finishes.
+Clustr is completely free. It was built at home by one person, without a budget, and is given to everyone with no fees. If it helps you, you can support the author on Ko-fi: <https://ko-fi.com/andrewblackbird>. The app also shows a floating coffee button, a friendly reminder after a while (at most once a day), and one when an export starts.
 
 ## Data & privacy
 

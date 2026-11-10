@@ -2407,7 +2407,7 @@
                 if (photos.length === 0 || showTour || showSupport || showClusterReview || showDataFill || supportShownRef.current) return;
                 try {
                     const last = Number(localStorage.getItem('clustr-support-last') || 0);
-                    if (last && Date.now() - last < 7 * 24 * 60 * 60 * 1000) return;
+                    if (last && Date.now() - last < 24 * 60 * 60 * 1000) return;
                 } catch (e) {}
                 const timer = window.setTimeout(() => {
                     if (supportShownRef.current) return;
@@ -4012,6 +4012,12 @@ DATA: ${JSON.stringify(data)}`;
                 }
 
                 setExportProgress({ done: 0, total: exportPhotos.length, current: '' });
+                window.setTimeout(() => {
+                    supportShownRef.current = true;
+                    try { localStorage.setItem('clustr-support-last', String(Date.now())); } catch (e) {}
+                    setSupportReason('export');
+                    setShowSupport(true);
+                }, 500);
 
                 try {
                     const usedNamesByFolder = new Map();
@@ -4105,10 +4111,6 @@ DATA: ${JSON.stringify(data)}`;
                         title: t('Export hotov!', 'Export done!'),
                         text: t(`Uloženo ${exportedCount} fotek včetně Adobe Lightroom XMP souborů.`, `Saved ${exportedCount} photos including Adobe Lightroom XMP sidecars.`)
                     });
-                    supportShownRef.current = true;
-                    try { localStorage.setItem('clustr-support-last', String(Date.now())); } catch (e) {}
-                    setSupportReason('export');
-                    setShowSupport(true);
                 } catch (e) {
                     setExportProgress(null);
                     setMessage({ title: t('Chyba exportu', 'Export error'), text: e.message });
@@ -5535,7 +5537,7 @@ DATA: ${JSON.stringify(data)}`;
                                 <div className="text-4xl mb-3">☕</div>
                                 <h2 className="text-xl font-bold text-white mb-2">
                                     {supportReason === 'export'
-                                        ? t('Hotovo! Líbí se vám Clustr?', 'All done! Enjoying Clustr?')
+                                        ? t('Export běží. Líbí se vám Clustr?', 'Export is running. Enjoying Clustr?')
                                         : t('Líbí se vám Clustr?', 'Enjoying Clustr?')}
                                 </h2>
                                 <p className="text-sm text-slate-400 leading-relaxed mb-6">
@@ -5602,6 +5604,7 @@ DATA: ${JSON.stringify(data)}`;
             const [nameDirty, setNameDirty] = useState(false);
             const [locationDirty, setLocationDirty] = useState(false);
             const [hover, setHover] = useState(null);
+            const [showHeatmapHelp, setShowHeatmapHelp] = useState(false);
             const timelineRef = useRef(null);
             const mapRef = useRef(null);
 
@@ -6160,6 +6163,65 @@ DATA: ${JSON.stringify(data)}`;
                 setDrawMode(!drawMode);
             };
 
+            const heatmapHelpSections = [
+                {
+                    title: t('Rychlý start', 'Quick start'),
+                    items: [
+                        t('Nejprve spusťte fázi 2 (Auto clustering nebo Heatmap clustering). Teprve pak má heatmapa co zobrazovat.', 'Run Phase 2 first (Auto clustering or Heatmap clustering). Only then does the heatmap have clusters to show.'),
+                        t('Heatmapa slouží k ruční úpravě clusterů: kreslení nových, přejmenování, přesunu fotek a vytváření složek.', 'The heatmap is for manual cluster edits: drawing new ones, renaming, moving photos and creating folders.')
+                    ]
+                },
+                {
+                    title: t('Ovládání v hlavičce', 'Header controls'),
+                    items: [
+                        t('Cesty / Zastávky – přepíná úroveň, kterou prohlížíte a upravujete (hlavní cesty vs. vnořené zastávky).', 'Trips / Stops – switches the level you are viewing and editing (top-level trips vs. nested stops).'),
+                        t('Čas / Mapa – Čas zobrazuje dny a clustery jako řádky, Mapa zobrazuje fotky podle GPS/Timeline souřadnic.', 'Time / Map – Time shows days and clusters as rows; Map shows photos by GPS/Timeline coordinates.'),
+                        t('Prohlížení / Kreslení – v režimu Prohlížení vybíráte fotky a clustery, v režimu Kreslení vytváříte nové clustery tažením nebo kliknutím na Start a Konec.', 'Inspect / Draw – in Inspect you select photos and clusters; in Draw you create new clusters by dragging or clicking Start and End.'),
+                        t('Údaj vpravo ukazuje aktuální citlivost cest (okno dní a dny bez fotek).', 'The text on the right shows the current trip sensitivity (day window and rest days).')
+                    ]
+                },
+                {
+                    title: t('Časová osa', 'Time view'),
+                    items: [
+                        t('Každý řádek je jeden cluster, sloupce jsou dny. Světlejší nebo vyšší sloupec znamená více fotek v daný den.', 'Each row is one cluster; columns are days. A brighter or taller column means more photos on that day.'),
+                        t('Prohlížení: klikněte na den pro výběr jeho fotek, tažením přes dny vyberte rozsah, kliknutím na název řádku vyberte celý cluster.', 'Inspect: click a day to select its photos, drag across days to select a range, click the row label to select the whole cluster.'),
+                        t('Kreslení: klikněte na první den, potom na poslední den. Nebo táhněte. Rozsah se propíše do Start/End v pravém panelu.', 'Draw: click the first day, then the last day. Or drag. The range is filled into Start/End in the right panel.'),
+                        t('Během kreslení se zobrazuje nápověda „Start: … – klikněte na koncový den“.', 'While drawing, a hint shows “Start: … – click the end day”.')
+                    ]
+                },
+                {
+                    title: t('Mapa', 'Map view'),
+                    items: [
+                        t('Každý bod je fotka s GPS nebo Timeline souřadnicemi. Kliknutím na bod vyberete fotku.', 'Each point is a photo with GPS or Timeline coordinates. Click a point to select the photo.'),
+                        t('Barvy bodů odpovídají clusterům v pravém seznamu.', 'Point colours match the clusters in the right-hand list.'),
+                        t('Pokud mapa nic neukazuje, fotky nemají GPS ani Timeline souřadnice.', 'If the map is empty, the photos have no GPS or Timeline coordinates.')
+                    ]
+                },
+                {
+                    title: t('Pravý panel', 'Right panel'),
+                    items: [
+                        t('Seznam clusterů: kliknutím cluster vyberete nebo zrušíte výběr. U každého vidíte datum a místo.', 'Cluster list: click a cluster to select or deselect it. Each row shows the date range and location.'),
+                        t('Start / Konec (jen v režimu Kreslení): přesné datumové rozmezí nového clusteru.', 'Start / End (Draw mode only): the exact date range for a new cluster.'),
+                        t('Přidat do existující složky: vyberte fotky, zvolte cílovou složku a klikněte na Přidat.', 'Add to existing folder: select photos, choose the target folder, then click Add.'),
+                        t('Název a Lokace: pojmenujte novou složku nebo cluster. Lokace je volitelná.', 'Name and Location: name the new folder or cluster. Location is optional.'),
+                        t('Použít na clustery: přejmenuje nebo přesune vybrané clustery.', 'Apply to clusters: renames or moves the selected clusters.'),
+                        t('Vytvořit cluster / Nová složka z výběru: vytvoří složku z vybraných fotek. V režimu Kreslení použije rozsah Start/End.', 'Create cluster / New folder from selection: creates a folder from the selected photos. In Draw mode it uses the Start/End range.'),
+                        t('Vybrat vše / Zrušit výběr: hromadná práce se všemi clustery.', 'Select all / Clear: bulk work with all clusters.'),
+                        t('Datumové okno: u jedné vybrané cesty otevře úpravu jejího časového rozsahu.', 'Trip window: for one selected trip, opens editing of its date range.')
+                    ]
+                },
+                {
+                    title: t('Doporučený postup', 'Suggested workflow'),
+                    items: [
+                        t('1. Spusťte fázi 2 a nechte vzniknout první clustery.', '1. Run Phase 2 and let the first clusters appear.'),
+                        t('2. V režimu Prohlížení zkontrolujte, co kam patří, a vyberte fotky, které chcete přesunout.', '2. In Inspect mode check what belongs where and select the photos you want to move.'),
+                        t('3. V režimu Kreslení nakreslete nové rozsahy nebo upravte Start/End a vytvořte složky.', '3. In Draw mode draw new ranges or edit Start/End and create folders.'),
+                        t('4. Přejmenujte clustery a doplňte lokace. Změny se hned projeví ve stromu složek a ruční názvy zůstanou zachované.', '4. Rename clusters and fill in locations. Changes appear immediately in the folder tree and manual names are preserved.'),
+                        t('5. Až je vše hotové, exportujte fotky a XMP sidecary.', '5. When everything is ready, export photos and XMP sidecars.')
+                    ]
+                }
+            ];
+
             return (
                 <div data-heatmap-panel="true" className="shrink-0 h-[38vh] min-h-[280px] border-t-2 border-cyan-800 bg-slate-900 flex flex-col z-[80]" onClick={(event) => event.stopPropagation()}>
                     <div className="flex items-center justify-between gap-3 px-3 py-1.5 border-b border-slate-800">
@@ -6186,7 +6248,17 @@ DATA: ${JSON.stringify(data)}`;
                                     : t('Citlivost: podle aktuálního nastavení.', 'Sensitivity: current settings.')}
                             </div>
                         </div>
-                        <button data-heatmap-close="true" onClick={onClose} className="text-slate-500 hover:text-white text-2xl leading-none shrink-0">&times;</button>
+                        <div className="flex items-center gap-1 shrink-0">
+                            <button
+                                data-heatmap-help
+                                onClick={() => setShowHeatmapHelp(true)}
+                                title={t('Nápověda k heatmapě', 'Heatmap help')}
+                                className="w-7 h-7 rounded-full border border-slate-700 bg-slate-950 text-slate-300 hover:text-white hover:border-cyan-500 text-sm font-bold leading-none transition-colors"
+                            >
+                                ?
+                            </button>
+                            <button data-heatmap-close="true" onClick={onClose} className="text-slate-500 hover:text-white text-2xl leading-none shrink-0">&times;</button>
+                        </div>
                     </div>
 
                     <div className="flex-1 min-h-0 grid lg:grid-cols-[1fr_340px] gap-2 p-2 overflow-y-auto custom-scrollbar">
@@ -6342,6 +6414,40 @@ DATA: ${JSON.stringify(data)}`;
                                 </div>
                             </div>
                         </div>
+
+                    {showHeatmapHelp && ReactDOM.createPortal(
+                        <div
+                            data-heatmap-help-modal
+                            className="fixed inset-0 z-[210] flex items-center justify-center bg-black/80 p-4"
+                            onClick={(event) => { if (event.target === event.currentTarget) setShowHeatmapHelp(false); }}
+                        >
+                            <div className="w-full max-w-2xl max-h-[85vh] overflow-y-auto custom-scrollbar rounded-2xl border border-slate-700 bg-slate-900 p-6 text-slate-300 shadow-2xl">
+                                <div className="mb-4 flex items-start justify-between gap-4">
+                                    <div>
+                                        <h2 className="text-xl font-bold text-orange-400">📊 {t('Jak pracovat s heatmapou', 'How the heatmap works')}</h2>
+                                        <p className="mt-1 text-xs text-slate-500">{t('Rychlý průvodce ovládáním, výběrem fotek a tvorbou clusterů.', 'A quick guide to the controls, selecting photos and creating clusters.')}</p>
+                                    </div>
+                                    <button onClick={() => setShowHeatmapHelp(false)} className="text-2xl leading-none text-slate-500 hover:text-white">&times;</button>
+                                </div>
+                                <div className="space-y-4 text-sm">
+                                    {heatmapHelpSections.map((section) => (
+                                        <section key={section.title}>
+                                            <h3 className="mb-1 font-bold text-white">{section.title}</h3>
+                                            <ul className="list-disc space-y-1 pl-5 text-slate-400">
+                                                {section.items.map((item, index) => <li key={index}>{item}</li>)}
+                                            </ul>
+                                        </section>
+                                    ))}
+                                </div>
+                                <div className="mt-6 flex justify-end">
+                                    <button onClick={() => setShowHeatmapHelp(false)} className="rounded-lg bg-cyan-700 px-4 py-2 text-sm font-bold text-white hover:bg-cyan-600">
+                                        {t('Rozumím', 'Got it')}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>,
+                        document.body
+                    )}
                     </div>
                 );
             };
