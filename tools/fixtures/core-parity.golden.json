@@ -1,0 +1,1018 @@
+{
+  "naturalSort": [
+    "Trip 1",
+    "Trip 2",
+    "Trip 9",
+    "Trip 10"
+  ],
+  "home": {
+    "settings": {
+      "tripGapHours": 72,
+      "parentTripGapHours": 120,
+      "tripMinPhotos": 3,
+      "randomMinPhotos": 3,
+      "maxInactiveDays": 1,
+      "maxTripDays": 30,
+      "heatmapRadiusDays": 2,
+      "heatmapThresholdRatio": 0.15,
+      "heatmapMinPhotos": 1,
+      "homeRadiusKm": 15,
+      "homeSessionGapHours": 4,
+      "maxHomeSessionHours": 12,
+      "noiseAttachWindowMs": 43200000,
+      "noiseGroupGapMs": 14400000
+    },
+    "autoSettings": {
+      "tripGapHours": 72,
+      "parentTripGapHours": 120,
+      "tripMinPhotos": 3,
+      "randomMinPhotos": 3,
+      "maxInactiveDays": 1,
+      "maxTripDays": 30,
+      "heatmapRadiusDays": 2,
+      "heatmapThresholdRatio": 0.15,
+      "heatmapMinPhotos": 1,
+      "homeRadiusKm": 5,
+      "homeSessionGapHours": 4,
+      "maxHomeSessionHours": 12,
+      "noiseAttachWindowMs": 43200000,
+      "noiseGroupGapMs": 14400000
+    },
+    "counts": {
+      "trips": 3,
+      "stops": 17,
+      "homeSessions": 16,
+      "extras": 0,
+      "groups": 33
+    },
+    "groups": [
+      {
+        "eventName": "Trip 1/Stop 1 - Trip 1 Stop 1 Day 1",
+        "eventKind": "trip-stop",
+        "tripNumber": 1,
+        "stopNumber": 1,
+        "clusterId": "evt-trip-1768323600000-0-stop-1",
+        "tripId": "evt-trip-1768323600000-0",
+        "count": 25,
+        "first": "2026-01-13T17:00:00.000Z",
+        "last": "2026-01-13T20:36:00.000Z",
+        "locations": [
+          "key-Trip 1 Stop 1 Day 1"
+        ]
+      },
+      {
+        "eventName": "Trip 1/Stop 2 - Trip 1 Stop 2 Day 1",
+        "eventKind": "trip-stop",
+        "tripNumber": 1,
+        "stopNumber": 2,
+        "clusterId": "evt-trip-1768323600000-0-stop-2",
+        "tripId": "evt-trip-1768323600000-0",
+        "count": 33,
+        "first": "2026-01-13T21:00:00.000Z",
+        "last": "2026-01-14T01:48:00.000Z",
+        "locations": [
+          "key-Trip 1 Stop 2 Day 1"
+        ]
+      },
+      {
+        "eventName": "Trip 1/Stop 3 - Trip 1 Stop 1 Day 2",
+        "eventKind": "trip-stop",
+        "tripNumber": 1,
+        "stopNumber": 3,
+        "clusterId": "evt-trip-1768323600000-0-stop-3",
+        "tripId": "evt-trip-1768323600000-0",
+        "count": 30,
+        "first": "2026-01-14T17:00:00.000Z",
+        "last": "2026-01-14T21:21:00.000Z",
+        "locations": [
+          "key-Trip 1 Stop 1 Day 2"
+        ]
+      },
+      {
+        "eventName": "Trip 1/Stop 4 - Trip 1 Stop 2 Day 2",
+        "eventKind": "trip-stop",
+        "tripNumber": 1,
+        "stopNumber": 4,
+        "clusterId": "evt-trip-1768323600000-0-stop-4",
+        "tripId": "evt-trip-1768323600000-0",
+        "count": 18,
+        "first": "2026-01-14T21:00:00.000Z",
+        "last": "2026-01-14T23:33:00.000Z",
+        "locations": [
+          "key-Trip 1 Stop 2 Day 2"
+        ]
+      },
+      {
+        "eventName": "Trip 1/Stop 5 - Trip 1 Stop 1 Day 3",
+        "eventKind": "trip-stop",
+        "tripNumber": 1,
+        "stopNumber": 5,
+        "clusterId": "evt-trip-1768323600000-0-stop-5",
+        "tripId": "evt-trip-1768323600000-0",
+        "count": 27,
+        "first": "2026-01-15T17:00:00.000Z",
+        "last": "2026-01-15T20:54:00.000Z",
+        "locations": [
+          "key-Trip 1 Stop 1 Day 3"
+        ]
+      },
+      {
+        "eventName": "Trip 1/Stop 6 - Trip 1 Stop 1 Day 4",
+        "eventKind": "trip-stop",
+        "tripNumber": 1,
+        "stopNumber": 6,
+        "clusterId": "evt-trip-1768323600000-0-stop-6",
+        "tripId": "evt-trip-1768323600000-0",
+        "count": 16,
+        "first": "2026-01-16T17:00:00.000Z",
+        "last": "2026-01-16T19:15:00.000Z",
+        "locations": [
+          "key-Trip 1 Stop 1 Day 4"
+        ]
+      },
+      {
+        "eventName": "Trip 1/Stop 7 - Trip 1 Stop 1 Day 5",
+        "eventKind": "trip-stop",
+        "tripNumber": 1,
+        "stopNumber": 7,
+        "clusterId": "evt-trip-1768323600000-0-stop-7",
+        "tripId": "evt-trip-1768323600000-0",
+        "count": 27,
+        "first": "2026-01-17T17:00:00.000Z",
+        "last": "2026-01-17T20:54:00.000Z",
+        "locations": [
+          "key-Trip 1 Stop 1 Day 5"
+        ]
+      },
+      {
+        "eventName": "Trip 1/Stop 8 - Trip 1 Stop 2 Day 5",
+        "eventKind": "trip-stop",
+        "tripNumber": 1,
+        "stopNumber": 8,
+        "clusterId": "evt-trip-1768323600000-0-stop-8",
+        "tripId": "evt-trip-1768323600000-0",
+        "count": 29,
+        "first": "2026-01-17T21:00:00.000Z",
+        "last": "2026-01-18T01:12:00.000Z",
+        "locations": [
+          "key-Trip 1 Stop 2 Day 5"
+        ]
+      },
+      {
+        "eventName": "Trip 1/Stop 9 - Trip 1 Stop 1 Day 6",
+        "eventKind": "trip-stop",
+        "tripNumber": 1,
+        "stopNumber": 9,
+        "clusterId": "evt-trip-1768323600000-0-stop-9",
+        "tripId": "evt-trip-1768323600000-0",
+        "count": 24,
+        "first": "2026-01-18T17:00:00.000Z",
+        "last": "2026-01-18T20:27:00.000Z",
+        "locations": [
+          "key-Trip 1 Stop 1 Day 6"
+        ]
+      },
+      {
+        "eventName": "Home 1",
+        "eventKind": "home",
+        "tripNumber": 0,
+        "stopNumber": 0,
+        "clusterId": "evt-home-1769310000000-0",
+        "tripId": "evt-home-1769310000000-0",
+        "count": 6,
+        "first": "2026-01-25T03:00:00.000Z",
+        "last": "2026-01-25T03:35:00.000Z",
+        "locations": [
+          "key-Doma"
+        ]
+      },
+      {
+        "eventName": "Home 2",
+        "eventKind": "home",
+        "tripNumber": 0,
+        "stopNumber": 0,
+        "clusterId": "evt-home-1769569200000-1",
+        "tripId": "evt-home-1769569200000-1",
+        "count": 6,
+        "first": "2026-01-28T03:00:00.000Z",
+        "last": "2026-01-28T03:35:00.000Z",
+        "locations": [
+          "key-Doma"
+        ]
+      },
+      {
+        "eventName": "Home 3",
+        "eventKind": "home",
+        "tripNumber": 0,
+        "stopNumber": 0,
+        "clusterId": "evt-home-1769914800000-2",
+        "tripId": "evt-home-1769914800000-2",
+        "count": 9,
+        "first": "2026-02-01T03:00:00.000Z",
+        "last": "2026-02-01T03:56:00.000Z",
+        "locations": [
+          "key-Doma"
+        ]
+      },
+      {
+        "eventName": "Home 4",
+        "eventKind": "home",
+        "tripNumber": 0,
+        "stopNumber": 0,
+        "clusterId": "evt-home-1770778800000-3",
+        "tripId": "evt-home-1770778800000-3",
+        "count": 4,
+        "first": "2026-02-11T03:00:00.000Z",
+        "last": "2026-02-11T03:21:00.000Z",
+        "locations": [
+          "key-Doma"
+        ]
+      },
+      {
+        "eventName": "Trip 2/Stop 1 - Trip 2 Stop 1 Day 1",
+        "eventKind": "trip-stop",
+        "tripNumber": 2,
+        "stopNumber": 1,
+        "clusterId": "evt-trip-1771434000000-1-stop-1",
+        "tripId": "evt-trip-1771434000000-1",
+        "count": 21,
+        "first": "2026-02-18T17:00:00.000Z",
+        "last": "2026-02-18T20:00:00.000Z",
+        "locations": [
+          "key-Trip 2 Stop 1 Day 1"
+        ]
+      },
+      {
+        "eventName": "Trip 2/Stop 2 - Trip 2 Stop 1 Day 2",
+        "eventKind": "trip-stop",
+        "tripNumber": 2,
+        "stopNumber": 2,
+        "clusterId": "evt-trip-1771434000000-1-stop-2",
+        "tripId": "evt-trip-1771434000000-1",
+        "count": 17,
+        "first": "2026-02-19T17:00:00.000Z",
+        "last": "2026-02-19T19:24:00.000Z",
+        "locations": [
+          "key-Trip 2 Stop 1 Day 2"
+        ]
+      },
+      {
+        "eventName": "Trip 2/Stop 3 - Trip 2 Stop 1 Day 3",
+        "eventKind": "trip-stop",
+        "tripNumber": 2,
+        "stopNumber": 3,
+        "clusterId": "evt-trip-1771434000000-1-stop-3",
+        "tripId": "evt-trip-1771434000000-1",
+        "count": 13,
+        "first": "2026-02-20T17:00:00.000Z",
+        "last": "2026-02-20T18:48:00.000Z",
+        "locations": [
+          "key-Trip 2 Stop 1 Day 3"
+        ]
+      },
+      {
+        "eventName": "Home 5",
+        "eventKind": "home",
+        "tripNumber": 0,
+        "stopNumber": 0,
+        "clusterId": "evt-home-1771815600000-4",
+        "tripId": "evt-home-1771815600000-4",
+        "count": 8,
+        "first": "2026-02-23T03:00:00.000Z",
+        "last": "2026-02-23T03:49:00.000Z",
+        "locations": [
+          "key-Doma"
+        ]
+      },
+      {
+        "eventName": "Home 6",
+        "eventKind": "home",
+        "tripNumber": 0,
+        "stopNumber": 0,
+        "clusterId": "evt-home-1771902000000-5",
+        "tripId": "evt-home-1771902000000-5",
+        "count": 9,
+        "first": "2026-02-24T03:00:00.000Z",
+        "last": "2026-02-24T03:56:00.000Z",
+        "locations": [
+          "key-Doma"
+        ]
+      },
+      {
+        "eventName": "Home 7",
+        "eventKind": "home",
+        "tripNumber": 0,
+        "stopNumber": 0,
+        "clusterId": "evt-home-1771988400000-6",
+        "tripId": "evt-home-1771988400000-6",
+        "count": 7,
+        "first": "2026-02-25T03:00:00.000Z",
+        "last": "2026-02-25T03:42:00.000Z",
+        "locations": [
+          "key-Doma"
+        ]
+      },
+      {
+        "eventName": "Home 8",
+        "eventKind": "home",
+        "tripNumber": 0,
+        "stopNumber": 0,
+        "clusterId": "evt-home-1774580400000-7",
+        "tripId": "evt-home-1774580400000-7",
+        "count": 4,
+        "first": "2026-03-27T03:00:00.000Z",
+        "last": "2026-03-27T03:21:00.000Z",
+        "locations": [
+          "key-Doma"
+        ]
+      },
+      {
+        "eventName": "Home 9",
+        "eventKind": "home",
+        "tripNumber": 0,
+        "stopNumber": 0,
+        "clusterId": "evt-home-1775358000000-8",
+        "tripId": "evt-home-1775358000000-8",
+        "count": 5,
+        "first": "2026-04-05T03:00:00.000Z",
+        "last": "2026-04-05T03:28:00.000Z",
+        "locations": [
+          "key-Doma"
+        ]
+      },
+      {
+        "eventName": "Trip 3/Stop 1 - Trip 3 Stop 1 Day 1",
+        "eventKind": "trip-stop",
+        "tripNumber": 3,
+        "stopNumber": 1,
+        "clusterId": "evt-trip-1775581200000-2-stop-1",
+        "tripId": "evt-trip-1775581200000-2",
+        "count": 12,
+        "first": "2026-04-07T17:00:00.000Z",
+        "last": "2026-04-07T18:39:00.000Z",
+        "locations": [
+          "key-Trip 3 Stop 1 Day 1"
+        ]
+      },
+      {
+        "eventName": "Trip 3/Stop 2 - Trip 3 Stop 1 Day 2",
+        "eventKind": "trip-stop",
+        "tripNumber": 3,
+        "stopNumber": 2,
+        "clusterId": "evt-trip-1775581200000-2-stop-2",
+        "tripId": "evt-trip-1775581200000-2",
+        "count": 29,
+        "first": "2026-04-08T17:00:00.000Z",
+        "last": "2026-04-08T21:12:00.000Z",
+        "locations": [
+          "key-Trip 3 Stop 1 Day 2"
+        ]
+      },
+      {
+        "eventName": "Trip 3/Stop 3 - Trip 3 Stop 1 Day 3",
+        "eventKind": "trip-stop",
+        "tripNumber": 3,
+        "stopNumber": 3,
+        "clusterId": "evt-trip-1775581200000-2-stop-3",
+        "tripId": "evt-trip-1775581200000-2",
+        "count": 23,
+        "first": "2026-04-09T17:00:00.000Z",
+        "last": "2026-04-09T20:18:00.000Z",
+        "locations": [
+          "key-Trip 3 Stop 1 Day 3"
+        ]
+      },
+      {
+        "eventName": "Trip 3/Stop 4 - Trip 3 Stop 1 Day 4",
+        "eventKind": "trip-stop",
+        "tripNumber": 3,
+        "stopNumber": 4,
+        "clusterId": "evt-trip-1775581200000-2-stop-4",
+        "tripId": "evt-trip-1775581200000-2",
+        "count": 15,
+        "first": "2026-04-10T17:00:00.000Z",
+        "last": "2026-04-10T19:06:00.000Z",
+        "locations": [
+          "key-Trip 3 Stop 1 Day 4"
+        ]
+      },
+      {
+        "eventName": "Trip 3/Stop 5 - Trip 3 Stop 2 Day 4",
+        "eventKind": "trip-stop",
+        "tripNumber": 3,
+        "stopNumber": 5,
+        "clusterId": "evt-trip-1775581200000-2-stop-5",
+        "tripId": "evt-trip-1775581200000-2",
+        "count": 13,
+        "first": "2026-04-10T21:00:00.000Z",
+        "last": "2026-04-10T22:48:00.000Z",
+        "locations": [
+          "key-Trip 3 Stop 2 Day 4"
+        ]
+      },
+      {
+        "eventName": "Home 10",
+        "eventKind": "home",
+        "tripNumber": 0,
+        "stopNumber": 0,
+        "clusterId": "evt-home-1776135600000-9",
+        "tripId": "evt-home-1776135600000-9",
+        "count": 7,
+        "first": "2026-04-14T03:00:00.000Z",
+        "last": "2026-04-14T03:42:00.000Z",
+        "locations": [
+          "key-Doma"
+        ]
+      },
+      {
+        "eventName": "Home 11",
+        "eventKind": "home",
+        "tripNumber": 0,
+        "stopNumber": 0,
+        "clusterId": "evt-home-1777345200000-10",
+        "tripId": "evt-home-1777345200000-10",
+        "count": 4,
+        "first": "2026-04-28T03:00:00.000Z",
+        "last": "2026-04-28T03:21:00.000Z",
+        "locations": [
+          "key-Doma"
+        ]
+      },
+      {
+        "eventName": "Home 12",
+        "eventKind": "home",
+        "tripNumber": 0,
+        "stopNumber": 0,
+        "clusterId": "evt-home-1777950000000-11",
+        "tripId": "evt-home-1777950000000-11",
+        "count": 7,
+        "first": "2026-05-05T03:00:00.000Z",
+        "last": "2026-05-05T03:42:00.000Z",
+        "locations": [
+          "key-Doma"
+        ]
+      },
+      {
+        "eventName": "Home 13",
+        "eventKind": "home",
+        "tripNumber": 0,
+        "stopNumber": 0,
+        "clusterId": "evt-home-1778122800000-12",
+        "tripId": "evt-home-1778122800000-12",
+        "count": 6,
+        "first": "2026-05-07T03:00:00.000Z",
+        "last": "2026-05-07T03:35:00.000Z",
+        "locations": [
+          "key-Doma"
+        ]
+      },
+      {
+        "eventName": "Home 14",
+        "eventKind": "home",
+        "tripNumber": 0,
+        "stopNumber": 0,
+        "clusterId": "evt-home-1778900400000-13",
+        "tripId": "evt-home-1778900400000-13",
+        "count": 4,
+        "first": "2026-05-16T03:00:00.000Z",
+        "last": "2026-05-16T03:21:00.000Z",
+        "locations": [
+          "key-Doma"
+        ]
+      },
+      {
+        "eventName": "Home 15",
+        "eventKind": "home",
+        "tripNumber": 0,
+        "stopNumber": 0,
+        "clusterId": "evt-home-1779246000000-14",
+        "tripId": "evt-home-1779246000000-14",
+        "count": 4,
+        "first": "2026-05-20T03:00:00.000Z",
+        "last": "2026-05-20T03:21:00.000Z",
+        "locations": [
+          "key-Doma"
+        ]
+      },
+      {
+        "eventName": "Home 16",
+        "eventKind": "home",
+        "tripNumber": 0,
+        "stopNumber": 0,
+        "clusterId": "evt-home-1779937200000-15",
+        "tripId": "evt-home-1779937200000-15",
+        "count": 5,
+        "first": "2026-05-28T03:00:00.000Z",
+        "last": "2026-05-28T03:28:00.000Z",
+        "locations": [
+          "key-Doma"
+        ]
+      }
+    ]
+  },
+  "inferredHome": {
+    "settings": {
+      "tripGapHours": 72,
+      "parentTripGapHours": 120,
+      "tripMinPhotos": 3,
+      "randomMinPhotos": 3,
+      "maxInactiveDays": 1,
+      "maxTripDays": 30,
+      "heatmapRadiusDays": 2,
+      "heatmapThresholdRatio": 0.15,
+      "heatmapMinPhotos": 1,
+      "homeRadiusKm": 15,
+      "homeSessionGapHours": 4,
+      "maxHomeSessionHours": 12,
+      "noiseAttachWindowMs": 43200000,
+      "noiseGroupGapMs": 14400000
+    },
+    "autoSettings": {
+      "tripGapHours": 72,
+      "parentTripGapHours": 120,
+      "tripMinPhotos": 3,
+      "randomMinPhotos": 3,
+      "maxInactiveDays": 1,
+      "maxTripDays": 30,
+      "heatmapRadiusDays": 2,
+      "heatmapThresholdRatio": 0.15,
+      "heatmapMinPhotos": 1,
+      "homeRadiusKm": 5,
+      "homeSessionGapHours": 4,
+      "maxHomeSessionHours": 12,
+      "noiseAttachWindowMs": 43200000,
+      "noiseGroupGapMs": 14400000
+    },
+    "counts": {
+      "trips": 3,
+      "stops": 17,
+      "homeSessions": 16,
+      "extras": 0,
+      "groups": 33
+    },
+    "groups": [
+      {
+        "eventName": "Trip 1/Stop 1 - Trip 1 Stop 1 Day 1",
+        "eventKind": "trip-stop",
+        "tripNumber": 1,
+        "stopNumber": 1,
+        "clusterId": "evt-trip-1768323600000-0-stop-1",
+        "tripId": "evt-trip-1768323600000-0",
+        "count": 25,
+        "first": "2026-01-13T17:00:00.000Z",
+        "last": "2026-01-13T20:36:00.000Z",
+        "locations": [
+          "key-Trip 1 Stop 1 Day 1"
+        ]
+      },
+      {
+        "eventName": "Trip 1/Stop 2 - Trip 1 Stop 2 Day 1",
+        "eventKind": "trip-stop",
+        "tripNumber": 1,
+        "stopNumber": 2,
+        "clusterId": "evt-trip-1768323600000-0-stop-2",
+        "tripId": "evt-trip-1768323600000-0",
+        "count": 33,
+        "first": "2026-01-13T21:00:00.000Z",
+        "last": "2026-01-14T01:48:00.000Z",
+        "locations": [
+          "key-Trip 1 Stop 2 Day 1"
+        ]
+      },
+      {
+        "eventName": "Trip 1/Stop 3 - Trip 1 Stop 1 Day 2",
+        "eventKind": "trip-stop",
+        "tripNumber": 1,
+        "stopNumber": 3,
+        "clusterId": "evt-trip-1768323600000-0-stop-3",
+        "tripId": "evt-trip-1768323600000-0",
+        "count": 30,
+        "first": "2026-01-14T17:00:00.000Z",
+        "last": "2026-01-14T21:21:00.000Z",
+        "locations": [
+          "key-Trip 1 Stop 1 Day 2"
+        ]
+      },
+      {
+        "eventName": "Trip 1/Stop 4 - Trip 1 Stop 2 Day 2",
+        "eventKind": "trip-stop",
+        "tripNumber": 1,
+        "stopNumber": 4,
+        "clusterId": "evt-trip-1768323600000-0-stop-4",
+        "tripId": "evt-trip-1768323600000-0",
+        "count": 18,
+        "first": "2026-01-14T21:00:00.000Z",
+        "last": "2026-01-14T23:33:00.000Z",
+        "locations": [
+          "key-Trip 1 Stop 2 Day 2"
+        ]
+      },
+      {
+        "eventName": "Trip 1/Stop 5 - Trip 1 Stop 1 Day 3",
+        "eventKind": "trip-stop",
+        "tripNumber": 1,
+        "stopNumber": 5,
+        "clusterId": "evt-trip-1768323600000-0-stop-5",
+        "tripId": "evt-trip-1768323600000-0",
+        "count": 27,
+        "first": "2026-01-15T17:00:00.000Z",
+        "last": "2026-01-15T20:54:00.000Z",
+        "locations": [
+          "key-Trip 1 Stop 1 Day 3"
+        ]
+      },
+      {
+        "eventName": "Trip 1/Stop 6 - Trip 1 Stop 1 Day 4",
+        "eventKind": "trip-stop",
+        "tripNumber": 1,
+        "stopNumber": 6,
+        "clusterId": "evt-trip-1768323600000-0-stop-6",
+        "tripId": "evt-trip-1768323600000-0",
+        "count": 16,
+        "first": "2026-01-16T17:00:00.000Z",
+        "last": "2026-01-16T19:15:00.000Z",
+        "locations": [
+          "key-Trip 1 Stop 1 Day 4"
+        ]
+      },
+      {
+        "eventName": "Trip 1/Stop 7 - Trip 1 Stop 1 Day 5",
+        "eventKind": "trip-stop",
+        "tripNumber": 1,
+        "stopNumber": 7,
+        "clusterId": "evt-trip-1768323600000-0-stop-7",
+        "tripId": "evt-trip-1768323600000-0",
+        "count": 27,
+        "first": "2026-01-17T17:00:00.000Z",
+        "last": "2026-01-17T20:54:00.000Z",
+        "locations": [
+          "key-Trip 1 Stop 1 Day 5"
+        ]
+      },
+      {
+        "eventName": "Trip 1/Stop 8 - Trip 1 Stop 2 Day 5",
+        "eventKind": "trip-stop",
+        "tripNumber": 1,
+        "stopNumber": 8,
+        "clusterId": "evt-trip-1768323600000-0-stop-8",
+        "tripId": "evt-trip-1768323600000-0",
+        "count": 29,
+        "first": "2026-01-17T21:00:00.000Z",
+        "last": "2026-01-18T01:12:00.000Z",
+        "locations": [
+          "key-Trip 1 Stop 2 Day 5"
+        ]
+      },
+      {
+        "eventName": "Trip 1/Stop 9 - Trip 1 Stop 1 Day 6",
+        "eventKind": "trip-stop",
+        "tripNumber": 1,
+        "stopNumber": 9,
+        "clusterId": "evt-trip-1768323600000-0-stop-9",
+        "tripId": "evt-trip-1768323600000-0",
+        "count": 24,
+        "first": "2026-01-18T17:00:00.000Z",
+        "last": "2026-01-18T20:27:00.000Z",
+        "locations": [
+          "key-Trip 1 Stop 1 Day 6"
+        ]
+      },
+      {
+        "eventName": "Home 1",
+        "eventKind": "home",
+        "tripNumber": 0,
+        "stopNumber": 0,
+        "clusterId": "evt-home-1769310000000-0",
+        "tripId": "evt-home-1769310000000-0",
+        "count": 6,
+        "first": "2026-01-25T03:00:00.000Z",
+        "last": "2026-01-25T03:35:00.000Z",
+        "locations": [
+          "key-Doma"
+        ]
+      },
+      {
+        "eventName": "Home 2",
+        "eventKind": "home",
+        "tripNumber": 0,
+        "stopNumber": 0,
+        "clusterId": "evt-home-1769569200000-1",
+        "tripId": "evt-home-1769569200000-1",
+        "count": 6,
+        "first": "2026-01-28T03:00:00.000Z",
+        "last": "2026-01-28T03:35:00.000Z",
+        "locations": [
+          "key-Doma"
+        ]
+      },
+      {
+        "eventName": "Home 3",
+        "eventKind": "home",
+        "tripNumber": 0,
+        "stopNumber": 0,
+        "clusterId": "evt-home-1769914800000-2",
+        "tripId": "evt-home-1769914800000-2",
+        "count": 9,
+        "first": "2026-02-01T03:00:00.000Z",
+        "last": "2026-02-01T03:56:00.000Z",
+        "locations": [
+          "key-Doma"
+        ]
+      },
+      {
+        "eventName": "Home 4",
+        "eventKind": "home",
+        "tripNumber": 0,
+        "stopNumber": 0,
+        "clusterId": "evt-home-1770778800000-3",
+        "tripId": "evt-home-1770778800000-3",
+        "count": 4,
+        "first": "2026-02-11T03:00:00.000Z",
+        "last": "2026-02-11T03:21:00.000Z",
+        "locations": [
+          "key-Doma"
+        ]
+      },
+      {
+        "eventName": "Trip 2/Stop 1 - Trip 2 Stop 1 Day 1",
+        "eventKind": "trip-stop",
+        "tripNumber": 2,
+        "stopNumber": 1,
+        "clusterId": "evt-trip-1771434000000-1-stop-1",
+        "tripId": "evt-trip-1771434000000-1",
+        "count": 21,
+        "first": "2026-02-18T17:00:00.000Z",
+        "last": "2026-02-18T20:00:00.000Z",
+        "locations": [
+          "key-Trip 2 Stop 1 Day 1"
+        ]
+      },
+      {
+        "eventName": "Trip 2/Stop 2 - Trip 2 Stop 1 Day 2",
+        "eventKind": "trip-stop",
+        "tripNumber": 2,
+        "stopNumber": 2,
+        "clusterId": "evt-trip-1771434000000-1-stop-2",
+        "tripId": "evt-trip-1771434000000-1",
+        "count": 17,
+        "first": "2026-02-19T17:00:00.000Z",
+        "last": "2026-02-19T19:24:00.000Z",
+        "locations": [
+          "key-Trip 2 Stop 1 Day 2"
+        ]
+      },
+      {
+        "eventName": "Trip 2/Stop 3 - Trip 2 Stop 1 Day 3",
+        "eventKind": "trip-stop",
+        "tripNumber": 2,
+        "stopNumber": 3,
+        "clusterId": "evt-trip-1771434000000-1-stop-3",
+        "tripId": "evt-trip-1771434000000-1",
+        "count": 13,
+        "first": "2026-02-20T17:00:00.000Z",
+        "last": "2026-02-20T18:48:00.000Z",
+        "locations": [
+          "key-Trip 2 Stop 1 Day 3"
+        ]
+      },
+      {
+        "eventName": "Home 5",
+        "eventKind": "home",
+        "tripNumber": 0,
+        "stopNumber": 0,
+        "clusterId": "evt-home-1771815600000-4",
+        "tripId": "evt-home-1771815600000-4",
+        "count": 8,
+        "first": "2026-02-23T03:00:00.000Z",
+        "last": "2026-02-23T03:49:00.000Z",
+        "locations": [
+          "key-Doma"
+        ]
+      },
+      {
+        "eventName": "Home 6",
+        "eventKind": "home",
+        "tripNumber": 0,
+        "stopNumber": 0,
+        "clusterId": "evt-home-1771902000000-5",
+        "tripId": "evt-home-1771902000000-5",
+        "count": 9,
+        "first": "2026-02-24T03:00:00.000Z",
+        "last": "2026-02-24T03:56:00.000Z",
+        "locations": [
+          "key-Doma"
+        ]
+      },
+      {
+        "eventName": "Home 7",
+        "eventKind": "home",
+        "tripNumber": 0,
+        "stopNumber": 0,
+        "clusterId": "evt-home-1771988400000-6",
+        "tripId": "evt-home-1771988400000-6",
+        "count": 7,
+        "first": "2026-02-25T03:00:00.000Z",
+        "last": "2026-02-25T03:42:00.000Z",
+        "locations": [
+          "key-Doma"
+        ]
+      },
+      {
+        "eventName": "Home 8",
+        "eventKind": "home",
+        "tripNumber": 0,
+        "stopNumber": 0,
+        "clusterId": "evt-home-1774580400000-7",
+        "tripId": "evt-home-1774580400000-7",
+        "count": 4,
+        "first": "2026-03-27T03:00:00.000Z",
+        "last": "2026-03-27T03:21:00.000Z",
+        "locations": [
+          "key-Doma"
+        ]
+      },
+      {
+        "eventName": "Home 9",
+        "eventKind": "home",
+        "tripNumber": 0,
+        "stopNumber": 0,
+        "clusterId": "evt-home-1775358000000-8",
+        "tripId": "evt-home-1775358000000-8",
+        "count": 5,
+        "first": "2026-04-05T03:00:00.000Z",
+        "last": "2026-04-05T03:28:00.000Z",
+        "locations": [
+          "key-Doma"
+        ]
+      },
+      {
+        "eventName": "Trip 3/Stop 1 - Trip 3 Stop 1 Day 1",
+        "eventKind": "trip-stop",
+        "tripNumber": 3,
+        "stopNumber": 1,
+        "clusterId": "evt-trip-1775581200000-2-stop-1",
+        "tripId": "evt-trip-1775581200000-2",
+        "count": 12,
+        "first": "2026-04-07T17:00:00.000Z",
+        "last": "2026-04-07T18:39:00.000Z",
+        "locations": [
+          "key-Trip 3 Stop 1 Day 1"
+        ]
+      },
+      {
+        "eventName": "Trip 3/Stop 2 - Trip 3 Stop 1 Day 2",
+        "eventKind": "trip-stop",
+        "tripNumber": 3,
+        "stopNumber": 2,
+        "clusterId": "evt-trip-1775581200000-2-stop-2",
+        "tripId": "evt-trip-1775581200000-2",
+        "count": 29,
+        "first": "2026-04-08T17:00:00.000Z",
+        "last": "2026-04-08T21:12:00.000Z",
+        "locations": [
+          "key-Trip 3 Stop 1 Day 2"
+        ]
+      },
+      {
+        "eventName": "Trip 3/Stop 3 - Trip 3 Stop 1 Day 3",
+        "eventKind": "trip-stop",
+        "tripNumber": 3,
+        "stopNumber": 3,
+        "clusterId": "evt-trip-1775581200000-2-stop-3",
+        "tripId": "evt-trip-1775581200000-2",
+        "count": 23,
+        "first": "2026-04-09T17:00:00.000Z",
+        "last": "2026-04-09T20:18:00.000Z",
+        "locations": [
+          "key-Trip 3 Stop 1 Day 3"
+        ]
+      },
+      {
+        "eventName": "Trip 3/Stop 4 - Trip 3 Stop 1 Day 4",
+        "eventKind": "trip-stop",
+        "tripNumber": 3,
+        "stopNumber": 4,
+        "clusterId": "evt-trip-1775581200000-2-stop-4",
+        "tripId": "evt-trip-1775581200000-2",
+        "count": 15,
+        "first": "2026-04-10T17:00:00.000Z",
+        "last": "2026-04-10T19:06:00.000Z",
+        "locations": [
+          "key-Trip 3 Stop 1 Day 4"
+        ]
+      },
+      {
+        "eventName": "Trip 3/Stop 5 - Trip 3 Stop 2 Day 4",
+        "eventKind": "trip-stop",
+        "tripNumber": 3,
+        "stopNumber": 5,
+        "clusterId": "evt-trip-1775581200000-2-stop-5",
+        "tripId": "evt-trip-1775581200000-2",
+        "count": 13,
+        "first": "2026-04-10T21:00:00.000Z",
+        "last": "2026-04-10T22:48:00.000Z",
+        "locations": [
+          "key-Trip 3 Stop 2 Day 4"
+        ]
+      },
+      {
+        "eventName": "Home 10",
+        "eventKind": "home",
+        "tripNumber": 0,
+        "stopNumber": 0,
+        "clusterId": "evt-home-1776135600000-9",
+        "tripId": "evt-home-1776135600000-9",
+        "count": 7,
+        "first": "2026-04-14T03:00:00.000Z",
+        "last": "2026-04-14T03:42:00.000Z",
+        "locations": [
+          "key-Doma"
+        ]
+      },
+      {
+        "eventName": "Home 11",
+        "eventKind": "home",
+        "tripNumber": 0,
+        "stopNumber": 0,
+        "clusterId": "evt-home-1777345200000-10",
+        "tripId": "evt-home-1777345200000-10",
+        "count": 4,
+        "first": "2026-04-28T03:00:00.000Z",
+        "last": "2026-04-28T03:21:00.000Z",
+        "locations": [
+          "key-Doma"
+        ]
+      },
+      {
+        "eventName": "Home 12",
+        "eventKind": "home",
+        "tripNumber": 0,
+        "stopNumber": 0,
+        "clusterId": "evt-home-1777950000000-11",
+        "tripId": "evt-home-1777950000000-11",
+        "count": 7,
+        "first": "2026-05-05T03:00:00.000Z",
+        "last": "2026-05-05T03:42:00.000Z",
+        "locations": [
+          "key-Doma"
+        ]
+      },
+      {
+        "eventName": "Home 13",
+        "eventKind": "home",
+        "tripNumber": 0,
+        "stopNumber": 0,
+        "clusterId": "evt-home-1778122800000-12",
+        "tripId": "evt-home-1778122800000-12",
+        "count": 6,
+        "first": "2026-05-07T03:00:00.000Z",
+        "last": "2026-05-07T03:35:00.000Z",
+        "locations": [
+          "key-Doma"
+        ]
+      },
+      {
+        "eventName": "Home 14",
+        "eventKind": "home",
+        "tripNumber": 0,
+        "stopNumber": 0,
+        "clusterId": "evt-home-1778900400000-13",
+        "tripId": "evt-home-1778900400000-13",
+        "count": 4,
+        "first": "2026-05-16T03:00:00.000Z",
+        "last": "2026-05-16T03:21:00.000Z",
+        "locations": [
+          "key-Doma"
+        ]
+      },
+      {
+        "eventName": "Home 15",
+        "eventKind": "home",
+        "tripNumber": 0,
+        "stopNumber": 0,
+        "clusterId": "evt-home-1779246000000-14",
+        "tripId": "evt-home-1779246000000-14",
+        "count": 4,
+        "first": "2026-05-20T03:00:00.000Z",
+        "last": "2026-05-20T03:21:00.000Z",
+        "locations": [
+          "key-Doma"
+        ]
+      },
+      {
+        "eventName": "Home 16",
+        "eventKind": "home",
+        "tripNumber": 0,
+        "stopNumber": 0,
+        "clusterId": "evt-home-1779937200000-15",
+        "tripId": "evt-home-1779937200000-15",
+        "count": 5,
+        "first": "2026-05-28T03:00:00.000Z",
+        "last": "2026-05-28T03:28:00.000Z",
+        "locations": [
+          "key-Doma"
+        ]
+      }
+    ]
+  }
+}
