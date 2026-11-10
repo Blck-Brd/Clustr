@@ -29,6 +29,13 @@
 - [ ] IndexedDB thumbnail cache.
 - [ ] Web Worker pool for more metadata work if needed.
 
+## Mobile
+
+- [ ] Test the preview on a real iPhone (Safari + installed PWA) and Android Chrome.
+- [ ] Streaming/OPFS ZIP export for large phone batches instead of the in-memory cap.
+- [ ] Optional Android `share_target` so photos can be shared into Clustr.
+- [ ] Decide whether a mobile-specific guided tour is worth building (currently disabled).
+
 ## Quality
 
 - [ ] Playwright coverage for Phase 2 → cluster review → rename → export.
@@ -58,4 +65,10 @@
 - [x] Heatmap docked at the bottom; gallery tiles shrink while it is open.
 - [x] CI fixed to use Playwright’s bundled Chromium; browser smoke test stable on Ubuntu.
 - [x] Data Fill phase - Tinder-style location filling that propagates to nearby photos.
+- [x] Shared photo engine extracted to `app/core.js` with a clustering parity snapshot.
+- [x] Mobile shell: drawer navigation, 2-column gallery, safe-area padding and always-visible tile metadata.
+- [x] Camera-roll import with append, duplicate skipping and persistent storage request.
+- [x] Mobile ZIP export with XMP sidecars and Web Share fallback.
+- [x] Touch-friendly full-screen heatmap with responsive canvases and pointer ranges.
+- [x] Mobile AI fallback to Gemini; Ollama and visual tags stay desktop-only.
 

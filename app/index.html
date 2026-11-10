@@ -3332,7 +3332,7 @@ DATA: ${JSON.stringify(data)}`;
                                     const isSelected = selectedPhotos.has(p.id);
                                     return (
                                         <div key={p.id} data-photo-id={p.id} onClick={(e) => toggleSelection(p.id, e)} className={`relative aspect-square bg-slate-800 rounded-lg overflow-hidden group cursor-pointer transition-all ${isSelected ? 'ring-4 ring-orange-500 scale-[0.98]' : 'hover:ring-2 hover:ring-slate-500'}`}>
-                                            <div className={`absolute top-2 left-2 z-10 w-6 h-6 flex items-center justify-center rounded-full border-2 transition-colors ${isSelected ? 'bg-orange-500 border-orange-500' : 'border-white/50 bg-black/30 opacity-0 group-hover:opacity-100'}`}>
+                                            <div className={`absolute top-2 left-2 z-10 w-6 h-6 flex items-center justify-center rounded-full border-2 transition-colors ${isSelected ? 'bg-orange-500 border-orange-500' : `border-white/50 bg-black/30 ${isMobileLayout ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}`}>
                                                 {isSelected && <span className="text-white text-sm font-bold block mt-[-2px]">✓</span>}
                                             </div>
                                             
@@ -3359,21 +3359,23 @@ DATA: ${JSON.stringify(data)}`;
                                                 </div>
                                             )}
                                             
-                                            <div className="photo-overlay absolute bottom-0 left-0 right-0 p-2 text-[9px] text-white opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <div className={`photo-overlay absolute bottom-0 left-0 right-0 p-2 text-[9px] text-white transition-opacity ${isMobileLayout ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
                                                 <div className="flex justify-between items-start">
                                                     <div>
                                                         <div className="font-bold text-orange-400">{p.aiData?.event_name || t('Bez události', 'No event')}</div>
                                                         <div className="text-emerald-400">{p.hardData?.location || ''}</div>
                                                         <div className="text-slate-300">{p.hardData?.dateStr || ''} {p.hardData?.timeStr || ''}</div>
                                                     </div>
-                                                    <button 
-                                                        onClick={(e) => runSingleMoondream(e, p.id)} 
-                                                        disabled={analyzingPhotoId === p.id || !p.url}
-                                                        title={t("Generovat tagy pro tuto fotku", "Generate tags for this photo")}
-                                                        className="p-1.5 bg-amber-600/80 hover:bg-amber-500 rounded text-white transition-colors flex-shrink-0 disabled:bg-slate-600"
-                                                    >
-                                                        {analyzingPhotoId === p.id ? '⏳' : '🌙'}
-                                                    </button>
+                                                    {!isMobileLayout && (
+                                                        <button 
+                                                            onClick={(e) => runSingleMoondream(e, p.id)} 
+                                                            disabled={analyzingPhotoId === p.id || !p.url}
+                                                            title={t("Generovat tagy pro tuto fotku", "Generate tags for this photo")}
+                                                            className="p-1.5 bg-amber-600/80 hover:bg-amber-500 rounded text-white transition-colors flex-shrink-0 disabled:bg-slate-600"
+                                                        >
+                                                            {analyzingPhotoId === p.id ? '⏳' : '🌙'}
+                                                        </button>
+                                                    )}
                                                 </div>
                                                 <div className="flex flex-wrap gap-1 mt-1">
                                                     {p.aiData?.tags?.map(tg => <span key={tg} className="bg-slate-700 px-1 rounded">#{tg}</span>)}
@@ -3423,7 +3425,7 @@ DATA: ${JSON.stringify(data)}`;
                     )}
 
                     {bulkModal.isOpen && (
-                        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[70] p-4">
+                        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[155] p-4">
                             <div className="bg-slate-900 p-6 rounded-xl border border-slate-700 w-full max-w-sm shadow-2xl">
                                 <div className="font-bold mb-4 text-lg">
                                     {t("Hromadná úprava:", "Bulk Edit:")} {bulkModal.type === 'event' ? t('Událost / sloučení', 'Event / merge') : bulkModal.type === 'parent-event' ? t('Nadřazená složka (Zabalení)', 'Parent Folder') : bulkModal.type === 'location' ? t('Lokace', 'Location') : bulkModal.type === 'split' ? t('Oddělit do nové události', 'Split into new event') : t('Nový Tag', 'New Tag')}
@@ -3448,7 +3450,7 @@ DATA: ${JSON.stringify(data)}`;
                     )}
 
                     {tripModal.isOpen && (
-                        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[80] p-4">
+                        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[155] p-4">
                             <div className="bg-slate-900 p-6 rounded-xl border border-slate-700 w-full max-w-md shadow-2xl">
                                 <div className="font-bold mb-1 text-lg">📅 {t('Ruční cesta', 'Manual trip')}</div>
                                 <div className="text-xs text-slate-400 mb-4">
@@ -3487,7 +3489,7 @@ DATA: ${JSON.stringify(data)}`;
                     {showTour && <TourOverlay steps={tourSteps} onClose={closeTour} />}
 
                     {showTinder && (
-                        <div className="fixed inset-0 bg-black/95 z-[100] flex flex-col">
+                        <div className="fixed inset-0 bg-black/95 z-[155] flex flex-col">
                             <div className={`text-white flex justify-between items-center gap-2 bg-gradient-to-b from-black to-transparent ${isMobileLayout ? 'p-4' : 'p-6'}`}>
                                 <div><h2 className={`font-bold text-orange-400 ${isMobileLayout ? 'text-xl' : 'text-2xl'}`}>🔥 Tinder Mode</h2><p className="text-xs text-slate-400">{isMobileLayout ? t('Použijte tlačítka níže.', 'Use the buttons below.') : t("Šipky vlevo/vpravo pro rychlé třídění", "Left/Right arrows for quick sorting")}</p></div>
                                 <button onClick={() => setShowTinder(false)} className="bg-slate-800 px-4 py-2 rounded-full text-sm">{t("Zavřít", "Close")}</button>
@@ -3511,7 +3513,7 @@ DATA: ${JSON.stringify(data)}`;
                     )}
 
                     {showDataFill && dataFillPhoto && (
-                        <div data-data-fill="true" className="fixed inset-0 bg-black/95 z-[100] flex flex-col">
+                        <div data-data-fill="true" className="fixed inset-0 bg-black/95 z-[155] flex flex-col">
                             <div className={`text-white flex justify-between items-center gap-2 bg-gradient-to-b from-black to-transparent ${isMobileLayout ? 'p-4 flex-wrap' : 'p-6'}`}>
                                 <div>
                                     <h2 className={`font-bold text-fuchsia-400 ${isMobileLayout ? 'text-xl' : 'text-2xl'}`}>🧭 {t('Doplňování dat', 'Data Fill')}</h2>
@@ -3564,7 +3566,7 @@ DATA: ${JSON.stringify(data)}`;
                     )}
 
                     {showExportModal && (
-                        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+                        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[155] p-4">
                             <div className="bg-slate-900 p-6 rounded-xl border border-slate-700 w-full max-w-sm text-center">
                                 <div className="text-2xl mb-2">💾</div>
                                 <div className="font-bold mb-2">{isMobileLayout ? t("Export do ZIPu", "Export to ZIP") : t("Export na disk", "Export to Disk")}</div>
@@ -3601,15 +3603,17 @@ DATA: ${JSON.stringify(data)}`;
                     )}
 
                     {showHelpModal && (
-                        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[110] p-4" onClick={(e) => { if(e.target === e.currentTarget) setShowHelpModal(false); }}>
+                        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[155] p-4" onClick={(e) => { if(e.target === e.currentTarget) setShowHelpModal(false); }}>
                             <div className="bg-slate-900 p-8 rounded-xl border border-slate-700 w-full max-w-2xl max-h-[85vh] overflow-y-auto custom-scrollbar shadow-2xl relative text-slate-300">
                                 <button onClick={() => setShowHelpModal(false)} className="absolute top-4 right-4 text-slate-500 hover:text-white text-2xl leading-none">&times;</button>
                                 <h2 className="text-2xl font-bold text-orange-400 mb-6 flex items-center gap-2"><span>📖</span> {t('Nápověda k aplikaci Clustr', 'Clustr User Guide')}</h2>
-                                <button
-                                    data-start-tour
-                                    onClick={() => { setShowHelpModal(false); setShowTour(true); }}
-                                    className="mb-6 inline-flex items-center gap-2 rounded-full bg-cyan-600 px-4 py-2 text-sm font-bold text-white hover:bg-cyan-500"
-                                >▶ {t('Spustit prohlídku', 'Start tour')}</button>
+                                {!isMobileLayout && (
+                                    <button
+                                        data-start-tour
+                                        onClick={() => { setShowHelpModal(false); setShowTour(true); }}
+                                        className="mb-6 inline-flex items-center gap-2 rounded-full bg-cyan-600 px-4 py-2 text-sm font-bold text-white hover:bg-cyan-500"
+                                    >▶ {t('Spustit prohlídku', 'Start tour')}</button>
+                                )}
                                 
                                 <div className="space-y-6 text-sm">
                                     <section>
@@ -3642,7 +3646,7 @@ DATA: ${JSON.stringify(data)}`;
                     )}
 
                     {renameModal.isOpen && (
-                        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+                        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[155] p-4">
                             <div className="bg-slate-900 p-6 rounded-xl border border-slate-700 w-full max-w-xs">
                                 <div className="font-bold mb-4">{t("Přejmenovat", "Rename")} {renameModal.type === 'event' ? t('událost / složku', 'event / folder') : t('tag', 'tag')}</div>
                                 <input type="text" value={renameModal.newName} onChange={e => setRenameModal({...renameModal, newName: e.target.value})} className="w-full bg-slate-800 p-2 rounded text-white mb-4 border border-slate-700" autoFocus />
