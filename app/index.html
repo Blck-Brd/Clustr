@@ -650,6 +650,11 @@
 
                 (async () => {
                     try {
+                        const host = window.location.hostname;
+                        if (host !== 'localhost' && host !== '127.0.0.1' && host !== '::1') return;
+                    } catch (e) { return; }
+
+                    try {
                         if (localStorage.getItem('aiSorter.skipTimelineAutoLoad') === '1') {
                             localStorage.removeItem('aiSorter.skipTimelineAutoLoad');
                             return;
