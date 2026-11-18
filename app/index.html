@@ -100,7 +100,7 @@
             document.head.appendChild(script);
         })();
     </script>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="vendor/tailwind.js"></script>
     <script>
         // Last-resort diagnostic: keep a fatal app error visible instead of a black page.
         (function () {
@@ -126,9 +126,10 @@
             });
         })();
     </script>
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Vendored so the app boots without unpkg/Tailwind CDN and works offline. -->
+    <script src="vendor/react.production.min.js"></script>
+    <script src="vendor/react-dom.production.min.js"></script>
+    <script src="vendor/babel.min.js"></script>
     
     <!-- EXIFR full umí číst i zabudované náhledy v RAWu -->
     <script src="vendor/exifr.full.umd.js"></script>
@@ -150,22 +151,61 @@
             0%, 100% { transform: translate(-50%, 0); }
             50% { transform: translate(-50%, -5px); }
         }
+        /* Static first paint: crawlers and slow connections see the pitch instead of a blank page. */
+        .boot-shell {
+            position: fixed;
+            inset: 0;
+            z-index: 5;
+            overflow: auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: clamp(20px, 6vw, 64px);
+            background: radial-gradient(1200px 600px at 50% -10%, #1e293b 0%, #0f172a 55%, #020617 100%);
+        }
+        .boot-card { width: 100%; max-width: 760px; }
+        .boot-mark { display: inline-flex; align-items: center; gap: 8px; margin-bottom: 18px; font-size: 18px; font-weight: 800; color: #fb923c; letter-spacing: 0.02em; }
+        .boot-card h1 { margin: 0 0 16px; font-size: clamp(26px, 4.2vw, 44px); line-height: 1.12; font-weight: 800; letter-spacing: -0.02em; color: #f8fafc; }
+        .boot-card p { margin: 0 0 18px; max-width: 62ch; font-size: clamp(14px, 1.6vw, 17px); line-height: 1.65; color: #cbd5e1; }
+        .boot-card ul { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 8px 20px; margin: 0 0 24px; padding: 0; list-style: none; }
+        .boot-card li { font-size: 14px; line-height: 1.5; color: #94a3b8; }
+        .boot-card li::before { content: '→'; margin-right: 8px; font-weight: 700; color: #fb923c; }
+        .boot-status { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0; font-size: 13px; color: #64748b; }
+        .boot-status a { color: #22d3ee; text-decoration: none; }
+        .boot-status a:hover { text-decoration: underline; }
+        .boot-dot { display: inline-block; width: 7px; height: 7px; border-radius: 999px; background: #fb923c; animation: boot-pulse 1.2s ease-in-out infinite; }
+        @keyframes boot-pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
     </style>
+    <noscript><style>.boot-js-status { display: none; }</style></noscript>
 </head>
 <body class="bg-slate-950">
-    <div id="root"></div>
-    <noscript>
-        <div style="max-width:720px;margin:0 auto;padding:48px 24px;font-family:system-ui,sans-serif;line-height:1.6;color:#e2e8f0;">
-            <h1>Clustr - local-first photo sorter</h1>
-            <p>Clustr groups camera photos into trips, stops and events using EXIF metadata, Google Timeline and density heatmaps, then exports Lightroom-ready folders with XMP sidecars. Photos are processed in your browser and are never uploaded.</p>
-            <p><a style="color:#fb923c;" href="/about">Learn more about Clustr</a> or enable JavaScript to open the app.</p>
+    <div id="root">
+        <div class="boot-shell">
+            <div class="boot-card">
+                <div class="boot-mark">⚡ Clustr</div>
+                <h1>Sort thousands of camera photos into trips, stops and events.</h1>
+                <p>Clustr reads EXIF and Google Timeline data, clusters a camera library into trips and stops with density heatmaps, and exports Lightroom-ready folders with XMP sidecars. Everything runs locally in the browser — photos are never uploaded.</p>
+                <ul>
+                    <li>EXIF, GPS and Timeline aware</li>
+                    <li>Trip and stop clustering with heatmaps</li>
+                    <li>Lightroom folders with XMP sidecars</li>
+                    <li>Free, installable and works offline</li>
+                </ul>
+                <p class="boot-status boot-js-status"><span class="boot-dot"></span><span>Loading the app…</span> <a href="/about">Features and FAQ</a></p>
+                <noscript>
+                    <p class="boot-status" style="color:#fca5a5;">Clustr needs JavaScript to open the sorter. <a href="/about">Read about Clustr</a> or enable JavaScript and reload.</p>
+                </noscript>
+            </div>
         </div>
-    </noscript>
+    </div>
 
-    <script type="text/babel">
+    <script type="text/babel" data-presets="react">
 
         const App = () => {
             const [photos, setPhotos] = useState([]);
+            const [isDemo, setIsDemo] = useState(false);
+            const [demoProgress, setDemoProgress] = useState('');
+            const [demoGroupPending, setDemoGroupPending] = useState(false);
             const [timelineData, setTimelineData] = useState(null);
             const [activeFilters, setActiveFilters] = useState([]); 
             const [searchQuery, setSearchQuery] = useState('');
@@ -388,27 +428,27 @@
             }, [showDataFill, dataFillIndex, dataFillQueue, photos]);
 
             useEffect(() => {
-                if (isMobileLayout || photos.length === 0 || showTour || showEarlyAccess) return;
+                if (isMobileLayout || photos.length === 0 || showTour || showEarlyAccess || isDemo) return;
                 let seen = false;
                 try { seen = localStorage.getItem('clustr-tour-seen') === '1'; } catch (e) {}
                 if (seen) return;
                 const timer = window.setTimeout(() => setShowTour(true), 900);
                 return () => window.clearTimeout(timer);
-            }, [isMobileLayout, photos.length, showTour, showEarlyAccess]);
+            }, [isMobileLayout, photos.length, showTour, showEarlyAccess, isDemo]);
 
             useEffect(() => {
                 let seen = false;
                 try { seen = localStorage.getItem('clustr-early-access-seen') === '1'; } catch (e) {}
-                if (seen || showTour || showEarlyAccess) return;
+                if (seen || showTour || showEarlyAccess || isDemo) return;
                 const timer = window.setTimeout(() => {
                     try { localStorage.setItem('clustr-early-access-seen', '1'); } catch (e) {}
                     setShowEarlyAccess(true);
                 }, 2200);
                 return () => window.clearTimeout(timer);
-            }, [showTour, showEarlyAccess]);
+            }, [showTour, showEarlyAccess, isDemo]);
 
             useEffect(() => {
-                if (photos.length === 0 || showTour || showSupport || showClusterReview || showDataFill || supportShownRef.current) return;
+                if (photos.length === 0 || showTour || showSupport || showClusterReview || showDataFill || supportShownRef.current || isDemo) return;
                 try {
                     const last = Number(localStorage.getItem('clustr-support-last') || 0);
                     if (last && Date.now() - last < 24 * 60 * 60 * 1000) return;
@@ -421,9 +461,10 @@
                     setShowSupport(true);
                 }, 120000);
                 return () => window.clearTimeout(timer);
-            }, [photos.length, showTour, showSupport, showClusterReview, showDataFill]);
+            }, [photos.length, showTour, showSupport, showClusterReview, showDataFill, isDemo]);
 
             useEffect(() => {
+                if (isDemo) return;
                 try {
                     localStorage.setItem(SETTINGS_KEY, JSON.stringify({
                         lang, namingLevel, textModel, textModelCustom, geminiModelCustom, homeLocation,
@@ -444,7 +485,7 @@
                         dataFillWindowHours
                     }));
                 } catch (e) {}
-            }, [lang, namingLevel, textModel, textModelCustom, geminiModelCustom, homeLocation, visionModel, visionModelCustom, customFolders, groupingProfile, groupingWorkflow, tripSensitivityMode, clusteringMode, manualClusterSettings, manualTripSettings, completedSteps, dataFillWindowHours]);
+            }, [lang, namingLevel, textModel, textModelCustom, geminiModelCustom, homeLocation, visionModel, visionModelCustom, customFolders, groupingProfile, groupingWorkflow, tripSensitivityMode, clusteringMode, manualClusterSettings, manualTripSettings, completedSteps, dataFillWindowHours, isDemo]);
 
             useEffect(() => {
                 if (modelAutoFixRef.current || ollamaModels.length === 0) return;
@@ -514,14 +555,15 @@
             useEffect(() => {
                 const initCloud = async () => {
                     try {
+                        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+
+                        // Nothing to initialise on static hosting (Vercel): skip the gstatic imports.
+                        if (!firebaseConfig || Object.keys(firebaseConfig).length === 0) return;
+
                         const { initializeApp } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js");
                         const { getAuth, signInAnonymously, signInWithCustomToken } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js");
                         const { getFirestore, doc, getDoc, setDoc } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
-
-                        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-                        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
-                        
-                        if (!firebaseConfig || Object.keys(firebaseConfig).length === 0) return;
 
                         const app = initializeApp(firebaseConfig);
                         const auth = getAuth(app);
@@ -585,6 +627,7 @@
             }, []);
 
             useEffect(() => {
+                if (isDemo) return;
                 if (photos.length === 0) return;
 
                 const timer = setTimeout(async () => {
@@ -599,7 +642,7 @@
                 }, 1500);
 
                 return () => clearTimeout(timer);
-            }, [photos, timelineData]);
+            }, [photos, timelineData, isDemo]);
 
             // Local dev convenience: if the dev server exposes Timeline.json, load it automatically.
             useEffect(() => {
@@ -699,7 +742,7 @@
                 }
             };
 
-            const loadPhotoFiles = (fileList, { replace = false } = {}) => {
+            const loadPhotoFiles = (fileList, { replace = false, demoByName = null } = {}) => {
                 const allowedExts = ['jpg','jpeg','png','webp','heic','heif','nef','cr2','arw','dng','orf','raf', 'tif', 'tiff'];
                 const files = Array.from(fileList || []).filter(f => {
                     const ext = f.name.split('.').pop().toLowerCase();
@@ -748,6 +791,7 @@
 
                 const loaded = uniqueFiles.map(f => {
                     const existing = findMeta(f);
+                    const demo = demoByName ? demoByName.get(f.name) : null;
                     const ext = f.name.split('.').pop().toLowerCase();
                     const isRaw = rawExts.includes(ext);
                     const paired = isRaw ? siblingByStem.get(stemKey(f)) : null;
@@ -760,9 +804,18 @@
                         url: paired ? URL.createObjectURL(paired) : (isRaw ? null : URL.createObjectURL(f)), 
                         isRaw: isRaw,
                         thumbLoading: Boolean(isRaw && !paired),
-                        date: existing ? new Date(existing.date) : new Date(f.lastModified), 
+                        date: demo ? new Date(demo.date) : (existing ? new Date(existing.date) : new Date(f.lastModified)), 
                         hardData: existing?.hardData || null, 
-                        aiData: existing?.aiData || null
+                        aiData: existing?.aiData || null,
+                        // Demo photos skip EXIF parsing: these values stand in for a camera file.
+                        demoExif: demo ? {
+                            DateTimeOriginal: demo.date,
+                            CreateDate: demo.date,
+                            Make: demo.make,
+                            Model: demo.model,
+                            latitude: demo.lat,
+                            longitude: demo.lon
+                        } : undefined
                     };
                 }).sort((a, b) => b.date - a.date);
                 
@@ -872,6 +925,60 @@
                     }, 50);
                 };
                 reader.readAsText(file);
+            };
+
+            // Loads the bundled sample library: 50 photos, invented dates/places, and a
+            // matching Timeline so clustering, heatmaps and export can be tried instantly.
+            const enterDemo = async () => {
+                if (photos.length > 0) return;
+                setIsDemo(true);
+                setDemoProgress(t('Načítám ukázku 0/50…', 'Loading demo 0/50…'));
+
+                try {
+                    const response = await fetch('./demo/demo.json');
+                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                    const demo = await response.json();
+                    const items = Array.isArray(demo.photos) ? demo.photos : [];
+                    if (items.length === 0) throw new Error('Empty demo manifest');
+
+                    const files = [];
+                    let done = 0;
+                    const queue = [...items];
+                    const worker = async () => {
+                        while (queue.length > 0) {
+                            const item = queue.shift();
+                            const res = await fetch(`./demo/${item.file}`);
+                            if (!res.ok) throw new Error(`HTTP ${res.status} (${item.file})`);
+                            const blob = await res.blob();
+                            files.push(new File([blob], item.file, {
+                                type: blob.type || 'image/jpeg',
+                                lastModified: new Date(item.date).getTime()
+                            }));
+                            done += 1;
+                            setDemoProgress(t(`Načítám ukázku ${done}/${items.length}…`, `Loading demo ${done}/${items.length}…`));
+                        }
+                    };
+                    await Promise.all(Array.from({ length: 6 }, worker));
+
+                    const byName = new Map(items.map((item) => [item.file, item]));
+                    setHomeLocation(t('Doma', 'Home'));
+                    setTimelineData(demo.timeline);
+                    loadPhotoFiles(files, { replace: true, demoByName: byName });
+                    setDemoProgress(t('Seskupuji ukázku…', 'Grouping the demo library…'));
+                    setDemoGroupPending(true);
+                } catch (error) {
+                    setIsDemo(false);
+                    setDemoProgress('');
+                    setMessage({
+                        title: t('Ukázku se nepodařilo načíst', 'Could not load the demo'),
+                        text: String(error?.message || error)
+                    });
+                }
+            };
+
+            const exitDemo = () => {
+                // Demo data is never persisted, so a reload is the cleanest reset.
+                try { window.location.reload(); } catch (e) { setIsDemo(false); }
             };
 
             // DRAG AND DROP - Podpora Windows-like tree
@@ -1053,15 +1160,18 @@
             const buildMetadataMap = async (items, sortedTimeline) => {
                 const exifById = new Map();
                 let workerPoolUsed = false;
+                const needsParse = items.filter((item) => !item.demoExif);
 
-                try {
-                    const exifResults = await parseExifInWorkerPool(items, (done, total) => {
-                        setProgress(t(`EXIF ${done}/${total}...`, `EXIF ${done}/${total}...`));
-                    });
-                    exifResults.forEach((value, key) => exifById.set(key, value));
-                    workerPoolUsed = true;
-                } catch (e) {
-                    console.warn('EXIF worker pool unavailable, using main thread', e);
+                if (needsParse.length > 0) {
+                    try {
+                        const exifResults = await parseExifInWorkerPool(needsParse, (done, total) => {
+                            setProgress(t(`EXIF ${done}/${total}...`, `EXIF ${done}/${total}...`));
+                        });
+                        exifResults.forEach((value, key) => exifById.set(key, value));
+                        workerPoolUsed = true;
+                    } catch (e) {
+                        console.warn('EXIF worker pool unavailable, using main thread', e);
+                    }
                 }
 
                 const metas = new Map();
@@ -1069,9 +1179,9 @@
                 let parsedCount = 0;
 
                 for (const photo of items) {
-                    let exif = exifById.get(photo.id);
+                    let exif = photo.demoExif || exifById.get(photo.id);
                     // A missing/null worker result is retried on the main thread.
-                    if (exif === undefined || exif === null) {
+                    if (!photo.demoExif && (exif === undefined || exif === null)) {
                         try {
                             exif = await exifr.parse(photo.file, true);
                         } catch (e) {
@@ -1562,6 +1672,14 @@
                 setIsGrouping(false);
                 setProgress('');
             };
+
+            // Runs once per demo load, after the photos state from loadPhotoFiles has committed.
+            useEffect(() => {
+                if (!isDemo || !demoGroupPending || photos.length === 0) return;
+                setDemoGroupPending(false);
+                setDemoProgress('');
+                runPhase2('auto');
+            }, [isDemo, demoGroupPending, photos.length]);
 
             const runPhase3 = async () => {
                 if (photos.length === 0) {
@@ -2964,6 +3082,14 @@ DATA: ${JSON.stringify(data)}`;
 
             return (
                 <div className="flex h-screen overflow-hidden" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
+                    {isDemo && (
+                        <div className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] left-1/2 z-[150] flex -translate-x-1/2 items-center gap-2 whitespace-nowrap rounded-full border border-amber-700 bg-amber-950/90 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-amber-200 shadow-lg backdrop-blur">
+                            <span>{t('Ukázková data', 'Demo data')}</span>
+                            <button type="button" onClick={exitDemo} className="whitespace-nowrap rounded-full bg-amber-800/70 px-2 py-0.5 hover:bg-amber-700">
+                                {t('Ukončit ukázku', 'Exit demo')}
+                            </button>
+                        </div>
+                    )}
                     {isMobileLayout && showMobileSidebar && (
                         <div className="fixed inset-0 z-[120] bg-black/60" onClick={() => setShowMobileSidebar(false)} />
                     )}
@@ -3402,6 +3528,12 @@ DATA: ${JSON.stringify(data)}`;
                                     <button onClick={() => (isMobileLayout ? photoInputRef.current.click() : fileInputRef.current.click())} className="rounded-full bg-orange-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-orange-500">
                                         {isMobileLayout ? t('📷 Přidat fotky', '📷 Add photos') : t('📂 Nahrát složku', '📂 Upload folder')}
                                     </button>
+                                    <button onClick={enterDemo} disabled={Boolean(demoProgress)} className="mt-3 rounded-full border border-slate-700 bg-slate-800 px-5 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-700 disabled:opacity-60">
+                                        {demoProgress || t('▶ Vyzkoušet ukázku (50 fotek)', '▶ Try the demo (50 photos)')}
+                                    </button>
+                                    <p className="mt-2 max-w-xs text-[10px] leading-relaxed text-slate-500">
+                                        {t('Ukázková data: vymyšlené termíny a místa. Nic se neukládá do vaší knihovny.', 'Sample data: invented dates and places. Nothing is saved to your library.')}
+                                    </p>
                                 </div>
                             )}
                             {photos.length > 0 && filteredPhotos.length === 0 && (

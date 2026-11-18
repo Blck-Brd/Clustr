@@ -1,0 +1,714 @@
+{
+  "version": 1,
+  "label": "Demo library",
+  "description": "Sample photos with invented dates, places and cameras. Nothing here is uploaded.",
+  "photoCount": 50,
+  "photos": [
+    {
+      "file": "alps-01.jpg",
+      "date": "2024-06-14T09:15:00",
+      "lat": 46.537261,
+      "lon": 12.132099,
+      "make": "Sony",
+      "model": "ILCE-7M3",
+      "bytes": 270232,
+      "place": "Cortina d'Ampezzo",
+      "author": "Go Wild"
+    },
+    {
+      "file": "alps-02.jpg",
+      "date": "2024-06-14T11:40:00",
+      "lat": 46.535527,
+      "lon": 12.141691,
+      "make": "Sony",
+      "model": "ILCE-7M3",
+      "bytes": 110116,
+      "place": "Cortina d'Ampezzo",
+      "author": "Nicholas Swanson"
+    },
+    {
+      "file": "alps-03.jpg",
+      "date": "2024-06-14T15:05:00",
+      "lat": 46.540192,
+      "lon": 12.131057,
+      "make": "Sony",
+      "model": "ILCE-7M3",
+      "bytes": 87213,
+      "place": "Cortina d'Ampezzo",
+      "author": "Daniel Genser"
+    },
+    {
+      "file": "alps-04.jpg",
+      "date": "2024-06-14T17:30:00",
+      "lat": 46.535015,
+      "lon": 12.137881,
+      "make": "Sony",
+      "model": "ILCE-7M3",
+      "bytes": 97308,
+      "place": "Cortina d'Ampezzo",
+      "author": "Nicholas Swanson"
+    },
+    {
+      "file": "alps-05.jpg",
+      "date": "2024-06-15T10:05:00",
+      "lat": 46.684822,
+      "lon": 12.085261,
+      "make": "Sony",
+      "model": "ILCE-7M3",
+      "bytes": 202716,
+      "place": "Lago di Braies",
+      "author": "Paul Jarvis"
+    },
+    {
+      "file": "alps-06.jpg",
+      "date": "2024-06-15T12:20:00",
+      "lat": 46.694897,
+      "lon": 12.072222,
+      "make": "Sony",
+      "model": "ILCE-7M3",
+      "bytes": 78222,
+      "place": "Lago di Braies",
+      "author": "Rafael Souza"
+    },
+    {
+      "file": "alps-07.jpg",
+      "date": "2024-06-15T16:10:00",
+      "lat": 46.685927,
+      "lon": 12.100304,
+      "make": "Sony",
+      "model": "ILCE-7M3",
+      "bytes": 199523,
+      "place": "Lago di Braies",
+      "author": "Caroline Sada"
+    },
+    {
+      "file": "alps-08.jpg",
+      "date": "2024-06-15T18:00:00",
+      "lat": 46.693622,
+      "lon": 12.086459,
+      "make": "Sony",
+      "model": "ILCE-7M3",
+      "bytes": 156869,
+      "place": "Lago di Braies",
+      "author": "Paul Jarvis"
+    },
+    {
+      "file": "alps-09.jpg",
+      "date": "2024-06-16T08:50:00",
+      "lat": 46.612011,
+      "lon": 12.304827,
+      "make": "Sony",
+      "model": "ILCE-7M3",
+      "bytes": 117109,
+      "place": "Tre Cime di Lavaredo",
+      "author": "Paul Jarvis"
+    },
+    {
+      "file": "alps-10.jpg",
+      "date": "2024-06-16T11:10:00",
+      "lat": 46.62274,
+      "lon": 12.294535,
+      "make": "Sony",
+      "model": "ILCE-7M3",
+      "bytes": 236818,
+      "place": "Tre Cime di Lavaredo",
+      "author": "Paul Jarvis"
+    },
+    {
+      "file": "alps-11.jpg",
+      "date": "2024-06-16T14:30:00",
+      "lat": 46.622568,
+      "lon": 12.319605,
+      "make": "Sony",
+      "model": "ILCE-7M3",
+      "bytes": 218640,
+      "place": "Tre Cime di Lavaredo",
+      "author": "Jon Eckert"
+    },
+    {
+      "file": "alps-12.jpg",
+      "date": "2024-06-16T17:45:00",
+      "lat": 46.62262,
+      "lon": 12.317207,
+      "make": "Sony",
+      "model": "ILCE-7M3",
+      "bytes": 114206,
+      "place": "Tre Cime di Lavaredo",
+      "author": "Jean Kleisz"
+    },
+    {
+      "file": "santorini-01.jpg",
+      "date": "2024-09-02T09:40:00",
+      "lat": 36.467885,
+      "lon": 25.387531,
+      "make": "Apple",
+      "model": "iPhone 13 Pro",
+      "bytes": 107030,
+      "place": "Oia",
+      "author": "Paul Jarvis"
+    },
+    {
+      "file": "santorini-02.jpg",
+      "date": "2024-09-02T11:25:00",
+      "lat": 36.461135,
+      "lon": 25.371331,
+      "make": "Apple",
+      "model": "iPhone 13 Pro",
+      "bytes": 213018,
+      "place": "Oia",
+      "author": "Paul Jarvis"
+    },
+    {
+      "file": "santorini-03.jpg",
+      "date": "2024-09-02T13:50:00",
+      "lat": 36.455596,
+      "lon": 25.384663,
+      "make": "Apple",
+      "model": "iPhone 13 Pro",
+      "bytes": 143986,
+      "place": "Oia",
+      "author": "Paul Jarvis"
+    },
+    {
+      "file": "santorini-04.jpg",
+      "date": "2024-09-02T16:35:00",
+      "lat": 36.466668,
+      "lon": 25.387204,
+      "make": "Apple",
+      "model": "iPhone 13 Pro",
+      "bytes": 129438,
+      "place": "Oia",
+      "author": "Paul Jarvis"
+    },
+    {
+      "file": "santorini-05.jpg",
+      "date": "2024-09-02T18:55:00",
+      "lat": 36.453637,
+      "lon": 25.372875,
+      "make": "Apple",
+      "model": "iPhone 13 Pro",
+      "bytes": 99800,
+      "place": "Oia",
+      "author": "Christopher Sardegna"
+    },
+    {
+      "file": "santorini-06.jpg",
+      "date": "2024-09-03T10:15:00",
+      "lat": 36.421764,
+      "lon": 25.426847,
+      "make": "Apple",
+      "model": "iPhone 13 Pro",
+      "bytes": 84641,
+      "place": "Fira",
+      "author": "Margaret Barley"
+    },
+    {
+      "file": "santorini-07.jpg",
+      "date": "2024-09-03T12:40:00",
+      "lat": 36.411792,
+      "lon": 25.439494,
+      "make": "Apple",
+      "model": "iPhone 13 Pro",
+      "bytes": 77100,
+      "place": "Fira",
+      "author": "Cierra"
+    },
+    {
+      "file": "santorini-08.jpg",
+      "date": "2024-09-03T15:20:00",
+      "lat": 36.408561,
+      "lon": 25.418083,
+      "make": "Apple",
+      "model": "iPhone 13 Pro",
+      "bytes": 143044,
+      "place": "Fira",
+      "author": "Tony Naccarato"
+    },
+    {
+      "file": "santorini-09.jpg",
+      "date": "2024-09-03T18:10:00",
+      "lat": 36.409042,
+      "lon": 25.440614,
+      "make": "Apple",
+      "model": "iPhone 13 Pro",
+      "bytes": 164905,
+      "place": "Fira",
+      "author": "Art Wave"
+    },
+    {
+      "file": "santorini-10.jpg",
+      "date": "2024-09-04T09:05:00",
+      "lat": 36.344691,
+      "lon": 25.416294,
+      "make": "Apple",
+      "model": "iPhone 13 Pro",
+      "bytes": 124729,
+      "place": "Akrotiri",
+      "author": "Isaak Dury"
+    },
+    {
+      "file": "santorini-11.jpg",
+      "date": "2024-09-04T11:55:00",
+      "lat": 36.346513,
+      "lon": 25.391839,
+      "make": "Apple",
+      "model": "iPhone 13 Pro",
+      "bytes": 155339,
+      "place": "Akrotiri",
+      "author": "May Pamintuan"
+    },
+    {
+      "file": "santorini-12.jpg",
+      "date": "2024-09-04T14:45:00",
+      "lat": 36.347942,
+      "lon": 25.389041,
+      "make": "Apple",
+      "model": "iPhone 13 Pro",
+      "bytes": 119572,
+      "place": "Akrotiri",
+      "author": "Ireneuilia"
+    },
+    {
+      "file": "santorini-13.jpg",
+      "date": "2024-09-04T17:40:00",
+      "lat": 36.356583,
+      "lon": 25.398484,
+      "make": "Apple",
+      "model": "iPhone 13 Pro",
+      "bytes": 61953,
+      "place": "Akrotiri",
+      "author": "Laurice Solomon"
+    },
+    {
+      "file": "lisbon-01.jpg",
+      "date": "2025-03-21T10:20:00",
+      "lat": 38.727399,
+      "lon": -9.141745,
+      "make": "FUJIFILM",
+      "model": "X-T4",
+      "bytes": 130874,
+      "place": "Lisboa",
+      "author": "Oleg Chursin"
+    },
+    {
+      "file": "lisbon-02.jpg",
+      "date": "2025-03-21T12:45:00",
+      "lat": 38.730853,
+      "lon": -9.14442,
+      "make": "FUJIFILM",
+      "model": "X-T4",
+      "bytes": 171353,
+      "place": "Lisboa",
+      "author": "Nicholas Swanson"
+    },
+    {
+      "file": "lisbon-03.jpg",
+      "date": "2025-03-21T15:30:00",
+      "lat": 38.732232,
+      "lon": -9.141171,
+      "make": "FUJIFILM",
+      "model": "X-T4",
+      "bytes": 165823,
+      "place": "Lisboa",
+      "author": "Alex"
+    },
+    {
+      "file": "lisbon-04.jpg",
+      "date": "2025-03-21T18:20:00",
+      "lat": 38.724397,
+      "lon": -9.132799,
+      "make": "FUJIFILM",
+      "model": "X-T4",
+      "bytes": 177163,
+      "place": "Lisboa",
+      "author": "Paul Evans"
+    },
+    {
+      "file": "lisbon-05.jpg",
+      "date": "2025-03-22T09:30:00",
+      "lat": 38.803354,
+      "lon": -9.400056,
+      "make": "FUJIFILM",
+      "model": "X-T4",
+      "bytes": 158696,
+      "place": "Sintra",
+      "author": "Barcelona"
+    },
+    {
+      "file": "lisbon-06.jpg",
+      "date": "2025-03-22T11:50:00",
+      "lat": 38.795315,
+      "lon": -9.379182,
+      "make": "FUJIFILM",
+      "model": "X-T4",
+      "bytes": 109671,
+      "place": "Sintra",
+      "author": "Jon Toney"
+    },
+    {
+      "file": "lisbon-07.jpg",
+      "date": "2025-03-22T14:40:00",
+      "lat": 38.803715,
+      "lon": -9.383715,
+      "make": "FUJIFILM",
+      "model": "X-T4",
+      "bytes": 79668,
+      "place": "Sintra",
+      "author": "Luke Chesser"
+    },
+    {
+      "file": "lisbon-08.jpg",
+      "date": "2025-03-22T17:55:00",
+      "lat": 38.791213,
+      "lon": -9.386416,
+      "make": "FUJIFILM",
+      "model": "X-T4",
+      "bytes": 26933,
+      "place": "Sintra",
+      "author": "Justin Leibow"
+    },
+    {
+      "file": "lisbon-09.jpg",
+      "date": "2025-03-23T10:00:00",
+      "lat": 38.691088,
+      "lon": -9.423639,
+      "make": "FUJIFILM",
+      "model": "X-T4",
+      "bytes": 255195,
+      "place": "Cascais",
+      "author": "Alexander Shustov"
+    },
+    {
+      "file": "lisbon-10.jpg",
+      "date": "2025-03-23T13:10:00",
+      "lat": 38.693615,
+      "lon": -9.410648,
+      "make": "FUJIFILM",
+      "model": "X-T4",
+      "bytes": 95501,
+      "place": "Cascais",
+      "author": "Cristian Moscoso"
+    },
+    {
+      "file": "lisbon-11.jpg",
+      "date": "2025-03-23T16:05:00",
+      "lat": 38.706844,
+      "lon": -9.406589,
+      "make": "FUJIFILM",
+      "model": "X-T4",
+      "bytes": 171553,
+      "place": "Cascais",
+      "author": "Tyler Wanlass"
+    },
+    {
+      "file": "lisbon-12.jpg",
+      "date": "2025-03-23T18:40:00",
+      "lat": 38.703932,
+      "lon": -9.43463,
+      "make": "FUJIFILM",
+      "model": "X-T4",
+      "bytes": 158126,
+      "place": "Cascais",
+      "author": "Dorothy Lin"
+    },
+    {
+      "file": "home-01.jpg",
+      "date": "2025-04-05T18:10:00",
+      "lat": 50.071149,
+      "lon": 14.440279,
+      "make": "Apple",
+      "model": "iPhone 13 Pro",
+      "bytes": 73902,
+      "place": "Praha",
+      "author": "Alejandro Escamilla"
+    },
+    {
+      "file": "home-02.jpg",
+      "date": "2025-04-05T19:05:00",
+      "lat": 50.078361,
+      "lon": 14.453365,
+      "make": "Apple",
+      "model": "iPhone 13 Pro",
+      "bytes": 67820,
+      "place": "Praha",
+      "author": "Alejandro Escamilla"
+    },
+    {
+      "file": "home-03.jpg",
+      "date": "2025-04-05T20:20:00",
+      "lat": 50.067013,
+      "lon": 14.451887,
+      "make": "Apple",
+      "model": "iPhone 13 Pro",
+      "bytes": 63529,
+      "place": "Praha",
+      "author": "Alejandro Escamilla"
+    },
+    {
+      "file": "home-04.jpg",
+      "date": "2025-04-18T17:45:00",
+      "lat": 50.073977,
+      "lon": 14.452617,
+      "make": "Apple",
+      "model": "iPhone 13 Pro",
+      "bytes": 110184,
+      "place": "Praha",
+      "author": "Alejandro Escamilla"
+    },
+    {
+      "file": "home-05.jpg",
+      "date": "2025-04-18T18:50:00",
+      "lat": 50.066456,
+      "lon": 14.440407,
+      "make": "Apple",
+      "model": "iPhone 13 Pro",
+      "bytes": 52985,
+      "place": "Praha",
+      "author": "Alejandro Escamilla"
+    },
+    {
+      "file": "home-06.jpg",
+      "date": "2025-04-18T19:40:00",
+      "lat": 50.08094,
+      "lon": 14.449171,
+      "make": "Apple",
+      "model": "iPhone 13 Pro",
+      "bytes": 106345,
+      "place": "Praha",
+      "author": "Vadim Sherbakov"
+    },
+    {
+      "file": "home-07.jpg",
+      "date": "2025-05-01T18:20:00",
+      "lat": 50.070529,
+      "lon": 14.434958,
+      "make": "Apple",
+      "model": "iPhone 13 Pro",
+      "bytes": 83313,
+      "place": "Praha",
+      "author": "Shyamanta Baruah"
+    },
+    {
+      "file": "home-08.jpg",
+      "date": "2025-05-01T19:30:00",
+      "lat": 50.084297,
+      "lon": 14.44224,
+      "make": "Apple",
+      "model": "iPhone 13 Pro",
+      "bytes": 108677,
+      "place": "Praha",
+      "author": "Ryan Mcguire"
+    },
+    {
+      "file": "home-09.jpg",
+      "date": "2025-05-01T20:05:00",
+      "lat": 50.078297,
+      "lon": 14.441014,
+      "make": "Apple",
+      "model": "iPhone 13 Pro",
+      "bytes": 57921,
+      "place": "Praha",
+      "author": "Vadim Sherbakov"
+    },
+    {
+      "file": "home-10.jpg",
+      "date": "2025-05-09T19:15:00",
+      "lat": 50.071599,
+      "lon": 14.436111,
+      "make": "Apple",
+      "model": "iPhone 13 Pro",
+      "bytes": 61696,
+      "place": "Praha",
+      "author": "Alexander Shustov"
+    },
+    {
+      "file": "home-11.jpg",
+      "date": "2025-05-09T20:10:00",
+      "lat": 50.073533,
+      "lon": 14.448492,
+      "make": "Apple",
+      "model": "iPhone 13 Pro",
+      "bytes": 115667,
+      "place": "Praha",
+      "author": "Rula Sibai"
+    },
+    {
+      "file": "home-12.jpg",
+      "date": "2025-05-17T17:55:00",
+      "lat": 50.071583,
+      "lon": 14.44253,
+      "make": "Apple",
+      "model": "iPhone 13 Pro",
+      "bytes": 56949,
+      "place": "Praha",
+      "author": "Sonja Langford"
+    },
+    {
+      "file": "home-13.jpg",
+      "date": "2025-05-17T19:05:00",
+      "lat": 50.080913,
+      "lon": 14.449883,
+      "make": "Apple",
+      "model": "iPhone 13 Pro",
+      "bytes": 227540,
+      "place": "Praha",
+      "author": "Aleks Dorohovich"
+    }
+  ],
+  "timeline": [
+    {
+      "kind": "visit",
+      "name": "Cortina d'Ampezzo",
+      "coords": {
+        "lat": 46.5405,
+        "lon": 12.1357
+      },
+      "start": 1718345700000,
+      "end": 1718382600000,
+      "semanticType": "UNKNOWN"
+    },
+    {
+      "kind": "visit",
+      "name": "Lago di Braies",
+      "coords": {
+        "lat": 46.6947,
+        "lon": 12.0856
+      },
+      "start": 1718435100000,
+      "end": 1718470800000,
+      "semanticType": "UNKNOWN"
+    },
+    {
+      "kind": "visit",
+      "name": "Tre Cime di Lavaredo",
+      "coords": {
+        "lat": 46.6186,
+        "lon": 12.3055
+      },
+      "start": 1718517000000,
+      "end": 1718556300000,
+      "semanticType": "UNKNOWN"
+    },
+    {
+      "kind": "visit",
+      "name": "Oia",
+      "coords": {
+        "lat": 36.4618,
+        "lon": 25.3753
+      },
+      "start": 1725259200000,
+      "end": 1725299700000,
+      "semanticType": "UNKNOWN"
+    },
+    {
+      "kind": "visit",
+      "name": "Fira",
+      "coords": {
+        "lat": 36.4162,
+        "lon": 25.4319
+      },
+      "start": 1725347700000,
+      "end": 1725383400000,
+      "semanticType": "UNKNOWN"
+    },
+    {
+      "kind": "visit",
+      "name": "Akrotiri",
+      "coords": {
+        "lat": 36.3516,
+        "lon": 25.4033
+      },
+      "start": 1725429900000,
+      "end": 1725468000000,
+      "semanticType": "UNKNOWN"
+    },
+    {
+      "kind": "visit",
+      "name": "Lisboa",
+      "coords": {
+        "lat": 38.7223,
+        "lon": -9.1393
+      },
+      "start": 1742545200000,
+      "end": 1742581200000,
+      "semanticType": "UNKNOWN"
+    },
+    {
+      "kind": "visit",
+      "name": "Sintra",
+      "coords": {
+        "lat": 38.7979,
+        "lon": -9.3885
+      },
+      "start": 1742628600000,
+      "end": 1742666100000,
+      "semanticType": "UNKNOWN"
+    },
+    {
+      "kind": "visit",
+      "name": "Cascais",
+      "coords": {
+        "lat": 38.6979,
+        "lon": -9.4215
+      },
+      "start": 1742716800000,
+      "end": 1742755200000,
+      "semanticType": "UNKNOWN"
+    },
+    {
+      "kind": "visit",
+      "name": "Praha",
+      "coords": {
+        "lat": 50.0755,
+        "lon": 14.4378
+      },
+      "start": 1743866700000,
+      "end": 1743879900000,
+      "semanticType": "HOME"
+    },
+    {
+      "kind": "visit",
+      "name": "Praha",
+      "coords": {
+        "lat": 50.0755,
+        "lon": 14.4378
+      },
+      "start": 1744988400000,
+      "end": 1745000700000,
+      "semanticType": "HOME"
+    },
+    {
+      "kind": "visit",
+      "name": "Praha",
+      "coords": {
+        "lat": 50.0755,
+        "lon": 14.4378
+      },
+      "start": 1746113700000,
+      "end": 1746125400000,
+      "semanticType": "HOME"
+    },
+    {
+      "kind": "visit",
+      "name": "Praha",
+      "coords": {
+        "lat": 50.0755,
+        "lon": 14.4378
+      },
+      "start": 1746808200000,
+      "end": 1746816900000,
+      "semanticType": "HOME"
+    },
+    {
+      "kind": "visit",
+      "name": "Praha",
+      "coords": {
+        "lat": 50.0755,
+        "lon": 14.4378
+      },
+      "start": 1747494600000,
+      "end": 1747504200000,
+      "semanticType": "HOME"
+    }
+  ]
+}

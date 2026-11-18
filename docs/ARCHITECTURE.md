@@ -12,7 +12,7 @@ app/                 PWA source (build-free React app)
   sitemap.xml        App and landing-page sitemap
   seo/               Landing CSS and 1200x630 social card
   manifest.webmanifest
-  sw.js              Service worker (app shell + CDN cache)
+  sw.js              Service worker (app shell + runtime cache)
   icons/             PWA icons
   vercel.json        Vercel headers for the app directory
 tools/               Checks, tests and asset generation

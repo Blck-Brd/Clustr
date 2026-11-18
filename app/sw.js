@@ -1,4 +1,4 @@
-const CACHE_NAME = 'clustr-shell-v29';
+const CACHE_NAME = 'clustr-shell-v31';
 const APP_SHELL = [
     './',
     './index.html',
@@ -7,6 +7,10 @@ const APP_SHELL = [
     './exif-worker.js',
     './geo-worker.js',
     './preview-worker.js',
+    './vendor/react.production.min.js',
+    './vendor/react-dom.production.min.js',
+    './vendor/babel.min.js',
+    './vendor/tailwind.js',
     './vendor/exifr.full.umd.js',
     './vendor/utif.js',
     './vendor/fflate.umd.js',
@@ -16,13 +20,6 @@ const APP_SHELL = [
     './icons/favicon.png',
     './icons/apple-touch-icon.png'
 ];
-
-const CACHEABLE_CDNS = new Set([
-    'unpkg.com',
-    'cdn.jsdelivr.net',
-    'cdn.tailwindcss.com',
-    'www.gstatic.com'
-]);
 
 self.addEventListener('install', (event) => {
     event.waitUntil(
@@ -50,22 +47,7 @@ self.addEventListener('fetch', (event) => {
 
     const url = new URL(request.url);
 
-    if (url.origin !== self.location.origin) {
-        if (!CACHEABLE_CDNS.has(url.hostname)) return;
-
-        event.respondWith((async () => {
-            const cache = await caches.open(CACHE_NAME);
-            const cached = await cache.match(request);
-            const network = fetch(request)
-                .then((response) => {
-                    if (response && response.ok) cache.put(request, response.clone());
-                    return response;
-                })
-                .catch(() => cached);
-            return cached || network;
-        })());
-        return;
-    }
+    if (url.origin !== self.location.origin) return;
 
     if (request.mode === 'navigate') {
         const isAppShell = url.pathname.endsWith('/') || url.pathname.endsWith('/index.html');
@@ -92,6 +74,21 @@ self.addEventListener('fetch', (event) => {
                     return response;
                 })
                 .catch(() => caches.match('./index.html'))
+        );
+        return;
+    }
+
+    if (url.pathname.endsWith('/demo/demo.json')) {
+        event.respondWith(
+            fetch(request)
+                .then((response) => {
+                    if (response && response.ok) {
+                        const copy = response.clone();
+                        caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+                    }
+                    return response;
+                })
+                .catch(() => caches.match(request))
         );
         return;
     }

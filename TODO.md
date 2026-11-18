@@ -80,4 +80,9 @@
 - [x] Mobile AI fallback to Gemini; Ollama and visual tags stay desktop-only.
 - [x] SEO setup: canonical/OG/Twitter, JSON-LD, robots, sitemap, English and Czech landing pages with FAQ schema, and a 1200x630 social card.
 - [x] SEO validation in `npm run check`; safe service-worker navigation for the landing pages.
+- [x] React, ReactDOM, Babel and Tailwind vendored into `app/vendor/`; the app no longer needs unpkg or the Tailwind CDN to boot and works offline from the first visit.
+- [x] Crawler-visible first paint inside `#root` (headline, pitch, feature bullets, `/about` link) and sitemap priorities that treat `/about` and `/o-clustr` as the content landing pages.
+- [x] One-click demo library: 50 bundled photos with invented EXIF and a synthetic Google Timeline, auto-grouped into trips/stops/home sessions, excluded from IndexedDB and settings persistence, with an exit banner.
+- [x] `npm run demo:build` regenerates the demo photos and manifest; credits live in `app/demo/CREDITS.md`.
+- [x] Cloud init skips the gstatic imports when no Firebase config is injected (removes the `require is not defined` console error on static hosting).
 

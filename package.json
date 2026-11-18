@@ -8,6 +8,7 @@
     "dev": "node tools/serve.mjs",
     "start": "node tools/serve.mjs",
     "check": "node tools/check-app.mjs && node tools/check-seo.mjs",
+    "demo:build": "node tools/build-demo.mjs",
     "test": "node tools/test-clustering.mjs && node tools/test-timeline-real.mjs && node tools/test-trip-fuzz.mjs && node tools/test-core-parity.mjs",
     "test:browser": "node tools/test-browser.mjs",
     "test:mobile": "node tools/test-mobile.mjs",

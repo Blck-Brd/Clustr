@@ -25,6 +25,12 @@ const requiredFiles = [
     'vendor/utif.js',
     'vendor/fflate.umd.js',
     'vendor/heic2any.min.js',
+    'vendor/react.production.min.js',
+    'vendor/react-dom.production.min.js',
+    'vendor/babel.min.js',
+    'vendor/tailwind.js',
+    'demo/demo.json',
+    'demo/CREDITS.md',
     'icons/icon-192.png',
     'icons/icon-512.png',
     'icons/favicon.png',
@@ -41,16 +47,17 @@ for (const file of requiredFiles) {
 }
 
 const html = fs.readFileSync(path.join(appDir, 'index.html'), 'utf8');
-const marker = '<script type="text/babel">';
-const start = html.indexOf(marker);
-const end = html.indexOf('</script>', start);
+const marker = '<script type="text/babel"';
+const tagStart = html.indexOf(marker);
+const contentStart = tagStart === -1 ? -1 : html.indexOf('>', tagStart);
+const end = contentStart === -1 ? -1 : html.indexOf('</script>', contentStart);
 
-if (start === -1 || end === -1) {
+if (tagStart === -1 || contentStart === -1 || end === -1) {
     console.error('Could not find the Babel application script in app/index.html');
     process.exit(1);
 }
 
-const code = html.slice(start + marker.length, end);
+const code = html.slice(contentStart + 1, end);
 
 let Babel;
 try {
@@ -88,6 +95,46 @@ for (const file of ['manifest.webmanifest', 'vercel.json']) {
         console.error(`${file} is not valid JSON:`, error.message);
         failed = true;
     }
+}
+
+try {
+    const demo = JSON.parse(fs.readFileSync(path.join(appDir, 'demo', 'demo.json'), 'utf8'));
+    const photos = Array.isArray(demo.photos) ? demo.photos : [];
+    const timeline = Array.isArray(demo.timeline) ? demo.timeline : [];
+
+    if (photos.length < 40 || photos.length > 60) {
+        console.error(`Demo library should have 40-60 photos, found ${photos.length}`);
+        failed = true;
+    }
+    if (timeline.length === 0) {
+        console.error('Demo library has no timeline entries');
+        failed = true;
+    }
+
+    for (const photo of photos) {
+        if (!photo.file || !photo.date || !Number.isFinite(photo.lat) || !Number.isFinite(photo.lon)) {
+            console.error(`Demo photo is missing metadata: ${JSON.stringify(photo.file)}`);
+            failed = true;
+            continue;
+        }
+        if (!fs.existsSync(path.join(appDir, 'demo', photo.file))) {
+            console.error(`Missing demo photo file: app/demo/${photo.file}`);
+            failed = true;
+        }
+    }
+
+    for (const visit of timeline) {
+        if (visit.kind !== 'visit' || !Number.isFinite(visit.start) || !Number.isFinite(visit.end)) {
+            console.error('Demo timeline entry is not a valid visit');
+            failed = true;
+            break;
+        }
+    }
+
+    console.log(`Demo library OK (${photos.length} photos, ${timeline.length} timeline visits)`);
+} catch (error) {
+    console.error('Demo library is not valid JSON:', error.message);
+    failed = true;
 }
 
 if (failed) process.exit(1);

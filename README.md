@@ -28,6 +28,8 @@ npm run dev
 
 This serves the app at **http://127.0.0.1:4173/** and exposes the root `Timeline.json` at `/Timeline.json`; when present, the app imports it automatically. The personal Timeline file stays ignored by Git.
 
+Nothing has to be uploaded to try the workflow: open the app and click **Try the demo (50 photos)**. The sample library ships with `app/demo/` — 50 bundled photos, invented dates/places/cameras and a matching synthetic Timeline — so clustering, heatmaps, folder editing and the export dialog can be exercised without touching a real camera folder. Demo data is never written to IndexedDB or local settings. Rebuild it with `npm run demo:build` (downloads from Lorem Picsum; see `app/demo/CREDITS.md`).
+
 ## Workflow
 
 1. **Upload Folder** — select a photo directory (JPG, PNG, WebP, HEIC/HEIF, NEF, CR2, ARW, DNG, ORF, RAF, TIF/TIFF).
@@ -99,7 +101,8 @@ On a phone the same app runs as an installed PWA or a normal browser tab. Use **
 - **Early-access notice** — a short first-visit popup plus a persistent “Zkušební provoz / Early access” badge in the sidebar.
 - **Feedback dialog** — the ✉️ button opens a dialog with the contact email, a copy button and an optional mailto link.
 - **Support dialog** — the floating coffee button opens a short support dialog with an optional Ko-fi link; a friendly reminder can appear after a while (at most once a day) and when an export starts.
-- **PWA** — installable app shell with a service worker and offline caching for the app and CDN libraries.
+- **PWA** — installable app shell with a service worker and offline caching for the app and vendor libraries.
+- **Demo library** — one click loads 50 bundled sample photos with invented EXIF and a synthetic Timeline, groups them into trips/stops/home sessions and never writes to your saved library.
 - **Mobile shell** — responsive drawer, camera-roll import, touch heatmap ranges and ZIP export with XMP sidecars.
 - **CZ / EN UI** — automatic default language plus persisted settings (models, home location, folders).
 
@@ -151,7 +154,9 @@ npm run icons         # regenerate PWA icons
 
 ```text
 app/                  PWA source and assets (app, core, about, o-clustr, seo, robots, sitemap)
-tools/                Checks, tests, dev server, icon and social-card generation
+app/vendor/           Vendored React, ReactDOM, Babel and Tailwind (no CDN at boot)
+app/demo/             Bundled 50-photo demo library, manifest and credits
+tools/                Checks, tests, dev server, demo builder, icon and social-card generation
 docs/                 Architecture, deployment, Timeline format, tutorials and DEVLOG
 ```
 
@@ -205,7 +210,7 @@ Clustr is completely free and ad-free. It was built at home by one person, witho
 
 ## Notes
 
-- The app loads React, Babel and Tailwind from CDNs, so the first load needs an internet connection. exifr, heic2any and UTIF are vendored for offline previews.
+- React, ReactDOM, Babel and Tailwind are vendored in `app/vendor/`, so the app boots without any third-party host and works offline from the first visit. The first load is still heavier because Babel compiles the JSX in the browser.
 - Babel transforms JSX in the browser; this is convenient for a build-free tool but slower than a pre-built bundle.
 - Mobile limitations: iOS may transcode HEIC on import, files cannot be relinked by re-selecting a folder after a reload, local Ollama is unreachable, and ZIP export is built in memory (~1 GB practical cap).
 - Phase 2 resets non-manual names to temporary `Trip N/Stop M - location`, `Home N` or `Event N` names. Manually renamed events (via the tree or bulk editor) are preserved.
