@@ -338,12 +338,42 @@ const findJpegStreams = (data, maxStreams = 5) => {
     return [...medium, ...large, ...small, ...unknown].slice(0, maxStreams);
 };
 
-const collectJpegCandidates = (buffer, candidates) => {
+const collectJpegCandidates = (buffer, candidates, seen) => {
     const data = new Uint8Array(buffer);
     findJpegStreams(data).forEach(({ offset, length }) => {
+        // Growing the read window re-scans the same bytes; keep the payload free
+        // of duplicate streams.
+        if (seen) {
+            const key = `${offset}:${length}`;
+            if (seen.has(key)) return;
+            seen.add(key);
+        }
         const copy = data.slice(offset, offset + length);
         candidates.push({ kind: 'bytes', buffer: copy.buffer, mime: 'image/jpeg' });
     });
+};
+
+// Camera raws are 25-30 MB each, but the embedded previews almost always sit in
+// the first megabyte or two. Reading the whole file per tile is what made big
+// imports (600+ NEFs) end up with no previews at all: the read alone blew the
+// main thread's per-preview timeout. So grow the window until a preview shows up.
+const PREVIEW_READ_STEPS = [1.5e6, 4e6, 12e6, Infinity];
+
+const readFileWindow = async (file, bytes) => {
+    const size = Number(file.size) || 0;
+    if (!Number.isFinite(bytes) || bytes >= size) {
+        return { buffer: await file.arrayBuffer(), complete: true };
+    }
+    return { buffer: await file.slice(0, bytes).arrayBuffer(), complete: false };
+};
+
+// Returns true when the window already produced a browser-decodable JPEG.
+const collectFromWindow = (buffer, candidates, canUseUtif, seen) => {
+    const before = candidates.length;
+    collectJpegCandidates(buffer, candidates, seen);
+    const foundJpeg = candidates.length > before;
+    if (canUseUtif) collectUtifCandidates(buffer, candidates);
+    return foundJpeg;
 };
 
 self.onmessage = async (event) => {
@@ -366,16 +396,26 @@ self.onmessage = async (event) => {
         } catch (error) {}
     }
 
-    // Only fall back when there is no usable embedded exifr preview. First look
-    // for a larger embedded JPEG preview, then use the guarded UTIF parser.
+    // Only fall back when there is no usable embedded exifr preview. Scan the
+    // smallest read window that yields something, then use the guarded UTIF
+    // parser on what we already have in memory.
     const ext = String(data.file.name || '').split('.').pop().toLowerCase();
     const canUseUtif = ['nef', 'cr2', 'arw', 'dng', 'raf', 'orf', 'tif', 'tiff'].includes(ext);
     if (!hasEmbeddedThumbnail) {
-        try {
-            const buffer = await data.file.arrayBuffer();
-            collectJpegCandidates(buffer, candidates);
-            if (canUseUtif) collectUtifCandidates(buffer, candidates);
-        } catch (error) {}
+        const seenStreams = new Set();
+        for (const step of PREVIEW_READ_STEPS) {
+            let frame;
+            try {
+                frame = await readFileWindow(data.file, step);
+            } catch (error) {
+                break;
+            }
+            // Small RGB thumbnails are kept as a fallback, so only a real JPEG
+            // preview stops the window from growing.
+            const foundJpeg = collectFromWindow(frame.buffer, candidates, canUseUtif, seenStreams);
+            if (foundJpeg || frame.complete) break;
+            self.postMessage({ type: 'progress', id: data.id, stage: 'grow', read: frame.buffer.byteLength });
+        }
     }
 
     const transfers = candidates.map((candidate) => candidate.buffer).filter(Boolean);

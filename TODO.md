@@ -85,4 +85,5 @@
 - [x] One-click demo library: 50 bundled photos with invented EXIF and a synthetic Google Timeline, auto-grouped into trips/stops/home sessions, excluded from IndexedDB and settings persistence, with an exit banner.
 - [x] `npm run demo:build` regenerates the demo photos and manifest; credits live in `app/demo/CREDITS.md`.
 - [x] Cloud init skips the gstatic imports when no Firebase config is injected (removes the `require is not defined` console error on static hosting).
+- [x] RAW previews survive large imports: the preview worker reads growing file windows (1.5/4/12 MB, then the whole file) instead of the full 25-30 MB raw, so 600+ NEF folders no longer time out and end up with "No preview" tiles. The main-thread budget is now an idle timeout (20 s, 120 s hard cap) that worker progress extends, and the queue timeout in the gallery grew to match.
 

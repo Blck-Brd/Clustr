@@ -679,7 +679,8 @@
 
             const processThumbnails = async (loadedFiles) => {
                 const CONCURRENCY_LIMIT = 8; 
-                const PREVIEW_TIMEOUT = 40000;
+                // Two worker passes (normal + rescan), each capped in core.js.
+                const PREVIEW_TIMEOUT = 150000;
                 const queue = [...loadedFiles];
                 const withTimeout = (promise, ms) => new Promise((resolve, reject) => {
                     const timer = setTimeout(() => reject(new Error('preview timeout')), ms);

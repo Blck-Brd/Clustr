@@ -2016,8 +2016,15 @@
             }
         };
 
-        // exifr/UTIF run in a worker with a hard timeout, so a bad raw file can
-        // never leave a tile spinning forever or block the UI.
+        // exifr/UTIF run in a worker with a timeout, so a bad raw file can never
+        // leave a tile spinning forever or block the UI. The timeout is an idle
+        // budget that the worker can extend by reporting progress: a cold,
+        // virus-scanned disk can take seconds just to hand over the first bytes
+        // of a 27 MB raw, and killing the job there is how whole imports ended
+        // up with "no preview" tiles.
+        const PREVIEW_IDLE_TIMEOUT = 20000;
+        const PREVIEW_MAX_TIMEOUT = 60000;
+
         const previewFromWorker = (file, options = {}) => new Promise((resolve) => {
             if (typeof Worker === 'undefined') {
                 resolve({ url: null, hadCandidates: false });
@@ -2025,24 +2032,40 @@
             }
             let worker;
             try {
-                worker = new Worker('preview-worker.js?v=5');
+                worker = new Worker('preview-worker.js?v=6');
             } catch (e) {
                 resolve({ url: null, hadCandidates: false });
                 return;
             }
             let settled = false;
             let timer = null;
+            let hardTimer = null;
             const finish = (value) => {
                 if (settled) return;
                 settled = true;
                 if (timer) clearTimeout(timer);
+                if (hardTimer) clearTimeout(hardTimer);
                 try { worker.terminate(); } catch (e) {}
                 resolve(value);
             };
-            timer = setTimeout(() => finish({ url: null, hadCandidates: false }), 15000);
+            const armIdleTimer = () => {
+                if (settled) return;
+                if (timer) clearTimeout(timer);
+                timer = setTimeout(() => finish({ url: null, hadCandidates: false }), PREVIEW_IDLE_TIMEOUT);
+            };
+            armIdleTimer();
+            hardTimer = setTimeout(() => finish({ url: null, hadCandidates: false }), PREVIEW_MAX_TIMEOUT);
             worker.onmessage = async (event) => {
                 const data = event.data || {};
-                if (data.type !== 'result' || settled) return;
+                if (settled) return;
+                if (data.type === 'progress') {
+                    armIdleTimer();
+                    return;
+                }
+                if (data.type !== 'result') return;
+                // The worker is done; only the decode below can still take time,
+                // and the hard cap covers that.
+                if (timer) clearTimeout(timer);
                 let url = null;
                 for (const candidate of data.candidates || []) {
                     if (!candidate || !candidate.buffer) continue;
