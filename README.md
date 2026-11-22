@@ -97,6 +97,7 @@ On a phone the same app runs as an installed PWA or a normal browser tab. Use **
 ### Export and app
 
 - **Lightroom export** — Windows-safe folder/file names, duplicate handling, and a progress dialog. XMP sidecars write `dc:subject` keywords, `lr:hierarchicalSubject` folder paths, `photoshop:City` and `Iptc4xmpCore:Location`.
+- **Lightroom collections** — every export also writes `clustr-manifest.json` (trips → stops → files) plus a bundled Lightroom Classic plug-in in `Lightroom/Clustr.lrplugin` (also downloadable as `Clustr.lrplugin.zip` from the export dialog). Install it once, then *Library → Plug-in Extras → "Create collections from Clustr export…"* rebuilds the Clustr tree as collection sets and collections, matched by file name and relative path. Safe to re-run; it adds missing photos and skips duplicates.
 - **Guided tour** — first-run spotlight walkthrough of the upload, Timeline, phases, folder tree and export; skippable and replayable from the help dialog.
 - **Early-access notice** — a short first-visit popup plus a persistent “Zkušební provoz / Early access” badge in the sidebar.
 - **Feedback dialog** — the ✉️ button opens a dialog with the contact email, a copy button and an optional mailto link.

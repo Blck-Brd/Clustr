@@ -138,6 +138,91 @@
             return candidate;
         };
 
+        // Lightroom Classic cannot build collections from imported folders, so an
+        // export also ships clustr-manifest.json describing the same trip / stop
+        // tree. The bundled Clustr Collections plug-in turns it into collection
+        // sets and collections keyed by file name plus relative path.
+        const ALL_PHOTOS_COLLECTION = 'All photos';
+
+        const buildLightroomManifest = (entries, options = {}) => {
+            const now = options.generatedAt ? new Date(options.generatedAt) : new Date();
+            const valid = !Number.isNaN(now.getTime());
+            const generatedAt = valid ? now.toISOString() : new Date().toISOString();
+            const stamp = generatedAt.slice(0, 10);
+
+            const sets = [];
+            const setKeys = new Set();
+            const collections = new Map();
+            const photos = [];
+
+            const addSet = (parts) => {
+                const key = parts.join('/').toLowerCase();
+                if (setKeys.has(key)) return;
+                setKeys.add(key);
+                sets.push(parts);
+            };
+
+            const addToCollection = (parts, entry) => {
+                const key = parts.join('/').toLowerCase();
+                if (!collections.has(key)) collections.set(key, { path: parts, photos: [] });
+                collections.get(key).photos.push({
+                    name: entry.fileName,
+                    path: [...entry.folderParts, entry.fileName].join('/')
+                });
+            };
+
+            entries.forEach((entry) => {
+                const parts = entry.folderParts || [];
+                const photo = entry.photo || {};
+                if (parts.length === 0) return;
+
+                if (parts.length >= 2) {
+                    addSet([parts[0]]);
+                    addToCollection(parts, entry);
+                    addToCollection([parts[0], ALL_PHOTOS_COLLECTION], entry);
+                } else {
+                    addToCollection(parts, entry);
+                }
+
+                const date = photo.date instanceof Date && !Number.isNaN(photo.date.getTime())
+                    ? photo.date.toISOString()
+                    : undefined;
+                photos.push({
+                    name: entry.fileName,
+                    path: [...parts, entry.fileName].join('/'),
+                    date,
+                    event: photo.aiData?.event_name || undefined,
+                    location: photo.hardData?.location || undefined,
+                    keywords: Array.isArray(photo.aiData?.tags) && photo.aiData.tags.length > 0
+                        ? [...photo.aiData.tags]
+                        : undefined
+                });
+            });
+
+            // A trip with a single stop does not need an extra "All photos" copy.
+            const stopCounts = new Map();
+            collections.forEach((collection) => {
+                if (collection.path.length !== 2 || collection.path[1] === ALL_PHOTOS_COLLECTION) return;
+                const tripKey = collection.path[0].toLowerCase();
+                stopCounts.set(tripKey, (stopCounts.get(tripKey) || 0) + 1);
+            });
+            const orderedCollections = [...collections.values()].filter((collection) => {
+                if (collection.path.length !== 2 || collection.path[1] !== ALL_PHOTOS_COLLECTION) return true;
+                return (stopCounts.get(collection.path[0].toLowerCase()) || 0) > 1;
+            });
+
+            return {
+                schema: 'clustr.export/1',
+                generator: 'Clustr',
+                generatedAt,
+                root: options.rootName || `Clustr ${stamp}`,
+                photoCount: photos.length,
+                sets,
+                collections: orderedCollections,
+                photos
+            };
+        };
+
         // Agresivnější záchrana poškozeného JSONu z AI
         const safeJsonParse = (str) => {
             if (!str) return null;

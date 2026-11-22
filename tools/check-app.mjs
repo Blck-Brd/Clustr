@@ -21,6 +21,8 @@ const requiredFiles = [
     'exif-worker.js',
     'geo-worker.js',
     'preview-worker.js',
+    'lightroom/Clustr.lrplugin/Info.lua',
+    'lightroom/Clustr.lrplugin/ImportCollections.lua',
     'vendor/exifr.full.umd.js',
     'vendor/utif.js',
     'vendor/fflate.umd.js',
@@ -83,6 +85,42 @@ for (const file of ['core.js', 'sw.js', 'exif-worker.js', 'geo-worker.js', 'prev
         console.log(`${file} is syntactically valid`);
     } catch (error) {
         console.error(`${file} syntax error:`, error.message);
+        failed = true;
+    }
+}
+
+let luaparse = null;
+try {
+    luaparse = require('luaparse');
+} catch {
+    console.warn('luaparse missing, skipping the Lightroom plug-in check (npm install)');
+}
+
+if (luaparse) {
+    for (const file of ['lightroom/Clustr.lrplugin/Info.lua', 'lightroom/Clustr.lrplugin/ImportCollections.lua']) {
+        try {
+            luaparse.parse(fs.readFileSync(path.join(appDir, file), 'utf8'), { luaVersion: '5.1' });
+            console.log(`${file} is syntactically valid Lua 5.1`);
+        } catch (error) {
+            console.error(`${file} Lua syntax error:`, error.message);
+            failed = true;
+        }
+    }
+
+    // The plug-in and core.js must agree on the manifest schema.
+    const coreSource = fs.readFileSync(path.join(appDir, 'core.js'), 'utf8');
+    const pluginSource = fs.readFileSync(path.join(appDir, 'lightroom/Clustr.lrplugin/ImportCollections.lua'), 'utf8');
+    const coreSchema = coreSource.match(/schema: '(clustr\.export\/\d+)'/);
+    const pluginSchema = pluginSource.match(/schema ~= '(clustr\.export\/\d+)'/);
+    if (!coreSchema || !pluginSchema || coreSchema[1] !== pluginSchema[1]) {
+        console.error('Lightroom manifest schema mismatch between core.js and the plug-in');
+        failed = true;
+    } else {
+        console.log(`Lightroom manifest schema ${coreSchema[1]} matches the plug-in`);
+    }
+
+    if (!html.includes('buildLightroomManifest')) {
+        console.error('app/index.html does not write the Lightroom manifest on export');
         failed = true;
     }
 }

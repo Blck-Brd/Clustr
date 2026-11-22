@@ -163,6 +163,10 @@ try {
     assert.ok(archiveFiles.some((name) => /\.xmp$/i.test(name)), 'ZIP should contain XMP sidecars');
     const xmpFile = archiveFiles.find((name) => /\.xmp$/i.test(name));
     assert.ok(Buffer.from(archive[xmpFile]).toString('utf8').includes('<dc:subject>'), 'XMP should contain keywords');
+    assert.ok(archive['clustr-manifest.json'], 'ZIP should contain the Lightroom manifest');
+    assert.equal(JSON.parse(Buffer.from(archive['clustr-manifest.json']).toString('utf8')).schema, 'clustr.export/1', 'ZIP manifest should use the plug-in schema');
+    assert.ok(archive['Lightroom/Clustr.lrplugin/Info.lua'], 'ZIP should contain the Lightroom plug-in');
+    assert.ok(archive['Lightroom/README.txt'], 'ZIP should explain the plug-in install');
     console.log(`Mobile ZIP export: OK (${archiveFiles.length} files)`);
 
     await menuButton.click();

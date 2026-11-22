@@ -1,4 +1,4 @@
-const CACHE_NAME = 'clustr-shell-v32';
+const CACHE_NAME = 'clustr-shell-v33';
 const APP_SHELL = [
     './',
     './index.html',
@@ -7,6 +7,8 @@ const APP_SHELL = [
     './exif-worker.js',
     './geo-worker.js',
     './preview-worker.js',
+    './lightroom/Clustr.lrplugin/Info.lua',
+    './lightroom/Clustr.lrplugin/ImportCollections.lua',
     './vendor/react.production.min.js',
     './vendor/react-dom.production.min.js',
     './vendor/babel.min.js',

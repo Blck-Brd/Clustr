@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { unzipSync } from 'fflate';
 import { chromium } from 'playwright';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -243,20 +244,26 @@ try {
 
     // Export: fake the File System Access API and verify progress + Lightroom XMP.
     await page.evaluate(() => {
-        window.__xmp = [];
-        const dir = {
-            getDirectoryHandle: async () => dir,
-            getFileHandle: async () => ({
-                createWritable: async () => ({
-                    write: async (data) => {
-                        if (typeof data === 'string') window.__xmp.push(data);
-                        await new Promise((resolve) => setTimeout(resolve, 6));
-                    },
-                    close: async () => {}
+        window.__exportWrites = [];
+        const makeDir = (prefix) => {
+            const dir = {
+                getDirectoryHandle: async (name) => makeDir(`${prefix}${name}/`),
+                getFileHandle: async (name) => ({
+                    createWritable: async () => ({
+                        write: async (data) => {
+                            window.__exportWrites.push({
+                                path: `${prefix}${name}`,
+                                text: typeof data === 'string' ? data : null
+                            });
+                            await new Promise((resolve) => setTimeout(resolve, 4));
+                        },
+                        close: async () => {}
+                    })
                 })
-            })
+            };
+            return dir;
         };
-        window.showDirectoryPicker = async () => dir;
+        window.showDirectoryPicker = async () => makeDir('');
     });
     await page.locator('[data-export-open]').click();
     await page.locator('[data-export-run]').click();
@@ -273,12 +280,49 @@ try {
     assert.ok(await supportModal.getByRole('link', { name: /To podporuji|I support that|Koupit mi kávu|Buy me a coffee/ }).isVisible(), 'Support modal should show the CTA');
     await supportModal.getByRole('button', { name: /Maybe later|Možná později/ }).click();
     await supportModal.waitFor({ state: 'detached', timeout: 5000 });
-    const xmpSidecars = await page.evaluate(() => window.__xmp);
+
+    const exportWrites = await page.evaluate(() => window.__exportWrites);
+    const xmpSidecars = exportWrites.filter((write) => write.path.endsWith('.xmp'));
     assert.ok(xmpSidecars.length > 0, 'XMP sidecars should be written');
-    assert.ok(xmpSidecars[0].includes('<dc:subject>'), 'XMP should contain keywords');
-    assert.ok(xmpSidecars[0].includes('<lr:hierarchicalSubject>'), 'XMP should contain the Lightroom hierarchy');
-    assert.ok(xmpSidecars[0].includes('<Iptc4xmpCore:Location>'), 'XMP should contain the Lightroom location field');
-    console.log('Export progress + Lightroom XMP: OK');
+    assert.ok(xmpSidecars[0].text.includes('<dc:subject>'), 'XMP should contain keywords');
+    assert.ok(xmpSidecars[0].text.includes('<lr:hierarchicalSubject>'), 'XMP should contain the Lightroom hierarchy');
+    assert.ok(xmpSidecars[0].text.includes('<Iptc4xmpCore:Location>'), 'XMP should contain the Lightroom location field');
+
+    const manifestWrite = exportWrites.find((write) => write.path === 'clustr-manifest.json');
+    assert.ok(manifestWrite, 'Export should write a clustr-manifest.json for Lightroom');
+    const manifest = JSON.parse(manifestWrite.text);
+    assert.equal(manifest.schema, 'clustr.export/1', 'Manifest schema should match the plug-in');
+    assert.equal(manifest.photoCount, xmpSidecars.length, 'Manifest should describe every exported photo');
+    assert.ok(manifest.collections.length > 0, 'Manifest should describe at least one collection');
+    assert.ok(manifest.collections.every((collection) => collection.path.length > 0 && collection.photos.length > 0), 'Manifest collections should be usable');
+
+    const pluginFiles = exportWrites.filter((write) => write.path.startsWith('Lightroom/Clustr.lrplugin/'));
+    assert.equal(pluginFiles.length, 2, 'Export should ship both plug-in files');
+    assert.ok(pluginFiles.some((write) => write.path.endsWith('Info.lua') && write.text.includes('LrPluginName')), 'Plug-in Info.lua should be bundled');
+    assert.ok(pluginFiles.some((write) => write.path.endsWith('ImportCollections.lua') && write.text.includes('LrDialogs')), 'Plug-in script should be bundled');
+    assert.ok(exportWrites.some((write) => write.path === 'Lightroom/README.txt'), 'Export should explain the plug-in install');
+    console.log('Export progress + Lightroom XMP + manifest/plug-in: OK');
+
+    // The export dialog also hands out the plug-in as a .lrplugin ZIP.
+    await page.locator('[data-export-open]').click();
+    const exportDialog = page.locator('div.fixed.inset-0').filter({ has: page.locator('[data-export-run]') });
+    const downloadPromise = page.waitForEvent('download', { timeout: 20000 });
+    await exportDialog.locator('[data-download-lightroom-plugin]').click();
+    const download = await downloadPromise;
+    assert.equal(download.suggestedFilename(), 'Clustr.lrplugin.zip', 'Plug-in download should be named after the plug-in');
+    const downloadPath = await download.path();
+    const pluginArchive = unzipSync(new Uint8Array(fs.readFileSync(downloadPath)));
+    const pluginArchiveFiles = Object.keys(pluginArchive);
+    assert.ok(pluginArchiveFiles.includes('Clustr.lrplugin/Info.lua'), `Plug-in ZIP should contain Info.lua: ${pluginArchiveFiles.join(', ')}`);
+    assert.ok(pluginArchiveFiles.includes('Clustr.lrplugin/ImportCollections.lua'), 'Plug-in ZIP should contain the script');
+    assert.ok(pluginArchiveFiles.includes('Clustr.lrplugin/README.txt'), 'Plug-in ZIP should contain the readme');
+    assert.ok(
+        Buffer.from(pluginArchive['Clustr.lrplugin/ImportCollections.lua']).toString('utf8').includes('clustr.export/1'),
+        'Downloaded plug-in should understand the current manifest schema'
+    );
+    const exportDialogForCancel = page.locator('div.fixed.inset-0').filter({ has: page.locator('[data-download-lightroom-plugin]') });
+    await exportDialogForCancel.last().getByRole('button', { name: /Zrušit|Cancel/ }).click();
+    console.log('Lightroom plug-in download: OK');
 
     // Clean state: reset clears photos/folders and skips the Timeline auto-load once.
     page.once('dialog', (dialog) => dialog.accept());
