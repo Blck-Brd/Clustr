@@ -9,6 +9,7 @@
     "start": "node tools/serve.mjs",
     "check": "node tools/check-app.mjs && node tools/check-seo.mjs",
     "demo:build": "node tools/build-demo.mjs",
+    "plugin:zip": "node tools/build-plugin-zip.mjs",
     "test": "node tools/test-clustering.mjs && node tools/test-timeline-real.mjs && node tools/test-trip-fuzz.mjs && node tools/test-core-parity.mjs && node tools/test-lightroom-manifest.mjs",
     "test:browser": "node tools/test-browser.mjs",
     "test:mobile": "node tools/test-mobile.mjs",

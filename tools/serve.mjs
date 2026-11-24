@@ -20,7 +20,9 @@ const contentTypes = {
     '.jpg': 'image/jpeg',
     '.jpeg': 'image/jpeg',
     '.svg': 'image/svg+xml',
-    '.ico': 'image/x-icon'
+    '.ico': 'image/x-icon',
+    '.lua': 'text/plain; charset=utf-8',
+    '.zip': 'application/zip'
 };
 
 const sendFile = (res, filePath) => {

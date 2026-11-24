@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { unzipSync } from 'fflate';
 
 const require = createRequire(import.meta.url);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -23,6 +24,8 @@ const requiredFiles = [
     'preview-worker.js',
     'lightroom/Clustr.lrplugin/Info.lua',
     'lightroom/Clustr.lrplugin/ImportCollections.lua',
+    'lightroom/Clustr.lrplugin/README.txt',
+    'lightroom/Clustr.lrplugin.zip',
     'vendor/exifr.full.umd.js',
     'vendor/utif.js',
     'vendor/fflate.umd.js',
@@ -123,6 +126,28 @@ if (luaparse) {
         console.error('app/index.html does not write the Lightroom manifest on export');
         failed = true;
     }
+}
+
+// The downloadable plug-in ZIP is a plain static file, so it must match the
+// sources it was built from. Regenerate with: npm run plugin:zip
+try {
+    const zipPath = path.join(appDir, 'lightroom/Clustr.lrplugin.zip');
+    const archive = unzipSync(fs.readFileSync(zipPath));
+    let zipMatches = true;
+    for (const name of ['Info.lua', 'ImportCollections.lua', 'README.txt']) {
+        const entry = archive[`Clustr.lrplugin/${name}`];
+        // Compare text with normalized line endings so CRLF checkouts still pass.
+        const source = fs.readFileSync(path.join(appDir, 'lightroom/Clustr.lrplugin', name), 'utf8');
+        if (!entry || Buffer.from(entry).toString('utf8').replace(/\r\n/g, '\n') !== source.replace(/\r\n/g, '\n')) {
+            console.error(`lightroom/Clustr.lrplugin.zip is out of date (${name}). Run: npm run plugin:zip`);
+            zipMatches = false;
+            failed = true;
+        }
+    }
+    if (zipMatches) console.log('Lightroom plug-in ZIP matches its sources');
+} catch (error) {
+    console.error('Lightroom plug-in ZIP is not readable:', error.message);
+    failed = true;
 }
 
 for (const file of ['manifest.webmanifest', 'vercel.json']) {

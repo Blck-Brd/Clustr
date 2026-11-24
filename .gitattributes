@@ -1,0 +1,3 @@
+# The Lightroom plug-in ZIP is checked in and compared byte-for-byte with its
+# sources, so keep those text files on LF even on Windows checkouts.
+app/lightroom/Clustr.lrplugin/* text eol=lf

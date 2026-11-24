@@ -2176,72 +2176,30 @@ DATA: ${JSON.stringify(data)}`;
             // EXPORT NA DISK VČETNĚ ADOBE LIGHTROOM XMP SIDECAR SOUBORŮ
             const LIGHTROOM_PLUGIN_DIR = 'lightroom/Clustr.lrplugin';
             const LIGHTROOM_PLUGIN_FILES = ['Info.lua', 'ImportCollections.lua'];
-            const LIGHTROOM_README = [
-                'Clustr -> Lightroom Classic collections',
-                '',
-                '1. Lightroom Classic: File > Plug-in Manager > Add...',
-                '2. Pick the Clustr.lrplugin folder that sits next to this readme.',
-                '3. Import the photo folders from this export as usual.',
-                '4. Library > Plug-in Extras > "Create collections from Clustr export..."',
-                '   and choose clustr-manifest.json in the export root.',
-                '',
-                'Re-running step 4 is safe: collection sets and collections are reused,',
-                'missing photos are added and photos already in a collection are skipped.',
-                'The plug-in matches photos by file name plus relative path, so it works',
-                'for raw files and JPEG exports alike.',
-                '',
-                'Clustr -> kolekce v Lightroomu Classic',
-                '1. Lightroom Classic: Soubor > Správce doplňků > Přidat...',
-                '2. Vyberte složku Clustr.lrplugin vedle tohoto souboru.',
-                '3. Naimportujte složky s fotkami z tohoto exportu.',
-                '4. Knihovna > Doplňky > "Create collections from Clustr export..."',
-                '   a vyberte clustr-manifest.json v kořeni exportu.',
-                'Krok 4 můžete klidně spustit znovu: sady a kolekce se využijí,',
-                'chybějící fotky se doplní a existující se přeskočí.',
-                ''
-            ].join('\n');
+            // Pre-built download so the link works without JS or a ZIP library.
+            const LIGHTROOM_PLUGIN_ZIP = 'lightroom/Clustr.lrplugin.zip';
+
+            const fetchTextAsset = async (path) => {
+                try {
+                    const response = await fetch(path);
+                    if (!response.ok) return '';
+                    return await response.text();
+                } catch (e) {
+                    return '';
+                }
+            };
 
             // The plug-in ships with the app so an export is self-contained.
             const loadLightroomPlugin = async () => {
                 const files = [];
                 for (const name of LIGHTROOM_PLUGIN_FILES) {
-                    try {
-                        const response = await fetch(`${LIGHTROOM_PLUGIN_DIR}/${name}`);
-                        if (!response.ok) continue;
-                        files.push({ name, text: await response.text() });
-                    } catch (e) {}
+                    const text = await fetchTextAsset(`${LIGHTROOM_PLUGIN_DIR}/${name}`);
+                    if (text) files.push({ name, text });
                 }
                 return files;
             };
 
-            // Lightroom wants a .lrplugin folder, so hand out a ZIP of it.
-            const downloadLightroomPlugin = async () => {
-                try {
-                    const files = await loadLightroomPlugin();
-                    if (files.length === 0) throw new Error('plugin files unavailable');
-                    const fflate = window.fflate;
-                    if (!fflate?.zipSync) throw new Error('ZIP support is not available');
-                    const tree = {};
-                    files.forEach((file) => {
-                        tree[`Clustr.lrplugin/${file.name}`] = new TextEncoder().encode(file.text);
-                    });
-                    tree['Clustr.lrplugin/README.txt'] = new TextEncoder().encode(LIGHTROOM_README);
-                    const archive = fflate.zipSync(tree, { level: 6 });
-                    const url = URL.createObjectURL(new Blob([archive], { type: 'application/zip' }));
-                    const link = document.createElement('a');
-                    link.href = url;
-                    link.download = 'Clustr.lrplugin.zip';
-                    document.body.appendChild(link);
-                    link.click();
-                    link.remove();
-                    window.setTimeout(() => URL.revokeObjectURL(url), 60000);
-                } catch (e) {
-                    setMessage({
-                        title: t('Stažení doplňku selhalo', 'Plug-in download failed'),
-                        text: t('Zkuste to prosím znovu, nebo doplněk vezměte ze složky Lightroom ve vašem exportu.', 'Try again, or use the plug-in from the Lightroom folder in your export.')
-                    });
-                }
-            };
+            const loadLightroomReadme = () => fetchTextAsset(`${LIGHTROOM_PLUGIN_DIR}/README.txt`);
 
             const buildExportEntries = (exportPhotos) => {
                 const usedNamesByFolder = new Map();
@@ -2371,7 +2329,7 @@ DATA: ${JSON.stringify(data)}`;
                             }
                             const readmeHandle = await lightroomDir.getFileHandle('README.txt', { create: true });
                             const readmeWritable = await readmeHandle.createWritable();
-                            await readmeWritable.write(LIGHTROOM_README);
+                            await readmeWritable.write(await loadLightroomReadme());
                             await readmeWritable.close();
                         }
                     }
@@ -2442,9 +2400,10 @@ DATA: ${JSON.stringify(data)}`;
                                         pluginEntry.push(new TextEncoder().encode(pluginFile.text), true);
                                     }
                                     if (pluginFiles.length > 0) {
+                                        const readmeText = await loadLightroomReadme();
                                         const readmeEntry = new fflate.ZipPassThrough('Lightroom/README.txt');
                                         zip.add(readmeEntry);
-                                        readmeEntry.push(new TextEncoder().encode(LIGHTROOM_README), true);
+                                        readmeEntry.push(new TextEncoder().encode(readmeText), true);
                                     }
                                 }
 
@@ -3103,6 +3062,10 @@ DATA: ${JSON.stringify(data)}`;
                         target: '[data-tour="export"]',
                         title: tr('Export s průběhem', 'Export with progress'),
                         body: tr('Vyberte cílovou složku. Uvidíte ukazatel průběhu a Clustr zapíše fotky i XMP sidecary pro Lightroom.', 'Choose a destination. You will see a progress bar while Clustr writes photos and Lightroom XMP sidecars.')
+                    },
+                    {
+                        title: tr('Kolekce v Lightroomu', 'Lightroom collections'),
+                        body: tr('Export přibalí doplněk a clustr-manifest.json. Po importu fotek doplněk jednou přidejte v Soubor → Správce doplňků → Přidat a pak spusťte Knihovna → Doplňky → „Create collections from Clustr export…“. Podrobnosti najdete v nápovědě.', 'Every export ships the plug-in and clustr-manifest.json. After importing the photos, add the plug-in once via File → Plug-in Manager → Add, then run Library → Plug-in Extras → “Create collections from Clustr export…”. Details are in the help dialog.')
                     },
                     {
                         target: '[data-tour="help"]',
@@ -3951,12 +3914,13 @@ DATA: ${JSON.stringify(data)}`;
                                         </div>
                                         <div className="mt-4 border-t border-slate-800 pt-3 text-[11px] leading-relaxed text-slate-500">
                                             {t('Kolekce v Lightroomu Classic: ', 'Lightroom Classic collections: ')}
-                                            <button
+                                            <a
                                                 data-download-lightroom-plugin
-                                                onClick={downloadLightroomPlugin}
+                                                href={LIGHTROOM_PLUGIN_ZIP}
+                                                download="Clustr.lrplugin.zip"
                                                 className="text-cyan-400 underline hover:text-cyan-300"
-                                            >{t('stáhněte doplněk (.zip)', 'download the plug-in (.zip)')}</button>
-                                            {t(', rozbalte a přidejte přes Správce doplňků.', ', unzip it and add it via Plug-in Manager.')}
+                                            >{t('stáhněte doplněk (.zip)', 'download the plug-in (.zip)')}</a>
+                                            {t(', rozbalte a složku jednou přidejte v Soubor → Správce doplňků → Přidat.', ', unzip it and add the folder once in File → Plug-in Manager → Add.')}
                                         </div>
                                     </>
                                 )}
@@ -3996,19 +3960,27 @@ DATA: ${JSON.stringify(data)}`;
                                     <section>
                                         <h3 className="text-lg font-bold text-white mb-2">{t('4. Timeline a export do Lightroomu', '4. Timeline and Lightroom Export')}</h3>
                                         <p>{t('Timeline JSON přiřadí lokace podle času z EXIF. Export uloží složky a XMP soubory; v Lightroomu použijte Import → Include Subfolders → Add.', 'Timeline JSON assigns locations based on EXIF time. Export writes folders and XMP files; in Lightroom use Import → Include Subfolders → Add.')}</p>
-                                        <p className="mt-2">
-                                            {t('Kolekce v Lightroomu Classic: export obsahuje clustr-manifest.json a doplněk ', 'Lightroom Classic collections: the export includes clustr-manifest.json plus a plug-in ')}
-                                            (<button
+                                    </section>
+
+                                    <section data-help-lightroom-plugin>
+                                        <h3 className="text-lg font-bold text-white mb-2">{t('5. Kolekce v Lightroomu Classic (doplněk)', '5. Lightroom Classic Collections (plug-in)')}</h3>
+                                        <p>{t('Export s sebou přibalí ', 'Every export ships ')}<code className="text-cyan-300">clustr-manifest.json</code>{t(' a doplněk ve složce ', ' plus the plug-in in the ')}<code className="text-cyan-300">Lightroom/Clustr.lrplugin</code>{t('. Doplněk stačí nainstalovat jednou:', ' folder. Install the plug-in once:')}</p>
+                                        <ol className="mt-2 list-decimal space-y-1 pl-5">
+                                            <li>{t('Stáhněte ', 'Download ')}<a
                                                 data-download-lightroom-plugin
-                                                onClick={downloadLightroomPlugin}
+                                                href={LIGHTROOM_PLUGIN_ZIP}
+                                                download="Clustr.lrplugin.zip"
                                                 className="text-cyan-400 underline hover:text-cyan-300"
-                                            >{t('stáhnout .zip', 'download .zip')}</button>)
-                                            {t('. Po importu fotek spusťte Knihovna → Doplňky → „Create collections from Clustr export…“.', '. After importing the photos run Library → Plug-in Extras → “Create collections from Clustr export…”.')}
-                                        </p>
+                                            >Clustr.lrplugin.zip</a>{t(' a rozbalte ho (nebo použijte složku Lightroom ve vašem exportu).', ' and unzip it (or use the Lightroom folder in your export).')}</li>
+                                            <li>{t('Lightroom Classic → Soubor → Správce doplňků → Přidat… a vyberte rozbalenou složku Clustr.lrplugin. Potvrďte Hotovo.', 'Lightroom Classic → File → Plug-in Manager → Add… and pick the unzipped Clustr.lrplugin folder. Confirm with Done.')}</li>
+                                            <li>{t('Naimportujte fotky z exportu: Import → Zahrnout podložky → Přidat.', 'Import the exported photos: Import → Include Subfolders → Add.')}</li>
+                                            <li>{t('Knihovna → Doplňky → „Create collections from Clustr export…“ a vyberte clustr-manifest.json v kořeni exportu.', 'Library → Plug-in Extras → “Create collections from Clustr export…” and choose clustr-manifest.json in the export root.')}</li>
+                                        </ol>
+                                        <p className="mt-2">{t('Vznikne sada kolekcí pro každou cestu, kolekce pro zastávky a „All photos“ pro celou cestu. Opakované spuštění je bezpečné – chybějící fotky doplní a existující přeskočí.', 'You get a collection set per trip, a collection per stop and an “All photos” collection per trip. Re-running is safe: missing photos are added and existing ones are skipped.')}</p>
                                     </section>
 
                                     <section>
-                                        <h3 className="text-lg font-bold text-white mb-2">{t('5. Citlivost clusterů a ruční zásahy', '5. Cluster Sensitivity and Manual Edits')}</h3>
+                                        <h3 className="text-lg font-bold text-white mb-2">{t('6. Citlivost clusterů a ruční zásahy', '6. Cluster Sensitivity and Manual Edits')}</h3>
                                         <p>{t('Auto citlivost se počítá z dat. U profilu Cesty můžete zvlášť nastavit citlivost cest (mezera, domov, sezení) a citlivost zastávek (čas, místo, min. fotek). Tlačítkem „Oddělit“ vytvoříte novou událost pouze z vybraných fotek; „Událost / sloučení“ přejmenuje celé události a při výběru z více událostí je sloučí.', 'Auto sensitivity is data-driven. In the Trips profile you can tune trip sensitivity (gap, home, session) and stop sensitivity (time, place, min photos) separately. “Split” creates a new event from the selected photos only; “Event / merge” renames whole events and merges them when photos from multiple events are selected.')}</p>
                                     </section>
                                 </div>

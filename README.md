@@ -43,6 +43,17 @@ Nothing has to be uploaded to try the workflow: open the app and click **Try the
 
 Completed phases display a checkmark, optional phases are labelled, and every phase keeps its settings behind the cog icon. The UI starts in Czech for Czech browser locales or the `Europe/Prague` timezone, and in English otherwise; the 🇬🇧/🇨🇿 button switches language at any time.
 
+### Lightroom Classic collections
+
+Every export writes `clustr-manifest.json` (trips → stops → files) at its root and a bundled Lightroom Classic plug-in in `Lightroom/Clustr.lrplugin`. Install it once and let it rebuild the Clustr tree as collection sets and collections:
+
+1. Download [Clustr.lrplugin.zip](https://clustr-photo.vercel.app/lightroom/Clustr.lrplugin.zip) — or use the copy in the export's `Lightroom/` folder — and unzip it.
+2. Lightroom Classic: **File → Plug-in Manager → Add…**, pick the unzipped `Clustr.lrplugin` folder, then **Done**.
+3. Import the exported photos: **Import → Include Subfolders → Add**.
+4. **Library → Plug-in Extras → "Create collections from Clustr export…"** and choose `clustr-manifest.json` in the export root.
+
+You get a collection set per trip, a collection per stop and an "All photos" collection per trip. Photos are matched by file name plus relative path, so RAW files and JPEG exports both work. Re-running step 4 is a sync: existing sets/collections are reused, missing photos are added and photos already in a collection are skipped. Help (📖) and the guided tour cover the same steps.
+
 ### Mobile
 
 On a phone the same app runs as an installed PWA or a normal browser tab. Use **Add photos** to import from the camera roll, run the same phases, then **Export** to create a ZIP with the photos and XMP sidecars that can be saved to Files or shared. The folder tree, heatmap and Tinder review are touch-enabled. Mobile is still secondary to the PC + camera workflow: local Ollama is unavailable, and very large exports are limited by phone memory.
@@ -97,7 +108,7 @@ On a phone the same app runs as an installed PWA or a normal browser tab. Use **
 ### Export and app
 
 - **Lightroom export** — Windows-safe folder/file names, duplicate handling, and a progress dialog. XMP sidecars write `dc:subject` keywords, `lr:hierarchicalSubject` folder paths, `photoshop:City` and `Iptc4xmpCore:Location`.
-- **Lightroom collections** — every export also writes `clustr-manifest.json` (trips → stops → files) plus a bundled Lightroom Classic plug-in in `Lightroom/Clustr.lrplugin` (also downloadable as `Clustr.lrplugin.zip` from the export dialog). Install it once, then *Library → Plug-in Extras → "Create collections from Clustr export…"* rebuilds the Clustr tree as collection sets and collections, matched by file name and relative path. Safe to re-run; it adds missing photos and skips duplicates.
+- **Lightroom collections** — every export also writes `clustr-manifest.json` (trips → stops → files) plus a bundled Lightroom Classic plug-in in `Lightroom/Clustr.lrplugin` (also downloadable as [Clustr.lrplugin.zip](https://clustr-photo.vercel.app/lightroom/Clustr.lrplugin.zip) or from the export dialog). Install it once, then *Library → Plug-in Extras → "Create collections from Clustr export…"* rebuilds the Clustr tree as collection sets and collections, matched by file name and relative path. Safe to re-run; it adds missing photos and skips duplicates.
 - **Guided tour** — first-run spotlight walkthrough of the upload, Timeline, phases, folder tree and export; skippable and replayable from the help dialog.
 - **Early-access notice** — a short first-visit popup plus a persistent “Zkušební provoz / Early access” badge in the sidebar.
 - **Feedback dialog** — the ✉️ button opens a dialog with the contact email, a copy button and an optional mailto link.

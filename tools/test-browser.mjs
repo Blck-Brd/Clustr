@@ -144,10 +144,16 @@ try {
     await page.locator('[data-tour-skip]').click();
     await page.locator('[data-app-tour]').waitFor({ state: 'detached', timeout: 5000 });
     await page.locator('[data-tour="help"]').click();
+    // The help dialog must explain how to install and run the Lightroom plug-in.
+    const lightroomHelp = page.locator('[data-help-lightroom-plugin]');
+    await lightroomHelp.waitFor({ timeout: 5000 });
+    const lightroomHelpText = await lightroomHelp.innerText();
+    assert.ok(/Clustr\.lrplugin/.test(lightroomHelpText), `Help should name the plug-in folder: ${lightroomHelpText}`);
+    assert.ok(/clustr-manifest\.json/.test(lightroomHelpText), 'Help should mention the manifest to pick');
     await page.locator('[data-start-tour]').click();
     await page.locator('[data-app-tour]').waitFor({ timeout: 5000 });
     await page.locator('[data-tour-skip]').click();
-    console.log('App tour: OK');
+    console.log('App tour + Lightroom help: OK');
 
     const initialTiles = await page.locator('[data-photo-id]').count();
     assert.ok(initialTiles > 0, 'Gallery should render tiles');

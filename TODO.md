@@ -87,4 +87,6 @@
 - [x] Cloud init skips the gstatic imports when no Firebase config is injected (removes the `require is not defined` console error on static hosting).
 - [x] RAW previews survive large imports: the preview worker reads growing file windows (1.5/4/12 MB, then the whole file) instead of the full 25-30 MB raw, so 600+ NEF folders no longer time out and end up with "No preview" tiles. The main-thread budget is now an idle timeout (20 s, 120 s hard cap) that worker progress extends, and the queue timeout in the gallery grew to match.
 - [x] Lightroom collections: exports ship `clustr-manifest.json` plus a bundled Lightroom Classic plug-in (`Lightroom/Clustr.lrplugin`), so *Plug-in Extras → Create collections from Clustr export…* rebuilds trips as collection sets, stops as collections and adds an "All photos" collection per trip — matched by file name + relative path, re-runnable as a sync.
+- [x] Lightroom plug-in download is a plain static file (`app/lightroom/Clustr.lrplugin.zip`, rebuilt with `npm run plugin:zip`), so clicking the link downloads even when the in-browser ZIP builder is unavailable; `npm run check` fails if the ZIP drifts from its Lua sources.
+- [x] Plug-in usage documented in the guided tour (own step) and the help dialog (install → import → Plug-in Extras → manifest), plus a README section; browser test asserts the help steps.
 
